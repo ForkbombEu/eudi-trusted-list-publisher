@@ -142,7 +142,7 @@ beforeAll(async () => {
     certificatePem: testCertPem,
   });
   const store = new PublicationStore({ publicationDir: pubDir });
-  store.store(
+  await store.store(
     result,
     signedCompact,
     result.loteJson,
@@ -187,7 +187,7 @@ async function storePublication(): Promise<string> {
     null,
     2,
   );
-  store.store(
+  await store.store(
     result,
     signedCompact,
     loteJson,
@@ -544,7 +544,7 @@ describe("HTTP correctness", () => {
         certificatePem: testCertPem,
       });
       const s = new PublicationStore({ publicationDir: dir });
-      s.store(
+      await s.store(
         result,
         signedCompact,
         result.loteJson,
@@ -594,7 +594,7 @@ describe("HTTP correctness", () => {
         certificatePem: testCertPem,
       });
       const s = new PublicationStore({ publicationDir: dir });
-      s.store(
+      await s.store(
         result,
         signedCompact,
         result.loteJson,
@@ -643,7 +643,7 @@ describe("HTTP correctness", () => {
         certificatePem: testCertPem,
       });
       const s = new PublicationStore({ publicationDir: dir });
-      s.store(
+      await s.store(
         result,
         signedCompact,
         result.loteJson,
@@ -761,7 +761,7 @@ describe("HTTP correctness", () => {
     const jsonRes = await httpGet(`/api/v1/lists/${storedKey}/versions/1/lote`);
     expect(jsonRes.status).toBe(200);
     const store = new PublicationStore({ publicationDir: pubDir });
-    const stored = store.loadVersionBytes(storedKey, 1, "lote");
+    const stored = await store.loadVersionBytes(storedKey, 1, "lote");
     expect(stored).toBe(jsonRes.body);
   });
 
@@ -792,7 +792,7 @@ describe("HTTP correctness", () => {
         certificatePem: testCertPem,
       });
       const s = new PublicationStore({ publicationDir: dir });
-      s.store(
+      await s.store(
         result,
         signedCompact,
         result.loteJson,

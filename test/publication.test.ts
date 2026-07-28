@@ -296,7 +296,7 @@ describe("PublicationStore", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -307,12 +307,12 @@ describe("PublicationStore", () => {
     expect(keys.length).toBe(1);
     expect(keys[0]).toBe(result.listKey);
 
-    const index = store.loadIndex(result.listKey);
+    const index = await store.loadIndex(result.listKey);
     expect(index).not.toBeNull();
     expect(index!.versions.length).toBe(1);
     expect(index!.versions[0]!.signerTrustStatus).toBe("not_evaluated");
 
-    const manifest = store.loadManifest(result.listKey, 1);
+    const manifest = await store.loadManifest(result.listKey, 1);
     expect(manifest).not.toBeNull();
     expect(manifest!.sequenceNumber).toBe(1);
   });
@@ -323,20 +323,20 @@ describe("PublicationStore", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
       JSON.stringify(result.manifest, null, 2),
     );
     // Second store with identical content should not throw
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
       JSON.stringify(result.manifest, null, 2),
     );
-    const index = store.loadIndex(result.listKey);
+    const index = await store.loadIndex(result.listKey);
     expect(index!.versions.length).toBe(1);
   });
 
@@ -346,7 +346,7 @@ describe("PublicationStore", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result1,
       signedCompact,
       result1.loteJson,
@@ -367,22 +367,20 @@ describe("PublicationStore", () => {
     });
 
     if (result2.listKey === result1.listKey) {
-      expect(() =>
+      await expect(
         store.store(
           result2,
           signed2.compact,
           result2.loteJson,
           JSON.stringify(result2.manifest, null, 2),
         ),
-      ).toThrow(/corrupt|already exists/);
+      ).rejects.toThrow(/corrupt|already exists/);
     }
   });
 
-  it("rejects unsafe list key", () => {
+  it("rejects unsafe list key", async () => {
     const store = new PublicationStore({ publicationDir: pubDir });
-    expect(() => {
-      store.loadIndex("../../../etc/passwd");
-    }).toThrow();
+    await expect(store.loadIndex("../../../etc/passwd")).rejects.toThrow();
   });
 
   it("exact artifact hashes match stored files", async () => {
@@ -391,7 +389,7 @@ describe("PublicationStore", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -430,14 +428,14 @@ describe("PublicationStore", () => {
     symlinkSync(outsideDir, versionsDir, "dir");
 
     try {
-      expect(() => {
+      await expect(
         store.store(
           result,
           signedCompact,
           result.loteJson,
           JSON.stringify(result.manifest, null, 2),
-        );
-      }).toThrow();
+        ),
+      ).rejects.toThrow();
     } finally {
       try {
         rmSync(outsideDir, { recursive: true, force: true });
@@ -451,7 +449,7 @@ describe("PublicationStore", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -463,7 +461,7 @@ describe("PublicationStore", () => {
     writeFileSync(indexPath, "not valid json {{{", "utf-8");
 
     // loadIndex should still work by deriving from manifests
-    const index = store.loadIndex(result.listKey);
+    const index = await store.loadIndex(result.listKey);
     expect(index).not.toBeNull();
     expect(index!.versions.length).toBe(1);
   });
@@ -474,7 +472,7 @@ describe("PublicationStore", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -495,7 +493,7 @@ describe("PublicationStore", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -507,7 +505,7 @@ describe("PublicationStore", () => {
     rmSync(indexPath);
 
     // loadIndex should derive from manifests
-    const index = store.loadIndex(result.listKey);
+    const index = await store.loadIndex(result.listKey);
     expect(index).not.toBeNull();
     expect(index!.versions.length).toBe(1);
   });
@@ -518,7 +516,7 @@ describe("PublicationStore", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -529,14 +527,14 @@ describe("PublicationStore", () => {
     writeFileSync(store.loteJsonPath(result.listKey, 1), "corrupted", "utf-8");
 
     // Republishing identical input should fail with corruption diagnostic
-    expect(() =>
+    await expect(
       store.store(
         result,
         signedCompact,
         result.loteJson,
         JSON.stringify(result.manifest, null, 2),
       ),
-    ).toThrow(/corrupt/);
+    ).rejects.toThrow(/corrupt/);
   });
 
   it("idempotent republish fails on corrupt manifest.json", async () => {
@@ -545,7 +543,7 @@ describe("PublicationStore", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -559,14 +557,14 @@ describe("PublicationStore", () => {
       "utf-8",
     );
 
-    expect(() =>
+    await expect(
       store.store(
         result,
         signedCompact,
         result.loteJson,
         JSON.stringify(result.manifest, null, 2),
       ),
-    ).toThrow(/corrupt/);
+    ).rejects.toThrow(/corrupt/);
   });
 });
 
@@ -637,7 +635,7 @@ describe("publication gate tests", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -653,7 +651,7 @@ describe("publication gate tests", () => {
 
     try {
       // Download should fail — symlink rejected
-      const bytes = store.loadVersionBytes(result.listKey, 1, "lote");
+      const bytes = await store.loadVersionBytes(result.listKey, 1, "lote");
       expect(bytes).toBeNull();
     } finally {
       try {
@@ -668,7 +666,7 @@ describe("publication gate tests", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -686,7 +684,7 @@ describe("publication gate tests", () => {
       "utf-8",
     );
 
-    const mani = store.loadManifest(result.listKey, 1);
+    const mani = await store.loadManifest(result.listKey, 1);
     expect(mani).toBeNull();
   });
 
@@ -696,7 +694,7 @@ describe("publication gate tests", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -710,7 +708,7 @@ describe("publication gate tests", () => {
       "utf-8",
     );
 
-    const mani = store.loadManifest(result.listKey, 1);
+    const mani = await store.loadManifest(result.listKey, 1);
     expect(mani).toBeNull();
   });
 
@@ -720,7 +718,7 @@ describe("publication gate tests", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -751,7 +749,7 @@ describe("publication gate tests", () => {
     );
 
     // loadIndex should derive from manifests, ignoring the malicious index
-    const index = store.loadIndex(result.listKey);
+    const index = await store.loadIndex(result.listKey);
     // The derived index uses the validated manifest's actual sequence number
     expect(index).not.toBeNull();
     const seqs = index!.versions.map((v) => v.sequenceNumber);
@@ -803,7 +801,7 @@ describe("publication gate tests", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -817,7 +815,7 @@ describe("publication gate tests", () => {
       "utf-8",
     );
 
-    const mani = store.loadManifest(result.listKey, 1);
+    const mani = await store.loadManifest(result.listKey, 1);
     expect(mani).toBeNull();
   });
 
@@ -827,7 +825,7 @@ describe("publication gate tests", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -841,7 +839,8 @@ describe("publication gate tests", () => {
       "utf-8",
     );
 
-    expect(store.loadManifest(result.listKey, 1)).toBeNull();
+    const m = await store.loadManifest(result.listKey, 1);
+    expect(m).toBeNull();
   });
 
   it("rejects manifest with signatureValid false", async () => {
@@ -850,7 +849,7 @@ describe("publication gate tests", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -864,7 +863,8 @@ describe("publication gate tests", () => {
       "utf-8",
     );
 
-    expect(store.loadManifest(result.listKey, 1)).toBeNull();
+    const m = await store.loadManifest(result.listKey, 1);
+    expect(m).toBeNull();
   });
 
   it("rejects manifest with signerTrustStatus trusted", async () => {
@@ -873,7 +873,7 @@ describe("publication gate tests", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -887,7 +887,8 @@ describe("publication gate tests", () => {
       "utf-8",
     );
 
-    expect(store.loadManifest(result.listKey, 1)).toBeNull();
+    const m = await store.loadManifest(result.listKey, 1);
+    expect(m).toBeNull();
   });
 
   it("rejects manifest with invalid SHA-256 fingerprint", async () => {
@@ -896,7 +897,7 @@ describe("publication gate tests", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result,
       signedCompact,
       result.loteJson,
@@ -913,7 +914,8 @@ describe("publication gate tests", () => {
       "utf-8",
     );
 
-    expect(store.loadManifest(result.listKey, 1)).toBeNull();
+    const m = await store.loadManifest(result.listKey, 1);
+    expect(m).toBeNull();
   });
 
   it("one corrupt version does not hide healthy version", async () => {
@@ -922,7 +924,7 @@ describe("publication gate tests", () => {
       certificatePem: testCertPem,
     });
     const store = new PublicationStore({ publicationDir: pubDir });
-    store.store(
+    await store.store(
       result1,
       signedCompact,
       result1.loteJson,
@@ -941,7 +943,7 @@ describe("publication gate tests", () => {
       compactJws: signed2.compact,
       certificatePem: testCertPem,
     });
-    store.store(
+    await store.store(
       result2,
       signed2.compact,
       result2.loteJson,
@@ -957,13 +959,15 @@ describe("publication gate tests", () => {
     );
 
     // loadManifest should return null for corrupt version
-    expect(store.loadManifest(result1.listKey, 1)).toBeNull();
+    const m1 = await store.loadManifest(result1.listKey, 1);
+    expect(m1).toBeNull();
 
     // loadManifest should still return healthy version
-    expect(store.loadManifest(result1.listKey, 2)).not.toBeNull();
+    const m2 = await store.loadManifest(result1.listKey, 2);
+    expect(m2).not.toBeNull();
 
     // Index should still include healthy version
-    const index = store.loadIndex(result1.listKey);
+    const index = await store.loadIndex(result1.listKey);
     expect(index).not.toBeNull();
     // Version 1 should be excluded (corrupt), version 2 should be included
     const versions = index!.versions;

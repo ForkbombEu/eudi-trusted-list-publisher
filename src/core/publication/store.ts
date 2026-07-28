@@ -1,19 +1,22 @@
 import {
-  writeFileSync,
-  readFileSync,
-  readdirSync,
-  existsSync,
-  mkdirSync,
-  renameSync,
-  realpathSync,
-  unlinkSync,
-  lstatSync,
-  rmdirSync,
-  statSync,
+  writeFileSync as fsWriteFileSync,
+  readFileSync as fsReadFileSync,
+  readdirSync as fsReaddirSync,
+  existsSync as fsExistsSync,
+  mkdirSync as fsMkdirSync,
+  renameSync as fsRenameSync,
+  realpathSync as fsRealpathSync,
+  unlinkSync as fsUnlinkSync,
+  lstatSync as fsLstatSync,
+  rmdirSync as fsRmdirSync,
+  statSync as fsStatSync,
 } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { resolve, join, normalize, sep, dirname } from "node:path";
+import { X509Certificate } from "node:crypto";
 import type { Manifest, PublicationResult } from "./manifest.js";
+import { verify as verifyJades } from "../verification/verification.js";
+import { validateEtsiStruct } from "../validate/validate.js";
 
 export interface StoreConfig {
   publicationDir: string;
@@ -25,17 +28,39 @@ const SHA256_RE = /^[0-9a-f]{64}$/;
 const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024;
 
-function assertSafeSegment(
-  value: string,
-  pattern: RegExp,
-  label: string,
-): void {
-  if (!pattern.test(value)) {
-    throw new Error(`Unsafe ${label}: "${value}"`);
-  }
+export interface FsOps {
+  existsSync: typeof fsExistsSync;
+  lstatSync: typeof fsLstatSync;
+  statSync: typeof fsStatSync;
+  readFileSync: typeof fsReadFileSync;
+  writeFileSync: typeof fsWriteFileSync;
+  mkdirSync: typeof fsMkdirSync;
+  readdirSync: typeof fsReaddirSync;
+  renameSync: typeof fsRenameSync;
+  realpathSync: typeof fsRealpathSync;
+  unlinkSync: typeof fsUnlinkSync;
+  rmdirSync: typeof fsRmdirSync;
 }
 
-function rejectSymlinksInPath(base: string, target: string): void {
+const defaultFsOps: FsOps = {
+  existsSync: fsExistsSync,
+  lstatSync: fsLstatSync,
+  statSync: fsStatSync,
+  readFileSync: fsReadFileSync,
+  writeFileSync: fsWriteFileSync,
+  mkdirSync: fsMkdirSync,
+  readdirSync: fsReaddirSync,
+  renameSync: fsRenameSync,
+  realpathSync: fsRealpathSync,
+  unlinkSync: fsUnlinkSync,
+  rmdirSync: fsRmdirSync,
+};
+
+function assertSafeSegment(v: string, p: RegExp, label: string): void {
+  if (!p.test(v)) throw new Error(`Unsafe ${label}: "${v}"`);
+}
+
+function rejectSymlinksInPath(fs: FsOps, base: string, target: string): void {
   const parts = normalize(resolve(base, target))
     .slice(base.length)
     .split(sep)
@@ -43,67 +68,104 @@ function rejectSymlinksInPath(base: string, target: string): void {
   let current = base;
   for (const part of parts) {
     current = join(current, part);
-    if (existsSync(current)) {
-      if (lstatSync(current).isSymbolicLink()) {
-        throw new Error(`Symlink rejected: "${current}"`);
-      }
+    if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) {
+      throw new Error(`Symlink rejected: "${current}"`);
     }
   }
 }
 
-function removeDir(dir: string): void {
-  if (!existsSync(dir)) return;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      removeDir(p);
-    } else {
-      unlinkSync(p);
-    }
+function removeDir(fs: FsOps, dir: string): void {
+  if (!fs.existsSync(dir)) return;
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) removeDir(fs, p);
+    else fs.unlinkSync(p);
   }
-  rmdirSync(dir);
+  fs.rmdirSync(dir);
 }
 
-function readFileBounded(filePath: string, maxBytes: number): string | null {
-  if (!existsSync(filePath)) return null;
-  if (lstatSync(filePath).isSymbolicLink()) return null;
-  const st = statSync(filePath);
+function readFileBounded(
+  fs: FsOps,
+  path: string,
+  maxBytes: number,
+): string | null {
+  if (!fs.existsSync(path)) return null;
+  if (fs.lstatSync(path).isSymbolicLink()) return null;
+  const st = fs.statSync(path);
   if (st.size > maxBytes) return null;
-  return readFileSync(filePath, "utf-8");
+  return fs.readFileSync(path, "utf-8");
 }
 
 function sha256(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-function resolveCanonicalRoot(rawPath: string): string {
+function resolveCanonicalRoot(fs: FsOps, rawPath: string): string {
   const target = resolve(rawPath);
-
-  // If the configured path itself exists, reject symlink and return realpath
-  if (existsSync(target)) {
-    if (lstatSync(target).isSymbolicLink()) {
+  if (fs.existsSync(target)) {
+    if (fs.lstatSync(target).isSymbolicLink()) {
       throw new Error("Publication root is a symlink — rejected for security");
     }
-    return realpathSync(target);
+    return fs.realpathSync(target);
   }
-
-  // Walk up parents to find the nearest existing ancestor
   let current = target;
-  while (!existsSync(current) && current !== dirname(current)) {
+  while (!fs.existsSync(current) && current !== dirname(current)) {
     current = dirname(current);
   }
-
-  if (!existsSync(current)) {
-    // Root filesystem reached — use configured path as-is
-    return target;
-  }
-
-  // Resolve the nearest existing ancestor
-  const realAncestor = realpathSync(current);
-
-  // Reconstruct the canonical path from real ancestor + remaining components
+  if (!fs.existsSync(current)) return target;
+  const realAncestor = fs.realpathSync(current);
   const remaining = target.slice(current.length);
   return (realAncestor + remaining).split(sep).join(sep);
+}
+
+function deriveListKey(doc: unknown): string {
+  const d = doc as {
+    LoTE?: {
+      ListAndSchemeInformation?: {
+        SchemeTerritory?: string;
+        SchemeOperatorName?: Array<{ value?: string }>;
+      };
+    };
+  };
+  const info = d?.LoTE?.ListAndSchemeInformation;
+  const territory = info?.SchemeTerritory ?? "XX";
+  const opName =
+    info?.SchemeOperatorName?.[0]?.value?.replace(/[^a-zA-Z0-9_-]/g, "_") ??
+    "unknown";
+  return `${territory}_${opName.slice(0, 40)}`.toLowerCase();
+}
+
+function extractCertFromX5c(x5c: unknown): string | null {
+  if (!Array.isArray(x5c) || x5c.length === 0) return null;
+  const certB64 = x5c[0] as string;
+  try {
+    const derBytes = Buffer.from(certB64, "base64");
+    const derB64 = derBytes.toString("base64");
+    const wrapped = derB64.match(/.{1,64}/g)?.join("\n") ?? derB64;
+    const pem =
+      "-----BEGIN CERTIFICATE-----\n" + wrapped + "\n-----END CERTIFICATE-----";
+    new X509Certificate(pem);
+    return pem;
+  } catch {
+    return null;
+  }
+}
+
+function getSignerInfo(certPem: string): {
+  subject: string;
+  issuer: string;
+  validFrom: string;
+  validTo: string;
+  fingerprint: string;
+} {
+  const cert = new X509Certificate(certPem);
+  return {
+    subject: cert.subject.replace(/\n/g, ", "),
+    issuer: cert.issuer.replace(/\n/g, ", "),
+    validFrom: cert.validFrom,
+    validTo: cert.validTo,
+    fingerprint: cert.fingerprint256.replace(/:/g, "").toLowerCase(),
+  };
 }
 
 export interface VersionArtifacts {
@@ -148,30 +210,23 @@ function validateManifestComplete(
 ): Manifest | null {
   if (typeof obj !== "object" || obj === null) return null;
   const m = obj as Record<string, unknown>;
-
-  // No unexpected properties
   const keys = Object.keys(m);
   if (keys.some((k) => !(MANIFEST_KEYS as string[]).includes(k))) return null;
-
-  // manifestVersion exactly 1
   if (m.manifestVersion !== 1) return null;
-
-  // listKey safe and matches
-  if (typeof m.listKey !== "string" || !SAFE_KEY_RE.test(m.listKey))
+  if (
+    typeof m.listKey !== "string" ||
+    !SAFE_KEY_RE.test(m.listKey) ||
+    m.listKey !== listKey
+  )
     return null;
-  if (m.listKey !== listKey) return null;
-
-  // sequenceNumber positive integer and matches
   if (
     typeof m.sequenceNumber !== "number" ||
     !Number.isInteger(m.sequenceNumber) ||
-    m.sequenceNumber < 1
+    m.sequenceNumber < 1 ||
+    m.sequenceNumber !== sequence
   )
     return null;
-  if (m.sequenceNumber !== sequence) return null;
-
-  // string fields
-  const stringFields = [
+  for (const f of [
     "loteIdentifier",
     "loteType",
     "schemeOperatorName",
@@ -180,53 +235,39 @@ function validateManifestComplete(
     "certificateIssuer",
     "certificateValidFrom",
     "certificateValidTo",
-  ];
-  for (const f of stringFields) {
+  ]) {
     if (typeof m[f] !== "string") return null;
   }
-
-  // date-time fields
-  const dateFields = ["issueDate", "nextUpdateDate", "publicationTimestamp"];
-  for (const f of dateFields) {
+  for (const f of ["issueDate", "nextUpdateDate", "publicationTimestamp"]) {
     if (typeof m[f] !== "string" || !ISO8601_RE.test(m[f] as string))
       return null;
   }
-
-  // SHA-256 fields: exactly 64 lowercase hex
-  const hashFields = [
+  for (const f of [
     "compactJadesSha256",
     "loteJsonSha256",
     "signingCertificateSha256",
-  ];
-  for (const f of hashFields) {
+  ]) {
     if (typeof m[f] !== "string" || !SHA256_RE.test(m[f] as string))
       return null;
   }
-
-  // signatureValid exactly true
   if (m.signatureValid !== true) return null;
-
-  // etsiSchemaValid exactly true
   if (m.etsiSchemaValid !== true) return null;
-
-  // signerTrustStatus exactly "not_evaluated"
   if (m.signerTrustStatus !== "not_evaluated") return null;
-
   return m as unknown as Manifest;
 }
 
-export function loadVersionArtifacts(
+export async function loadVersionArtifacts(
   baseDir: string,
   listKey: string,
   sequenceNumber: number,
   maxBytes: number,
-): VersionReadResult {
-  if (!existsSync(baseDir)) {
+  fs: FsOps = defaultFsOps,
+): Promise<VersionReadResult> {
+  if (!fs.existsSync(baseDir)) {
     return { artifacts: null, diagnostic: "publication root does not exist" };
   }
-
   try {
-    if (lstatSync(baseDir).isSymbolicLink()) {
+    if (fs.lstatSync(baseDir).isSymbolicLink()) {
       return { artifacts: null, diagnostic: "publication root is a symlink" };
     }
   } catch {
@@ -234,26 +275,25 @@ export function loadVersionArtifacts(
   }
 
   const verDir = resolve(baseDir, listKey, "versions", String(sequenceNumber));
-  if (!existsSync(verDir)) {
+  if (!fs.existsSync(verDir))
     return { artifacts: null, diagnostic: "version directory missing" };
-  }
 
   const jadesPath = resolve(verDir, "lote.jades");
   const jsonPath = resolve(verDir, "lote.json");
   const maniPath = resolve(verDir, "manifest.json");
 
   try {
-    rejectSymlinksInPath(baseDir, verDir);
-    rejectSymlinksInPath(baseDir, jadesPath);
-    rejectSymlinksInPath(baseDir, jsonPath);
-    rejectSymlinksInPath(baseDir, maniPath);
+    rejectSymlinksInPath(fs, baseDir, verDir);
+    rejectSymlinksInPath(fs, baseDir, jadesPath);
+    rejectSymlinksInPath(fs, baseDir, jsonPath);
+    rejectSymlinksInPath(fs, baseDir, maniPath);
   } catch {
     return { artifacts: null, diagnostic: "symlink rejected in version path" };
   }
 
-  const jadesContent = readFileBounded(jadesPath, maxBytes);
-  const jsonContent = readFileBounded(jsonPath, maxBytes);
-  const maniContent = readFileBounded(maniPath, maxBytes);
+  const jadesContent = readFileBounded(fs, jadesPath, maxBytes);
+  const jsonContent = readFileBounded(fs, jsonPath, maxBytes);
+  const maniContent = readFileBounded(fs, maniPath, maxBytes);
 
   if (jadesContent === null || jsonContent === null || maniContent === null) {
     return {
@@ -262,34 +302,200 @@ export function loadVersionArtifacts(
     };
   }
 
-  let manifest: Manifest | null;
+  // Parse stored manifest
+  let storedManifest: Manifest | null;
   try {
-    const parsed = JSON.parse(maniContent);
-    manifest = validateManifestComplete(parsed, listKey, sequenceNumber);
+    storedManifest = validateManifestComplete(
+      JSON.parse(maniContent),
+      listKey,
+      sequenceNumber,
+    );
   } catch {
     return { artifacts: null, diagnostic: "manifest is not valid JSON" };
   }
+  if (!storedManifest)
+    return { artifacts: null, diagnostic: "manifest validation failed" };
 
-  if (!manifest) {
+  // Extract x5c from JAdES header
+  let embeddedCertPem: string | null = null;
+  try {
+    const parts = jadesContent.split(".");
+    if (parts.length === 3 && parts[0]) {
+      const header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+      embeddedCertPem = extractCertFromX5c(header["x5c"]);
+    }
+  } catch {
+    /* continue without cert */
+  }
+
+  // Parse the signed payload
+  let signedDocument: unknown = null;
+  try {
+    const parts = jadesContent.split(".");
+    if (parts.length === 3 && parts[1]) {
+      signedDocument = JSON.parse(
+        Buffer.from(parts[1], "base64url").toString(),
+      );
+    }
+  } catch {
+    /* continue */
+  }
+
+  // Derive canonical LoTE JSON from signed payload
+  let derivedLoteJson: string | null = null;
+  if (
+    signedDocument &&
+    typeof signedDocument === "object" &&
+    signedDocument !== null
+  ) {
+    derivedLoteJson = JSON.stringify(signedDocument);
+  }
+
+  // Verify stored lote.json matches signed payload exactly
+  if (derivedLoteJson === null || jsonContent !== derivedLoteJson) {
     return {
       artifacts: null,
-      diagnostic: "manifest validation failed",
+      diagnostic: "stored lote.json does not match signed payload",
     };
+  }
+
+  // Cryptographically verify the JAdES using the embedded x5c
+  if (embeddedCertPem) {
+    const verifyResult = await verifyJades({
+      compactJws: jadesContent,
+      certificatePem: embeddedCertPem,
+      clock: storedManifest.publicationTimestamp
+        ? new Date(storedManifest.publicationTimestamp)
+        : undefined,
+    });
+    if (!verifyResult.valid || !verifyResult.payload) {
+      return {
+        artifacts: null,
+        diagnostic: "JAdES signature verification failed",
+      };
+    }
+  }
+
+  // Validate signed payload against ETSI schema
+  if (signedDocument && typeof signedDocument === "object") {
+    const etsiResult = await validateEtsiStruct(signedDocument);
+    if (!etsiResult.valid) {
+      return {
+        artifacts: null,
+        diagnostic: "signed payload fails ETSI schema validation",
+      };
+    }
+  }
+
+  // Derive expected manifest values from signed payload and embedded cert
+  if (
+    signedDocument &&
+    typeof signedDocument === "object" &&
+    (signedDocument as Record<string, unknown>).LoTE
+  ) {
+    const doc = signedDocument as {
+      LoTE: {
+        ListAndSchemeInformation: Record<string, unknown>;
+        TrustedEntitiesList?: unknown[];
+      };
+    };
+    const info = doc.LoTE.ListAndSchemeInformation;
+    const derivedKey = deriveListKey(doc);
+    const derivedSeq = Number(info.LoTESequenceNumber);
+    const derivedLoteType = String(info.LoTEType ?? "");
+    const derivedIssueDate = String(info.ListIssueDateTime ?? "");
+    const derivedNextUpdate = String(info.NextUpdate ?? "");
+    const derivedTerritory = String(info.SchemeTerritory ?? "");
+    const derivedOpName =
+      (info.SchemeOperatorName as Array<{ lang: string; value: string }>)
+        ?.map((n) => `${n.lang}:${n.value}`)
+        .join("; ") ?? "";
+    const derivedJadesHash = sha256(jadesContent);
+    const derivedJsonHash = sha256(jsonContent);
+
+    // Cross-check stored manifest against derived values
+    if (storedManifest.listKey !== derivedKey)
+      return { artifacts: null, diagnostic: "manifest listKey mismatch" };
+    if (storedManifest.sequenceNumber !== derivedSeq)
+      return {
+        artifacts: null,
+        diagnostic: "manifest sequenceNumber mismatch",
+      };
+    if (storedManifest.loteIdentifier !== derivedLoteType)
+      return {
+        artifacts: null,
+        diagnostic: "manifest loteIdentifier mismatch",
+      };
+    if (storedManifest.issueDate !== derivedIssueDate)
+      return { artifacts: null, diagnostic: "manifest issueDate mismatch" };
+    if (storedManifest.nextUpdateDate !== derivedNextUpdate)
+      return {
+        artifacts: null,
+        diagnostic: "manifest nextUpdateDate mismatch",
+      };
+    if (storedManifest.loteType !== derivedLoteType)
+      return { artifacts: null, diagnostic: "manifest loteType mismatch" };
+    if (storedManifest.schemeOperatorName !== derivedOpName)
+      return {
+        artifacts: null,
+        diagnostic: "manifest schemeOperatorName mismatch",
+      };
+    if (storedManifest.territory !== derivedTerritory)
+      return { artifacts: null, diagnostic: "manifest territory mismatch" };
+    if (storedManifest.compactJadesSha256 !== derivedJadesHash)
+      return {
+        artifacts: null,
+        diagnostic: "manifest compactJadesSha256 mismatch",
+      };
+    if (storedManifest.loteJsonSha256 !== derivedJsonHash)
+      return {
+        artifacts: null,
+        diagnostic: "manifest loteJsonSha256 mismatch",
+      };
+
+    // Cross-check certificate metadata
+    if (embeddedCertPem) {
+      const signer = getSignerInfo(embeddedCertPem);
+      if (storedManifest.signingCertificateSha256 !== signer.fingerprint)
+        return {
+          artifacts: null,
+          diagnostic: "manifest signingCertificateSha256 mismatch",
+        };
+      if (storedManifest.certificateSubject !== signer.subject)
+        return {
+          artifacts: null,
+          diagnostic: "manifest certificateSubject mismatch",
+        };
+      if (storedManifest.certificateIssuer !== signer.issuer)
+        return {
+          artifacts: null,
+          diagnostic: "manifest certificateIssuer mismatch",
+        };
+      if (storedManifest.certificateValidFrom !== signer.validFrom)
+        return {
+          artifacts: null,
+          diagnostic: "manifest certificateValidFrom mismatch",
+        };
+      if (storedManifest.certificateValidTo !== signer.validTo)
+        return {
+          artifacts: null,
+          diagnostic: "manifest certificateValidTo mismatch",
+        };
+    }
+
+    // publicationTimestamp is local metadata — validate format only
   }
 
   const actualJadesHash = sha256(jadesContent);
   const actualJsonHash = sha256(jsonContent);
-
-  if (manifest.compactJadesSha256 !== actualJadesHash) {
+  if (storedManifest.compactJadesSha256 !== actualJadesHash)
     return { artifacts: null, diagnostic: "Compact JAdES hash mismatch" };
-  }
-  if (manifest.loteJsonSha256 !== actualJsonHash) {
+  if (storedManifest.loteJsonSha256 !== actualJsonHash)
     return { artifacts: null, diagnostic: "LoTE JSON hash mismatch" };
-  }
 
   return {
     artifacts: {
-      manifest,
+      manifest: storedManifest,
       loteJsonBytes: jsonContent,
       jadesBytes: jadesContent,
       manifestBytes: maniContent,
@@ -301,10 +507,12 @@ export function loadVersionArtifacts(
 export class PublicationStore {
   readonly publicationDir: string;
   private canonicalRoot: string;
+  private fs: FsOps;
 
-  constructor(config: StoreConfig) {
+  constructor(config: StoreConfig, fs?: FsOps) {
+    this.fs = fs ?? defaultFsOps;
     const raw = resolve(config.publicationDir);
-    this.canonicalRoot = resolveCanonicalRoot(raw);
+    this.canonicalRoot = resolveCanonicalRoot(this.fs, raw);
     this.publicationDir = this.canonicalRoot;
   }
 
@@ -312,11 +520,26 @@ export class PublicationStore {
     return this.canonicalRoot;
   }
 
+  private canonicalRootGuard(): void {
+    if (this.fs.existsSync(this.canonicalRoot)) {
+      const real = this.fs.realpathSync(this.canonicalRoot);
+      if (real !== this.canonicalRoot) {
+        throw new Error(
+          "Publication root was redirected — canonical root changed",
+        );
+      }
+    }
+  }
+
   versionDir(listKey: string, sequenceNumber: number): string {
-    const seqStr = String(sequenceNumber);
     assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
-    assertSafeSegment(seqStr, SAFE_SEQ_RE, "sequence number");
-    return resolve(this.canonicalRoot, listKey, "versions", seqStr);
+    assertSafeSegment(String(sequenceNumber), SAFE_SEQ_RE, "sequence number");
+    return resolve(
+      this.canonicalRoot,
+      listKey,
+      "versions",
+      String(sequenceNumber),
+    );
   }
 
   indexPath(listKey: string): string {
@@ -327,48 +550,45 @@ export class PublicationStore {
   loteJsonPath(listKey: string, sequenceNumber: number): string {
     return join(this.versionDir(listKey, sequenceNumber), "lote.json");
   }
-
   loteJadesPath(listKey: string, sequenceNumber: number): string {
     return join(this.versionDir(listKey, sequenceNumber), "lote.jades");
   }
-
   manifestPath(listKey: string, sequenceNumber: number): string {
     return join(this.versionDir(listKey, sequenceNumber), "manifest.json");
   }
 
-  store(
+  async store(
     result: PublicationResult,
     compactJws: string,
     loteJson: string,
     manifestJson: string,
-  ): { indexWarning?: string } {
-    // Re-verify canonical root hasn't been symlinked since construction
-    if (existsSync(this.canonicalRoot)) {
-      if (lstatSync(this.canonicalRoot).isSymbolicLink()) {
-        throw new Error(
-          "Publication root became a symlink — rejected for security",
-        );
-      }
+  ): Promise<{ indexWarning?: string }> {
+    this.canonicalRootGuard();
+
+    if (
+      this.fs.existsSync(this.canonicalRoot) &&
+      this.fs.lstatSync(this.canonicalRoot).isSymbolicLink()
+    ) {
+      throw new Error(
+        "Publication root became a symlink — rejected for security",
+      );
     }
 
     const finalDir = this.versionDir(result.listKey, result.sequenceNumber);
 
-    if (existsSync(finalDir)) {
-      rejectSymlinksInPath(this.canonicalRoot, finalDir);
-
-      const outcome = loadVersionArtifacts(
+    if (this.fs.existsSync(finalDir)) {
+      rejectSymlinksInPath(this.fs, this.canonicalRoot, finalDir);
+      const outcome = await loadVersionArtifacts(
         this.canonicalRoot,
         result.listKey,
         result.sequenceNumber,
         DEFAULT_MAX_FILE_BYTES,
+        this.fs,
       );
-
-      if (!outcome.artifacts) {
+      if (!outcome.artifacts)
         throw new Error(
           `Existing publication is corrupt: ${outcome.diagnostic}`,
         );
-      }
-
       const m = outcome.artifacts.manifest;
       if (
         m.compactJadesSha256 === result.manifest.compactJadesSha256 &&
@@ -379,198 +599,195 @@ export class PublicationStore {
         m.territory === result.manifest.territory &&
         m.signingCertificateSha256 === result.manifest.signingCertificateSha256
       ) {
-        return {}; // Idempotent
+        return {};
       }
-
       throw new Error(
         `Version ${result.sequenceNumber} for list "${result.listKey}" already exists with different content`,
       );
     }
 
-    rejectSymlinksInPath(this.canonicalRoot, finalDir);
+    rejectSymlinksInPath(this.fs, this.canonicalRoot, finalDir);
 
-    // Ensure publication root exists under canonical root
-    if (!existsSync(this.canonicalRoot)) {
-      mkdirSync(this.canonicalRoot, { recursive: true });
-      const real = realpathSync(this.canonicalRoot);
-      if (real !== this.canonicalRoot) {
+    if (!this.fs.existsSync(this.canonicalRoot)) {
+      this.fs.mkdirSync(this.canonicalRoot, { recursive: true });
+      const real = this.fs.realpathSync(this.canonicalRoot);
+      if (real !== this.canonicalRoot)
         throw new Error(
           `Canonical root mismatch after creation: expected ${this.canonicalRoot}, got ${real}`,
         );
-      }
     }
 
     const stageDir = resolve(
       this.canonicalRoot,
       ".staging_" + randomBytes(8).toString("hex"),
     );
-    mkdirSync(stageDir, { recursive: true });
+    this.fs.mkdirSync(stageDir, { recursive: true });
 
     try {
       const stageJades = join(stageDir, "lote.jades");
       const stageJson = join(stageDir, "lote.json");
       const stageMani = join(stageDir, "manifest.json");
 
-      writeFileSync(stageJades, compactJws, { encoding: "utf-8" });
-      writeFileSync(stageJson, loteJson, { encoding: "utf-8" });
-      writeFileSync(stageMani, manifestJson, { encoding: "utf-8" });
+      this.fs.writeFileSync(stageJades, compactJws, { encoding: "utf-8" });
+      this.fs.writeFileSync(stageJson, loteJson, { encoding: "utf-8" });
+      this.fs.writeFileSync(stageMani, manifestJson, { encoding: "utf-8" });
 
-      const writtenJades = readFileSync(stageJades, "utf-8");
-      const writtenJson = readFileSync(stageJson, "utf-8");
-
-      const jadesHash = sha256(writtenJades);
-      const jsonHash = sha256(writtenJson);
-
-      if (jadesHash !== result.manifest.compactJadesSha256) {
-        throw new Error(`Staged Compact JAdES hash mismatch`);
-      }
-      if (jsonHash !== result.manifest.loteJsonSha256) {
-        throw new Error(`Staged LoTE JSON hash mismatch`);
-      }
+      const writtenJades = this.fs.readFileSync(stageJades, "utf-8");
+      const writtenJson = this.fs.readFileSync(stageJson, "utf-8");
+      if (sha256(writtenJades) !== result.manifest.compactJadesSha256)
+        throw new Error("Staged Compact JAdES hash mismatch");
+      if (sha256(writtenJson) !== result.manifest.loteJsonSha256)
+        throw new Error("Staged LoTE JSON hash mismatch");
 
       const listDir = resolve(this.canonicalRoot, result.listKey);
-      const versionsDir = resolve(listDir, "versions");
-      mkdirSync(versionsDir, { recursive: true });
+      this.fs.mkdirSync(resolve(listDir, "versions"), { recursive: true });
+      this.fs.renameSync(stageDir, finalDir);
 
-      renameSync(stageDir, finalDir);
-
-      // Index refresh is best-effort after successful version installation
       try {
-        this.deriveIndex(result.listKey);
+        await this.deriveIndex(result.listKey);
       } catch (indexErr) {
         return {
           indexWarning: `Index refresh failed for "${result.listKey}": ${indexErr instanceof Error ? indexErr.message : "unknown error"}. Catalogue will be derived in memory.`,
         };
       }
     } catch (e) {
-      removeDir(stageDir);
+      removeDir(this.fs, stageDir);
       throw e;
     }
-
     return {};
   }
 
-  private deriveIndex(listKey: string): void {
+  private async deriveIndex(listKey: string): Promise<void> {
     assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
     const indexPath = this.indexPath(listKey);
     const versionsDir = resolve(this.canonicalRoot, listKey, "versions");
+    if (!this.fs.existsSync(versionsDir)) return;
 
-    if (!existsSync(versionsDir)) return;
+    const entries: Array<IndexVersionEntry | null> = [];
+    for (const d of this.fs
+      .readdirSync(versionsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())) {
+      const seq = parseInt(d.name, 10);
+      if (!SAFE_SEQ_RE.test(d.name)) continue;
+      const outcome = await loadVersionArtifacts(
+        this.canonicalRoot,
+        listKey,
+        seq,
+        DEFAULT_MAX_FILE_BYTES,
+        this.fs,
+      );
+      if (!outcome.artifacts) continue;
+      const m = outcome.artifacts.manifest;
+      entries.push({
+        sequenceNumber: seq,
+        issueDate: m.issueDate,
+        nextUpdateDate: m.nextUpdateDate,
+        publicationTimestamp: m.publicationTimestamp,
+        compactJadesSha256: m.compactJadesSha256,
+        loteJsonSha256: m.loteJsonSha256,
+        signatureValid: m.signatureValid,
+        etsiSchemaValid: m.etsiSchemaValid,
+        signerTrustStatus: m.signerTrustStatus,
+      });
+    }
 
-    const entries = readdirSync(versionsDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => {
-        const seq = parseInt(d.name, 10);
-        if (!SAFE_SEQ_RE.test(d.name)) return null;
-        const outcome = loadVersionArtifacts(
-          this.canonicalRoot,
-          listKey,
-          seq,
-          DEFAULT_MAX_FILE_BYTES,
-        );
-        if (!outcome.artifacts) return null;
-        const m = outcome.artifacts.manifest;
-        return {
-          sequenceNumber: seq,
-          issueDate: m.issueDate,
-          nextUpdateDate: m.nextUpdateDate,
-          publicationTimestamp: m.publicationTimestamp,
-          compactJadesSha256: m.compactJadesSha256,
-          loteJsonSha256: m.loteJsonSha256,
-          signatureValid: m.signatureValid,
-          etsiSchemaValid: m.etsiSchemaValid,
-          signerTrustStatus: m.signerTrustStatus,
-        };
-      })
+    const versions = entries
       .filter((e): e is NonNullable<typeof e> => e !== null)
       .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-
-    const index: IndexEntry = { listKey, versions: entries };
-
+    const index: IndexEntry = { listKey, versions };
     const tmpPath = indexPath + "." + randomBytes(8).toString("hex") + ".tmp";
     try {
-      writeFileSync(tmpPath, JSON.stringify(index, null, 2), {
+      this.fs.writeFileSync(tmpPath, JSON.stringify(index, null, 2), {
         encoding: "utf-8",
         flag: "wx",
       });
-      renameSync(tmpPath, indexPath);
+      this.fs.renameSync(tmpPath, indexPath);
     } catch (e) {
       try {
-        unlinkSync(tmpPath);
-      } catch {
-        /* best-effort */
-      }
+        this.fs.unlinkSync(tmpPath);
+      } catch {}
       throw e;
     }
   }
 
-  private deriveIndexInMemory(listKey: string): IndexEntry | null {
+  private async deriveIndexInMemory(
+    listKey: string,
+  ): Promise<IndexEntry | null> {
     assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
     const versionsDir = resolve(this.canonicalRoot, listKey, "versions");
-    if (!existsSync(versionsDir)) return null;
-
-    const entries = readdirSync(versionsDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => {
-        const seq = parseInt(d.name, 10);
-        if (!SAFE_SEQ_RE.test(d.name)) return null;
-        const outcome = loadVersionArtifacts(
-          this.canonicalRoot,
-          listKey,
-          seq,
-          DEFAULT_MAX_FILE_BYTES,
-        );
-        if (!outcome.artifacts) return null;
-        const m = outcome.artifacts.manifest;
-        return {
-          sequenceNumber: seq,
-          issueDate: m.issueDate,
-          nextUpdateDate: m.nextUpdateDate,
-          publicationTimestamp: m.publicationTimestamp,
-          compactJadesSha256: m.compactJadesSha256,
-          loteJsonSha256: m.loteJsonSha256,
-          signatureValid: m.signatureValid,
-          etsiSchemaValid: m.etsiSchemaValid,
-          signerTrustStatus: m.signerTrustStatus,
-        };
-      })
+    if (!this.fs.existsSync(versionsDir)) return null;
+    const entries: Array<IndexVersionEntry | null> = [];
+    for (const d of this.fs
+      .readdirSync(versionsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())) {
+      const seq = parseInt(d.name, 10);
+      if (!SAFE_SEQ_RE.test(d.name)) continue;
+      const outcome = await loadVersionArtifacts(
+        this.canonicalRoot,
+        listKey,
+        seq,
+        DEFAULT_MAX_FILE_BYTES,
+        this.fs,
+      );
+      if (!outcome.artifacts) continue;
+      const m = outcome.artifacts.manifest;
+      entries.push({
+        sequenceNumber: seq,
+        issueDate: m.issueDate,
+        nextUpdateDate: m.nextUpdateDate,
+        publicationTimestamp: m.publicationTimestamp,
+        compactJadesSha256: m.compactJadesSha256,
+        loteJsonSha256: m.loteJsonSha256,
+        signatureValid: m.signatureValid,
+        etsiSchemaValid: m.etsiSchemaValid,
+        signerTrustStatus: m.signerTrustStatus,
+      });
+    }
+    const versions = entries
       .filter((e): e is NonNullable<typeof e> => e !== null)
       .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-
-    if (entries.length === 0) return null;
-    return { listKey, versions: entries };
+    if (versions.length === 0) return null;
+    return { listKey, versions };
   }
 
-  loadIndex(listKey: string): IndexEntry | null {
+  async loadIndex(listKey: string): Promise<IndexEntry | null> {
     assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
-    return this.deriveIndexInMemory(listKey);
+    this.canonicalRootGuard();
+    return await this.deriveIndexInMemory(listKey);
   }
 
-  loadManifest(listKey: string, sequenceNumber: number): Manifest | null {
+  async loadManifest(
+    listKey: string,
+    sequenceNumber: number,
+  ): Promise<Manifest | null> {
     assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
     assertSafeSegment(String(sequenceNumber), SAFE_SEQ_RE, "sequence number");
-    const outcome = loadVersionArtifacts(
+    this.canonicalRootGuard();
+    const outcome = await loadVersionArtifacts(
       this.canonicalRoot,
       listKey,
       sequenceNumber,
       DEFAULT_MAX_FILE_BYTES,
+      this.fs,
     );
     if (!outcome.artifacts) return null;
     return outcome.artifacts.manifest;
   }
 
-  loadVersionBytes(
+  async loadVersionBytes(
     listKey: string,
     sequenceNumber: number,
     fileType: "lote" | "signature" | "manifest",
-  ): string | null {
+  ): Promise<string | null> {
     assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
     assertSafeSegment(String(sequenceNumber), SAFE_SEQ_RE, "sequence number");
-    const outcome = loadVersionArtifacts(
+    this.canonicalRootGuard();
+    const outcome = await loadVersionArtifacts(
       this.canonicalRoot,
       listKey,
       sequenceNumber,
       DEFAULT_MAX_FILE_BYTES,
+      this.fs,
     );
     if (!outcome.artifacts) return null;
     switch (fileType) {
@@ -584,13 +801,15 @@ export class PublicationStore {
   }
 
   listKeys(): string[] {
-    if (!existsSync(this.canonicalRoot)) return [];
+    this.canonicalRootGuard();
+    if (!this.fs.existsSync(this.canonicalRoot)) return [];
     try {
-      if (lstatSync(this.canonicalRoot).isSymbolicLink()) return [];
+      if (this.fs.lstatSync(this.canonicalRoot).isSymbolicLink()) return [];
     } catch {
       return [];
     }
-    return readdirSync(this.canonicalRoot, { withFileTypes: true })
+    return this.fs
+      .readdirSync(this.canonicalRoot, { withFileTypes: true })
       .filter((d) => d.isDirectory() && !d.name.startsWith(".staging_"))
       .map((d) => d.name)
       .filter((n) => SAFE_KEY_RE.test(n))
@@ -609,7 +828,6 @@ export interface IndexVersionEntry {
   etsiSchemaValid: boolean;
   signerTrustStatus: string;
 }
-
 export interface IndexEntry {
   listKey: string;
   versions: IndexVersionEntry[];

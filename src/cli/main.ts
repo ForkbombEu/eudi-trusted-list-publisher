@@ -318,7 +318,7 @@ program
 
       const manifestJson = JSON.stringify(result.manifest, null, 2);
 
-      const storeResult = store.store(
+      const storeResult = await store.store(
         result,
         content,
         result.loteJson,

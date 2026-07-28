@@ -500,7 +500,10 @@ export function createWebServer(config: ServerConfig) {
     sendHtml(res, 200, html);
   }
 
-  function serveCatalogue(res: ServerResponse, s: PublicationStore): void {
+  async function serveCatalogue(
+    res: ServerResponse,
+    s: PublicationStore,
+  ): Promise<void> {
     try {
       const keys = s.listKeys();
       if (keys.length === 0) {
@@ -517,7 +520,7 @@ export function createWebServer(config: ServerConfig) {
 
       let rows = "";
       for (const key of keys) {
-        const index = s.loadIndex(key);
+        const index = await s.loadIndex(key);
         if (!index) continue;
         const latest = index.versions[index.versions.length - 1];
         if (!latest) continue;
@@ -550,13 +553,13 @@ export function createWebServer(config: ServerConfig) {
     }
   }
 
-  function serveListDetail(
+  async function serveListDetail(
     res: ServerResponse,
     s: PublicationStore,
     listKey: string,
-  ): void {
+  ): Promise<void> {
     try {
-      const index = s.loadIndex(listKey);
+      const index = await s.loadIndex(listKey);
       if (!index) {
         send404(res, `List "${listKey}" not found`);
         return;
@@ -592,20 +595,20 @@ export function createWebServer(config: ServerConfig) {
     }
   }
 
-  function serveVersionDetail(
+  async function serveVersionDetail(
     res: ServerResponse,
     s: PublicationStore,
     listKey: string,
     sequence: number,
-  ): void {
+  ): Promise<void> {
     try {
-      const manifest = s.loadManifest(listKey, sequence);
+      const manifest = await s.loadManifest(listKey, sequence);
       if (!manifest) {
         send404(res, `Version ${sequence} not found`);
         return;
       }
 
-      const loteData = s.loadVersionBytes(listKey, sequence, "lote");
+      const loteData = await s.loadVersionBytes(listKey, sequence, "lote");
       let entityRows = "";
       if (loteData) {
         try {
@@ -714,31 +717,39 @@ ${
     }
   }
 
-  function apiListKeys(res: ServerResponse, _req: IncomingMessage): void {
+  async function apiListKeys(
+    res: ServerResponse,
+    _req: IncomingMessage,
+  ): Promise<void> {
     try {
       const keys = store.listKeys();
-      const result = keys.map((key) => {
-        const index = store.loadIndex(key);
-        const latest = index?.versions.length
-          ? index.versions[index.versions.length - 1]
-          : null;
-        return {
-          listKey: key,
-          versionCount: index?.versions.length ?? 0,
-          latestSequenceNumber: latest?.sequenceNumber ?? null,
-          latestIssueDate: latest?.issueDate ?? null,
-          latestNextUpdate: latest?.nextUpdateDate ?? null,
-        };
-      });
+      const result = await Promise.all(
+        keys.map(async (key) => {
+          const index = await store.loadIndex(key);
+          const latest = index?.versions.length
+            ? index.versions[index.versions.length - 1]
+            : null;
+          return {
+            listKey: key,
+            versionCount: index?.versions.length ?? 0,
+            latestSequenceNumber: latest?.sequenceNumber ?? null,
+            latestIssueDate: latest?.issueDate ?? null,
+            latestNextUpdate: latest?.nextUpdateDate ?? null,
+          };
+        }),
+      );
       sendJson(res, 200, { lists: result }, "no-store");
     } catch {
       sendJson(res, 500, { error: "internal_error" });
     }
   }
 
-  function apiListDetail(res: ServerResponse, listKey: string): void {
+  async function apiListDetail(
+    res: ServerResponse,
+    listKey: string,
+  ): Promise<void> {
     try {
-      const index = store.loadIndex(listKey);
+      const index = await store.loadIndex(listKey);
       if (!index) {
         sendJson(res, 404, {
           error: "not_found",
@@ -752,13 +763,13 @@ ${
     }
   }
 
-  function apiVersionDetail(
+  async function apiVersionDetail(
     res: ServerResponse,
     listKey: string,
     sequence: number,
-  ): void {
+  ): Promise<void> {
     try {
-      const manifest = store.loadManifest(listKey, sequence);
+      const manifest = await store.loadManifest(listKey, sequence);
       if (!manifest) {
         sendJson(res, 404, {
           error: "not_found",
@@ -772,14 +783,14 @@ ${
     }
   }
 
-  function apiVersionFile(
+  async function apiVersionFile(
     res: ServerResponse,
     listKey: string,
     sequence: number,
     fileType: "lote" | "signature" | "manifest",
-  ): void {
+  ): Promise<void> {
     try {
-      const content = store.loadVersionBytes(listKey, sequence, fileType);
+      const content = await store.loadVersionBytes(listKey, sequence, fileType);
       if (content === null) {
         sendJson(res, 404, {
           error: "not_found",

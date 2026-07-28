@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PORT="${PORT:-8080}"
-HOST="${TLP_HOST:-127.0.0.1}"
+HOST="${TLP_HOST:-0.0.0.0}"
 PUB_DIR="${TLP_PUBLICATION_DIR:-./publications}"
 
 cd "$(dirname "$0")"
