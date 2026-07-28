@@ -155,7 +155,7 @@ export function walletProviderFormHtml(
     <p class="field-help">At least one service must be registered.</p>
 
     <div id="services-container">
-      ${serviceBlockHtml(0, v, errors)}
+      ${renderAllServices(v, errors)}
     </div>
     <button type="button" class="btn btn-sm" id="add-service-btn" style="margin-top:1rem;">+ Add Service</button>
   </div>
@@ -191,6 +191,26 @@ export function walletProviderFormHtml(
 })();
 </script>
 `;
+}
+
+function renderAllServices(
+  v: Record<string, string>,
+  errs?: Record<string, string>,
+): string {
+  const indices = new Set<number>();
+  for (const key of Object.keys(v)) {
+    const m = key.match(/^service\[(\d+)\]\./);
+    if (m) indices.add(parseInt(m[1]!, 10));
+  }
+  for (const key of Object.keys(errs ?? {})) {
+    const m = key.match(/^service\[(\d+)\]\./);
+    if (m) indices.add(parseInt(m[1]!, 10));
+  }
+  if (indices.size === 0) {
+    return serviceBlockHtml(0, v, errs);
+  }
+  const sorted = Array.from(indices).sort((a, b) => a - b);
+  return sorted.map((i) => serviceBlockHtml(i, v, errs)).join("");
 }
 
 function serviceBlockHtml(

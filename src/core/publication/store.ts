@@ -316,16 +316,45 @@ export async function loadVersionArtifacts(
   if (!storedManifest)
     return { artifacts: null, diagnostic: "manifest validation failed" };
 
-  // Extract x5c from JAdES header
+  // Extract x5c from JAdES header — mandatory for authentication
   let embeddedCertPem: string | null = null;
   try {
     const parts = jadesContent.split(".");
-    if (parts.length === 3 && parts[0]) {
-      const header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
-      embeddedCertPem = extractCertFromX5c(header["x5c"]);
+    if (parts.length !== 3 || !parts[0]) {
+      return {
+        artifacts: null,
+        diagnostic: "Compact JAdES is not a valid three-part serialization",
+      };
+    }
+    let header: unknown;
+    try {
+      header = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
+    } catch {
+      return { artifacts: null, diagnostic: "malformed protected header" };
+    }
+    if (
+      typeof header !== "object" ||
+      header === null ||
+      !Array.isArray((header as Record<string, unknown>)["x5c"]) ||
+      ((header as Record<string, unknown>)["x5c"] as unknown[]).length === 0
+    ) {
+      return {
+        artifacts: null,
+        diagnostic:
+          "Compact JAdES header is missing a valid x5c certificate chain",
+      };
+    }
+    embeddedCertPem = extractCertFromX5c(
+      (header as Record<string, unknown>)["x5c"],
+    );
+    if (!embeddedCertPem) {
+      return {
+        artifacts: null,
+        diagnostic: "x5c contains an unusable leaf certificate",
+      };
     }
   } catch {
-    /* continue without cert */
+    return { artifacts: null, diagnostic: "malformed protected header" };
   }
 
   // Parse the signed payload
@@ -359,8 +388,8 @@ export async function loadVersionArtifacts(
     };
   }
 
-  // Cryptographically verify the JAdES using the embedded x5c
-  if (embeddedCertPem) {
+  // Cryptographically verify the JAdES — mandatory, must have x5c by now
+  {
     const verifyResult = await verifyJades({
       compactJws: jadesContent,
       certificatePem: embeddedCertPem,
@@ -454,7 +483,7 @@ export async function loadVersionArtifacts(
       };
 
     // Cross-check certificate metadata
-    if (embeddedCertPem) {
+    {
       const signer = getSignerInfo(embeddedCertPem);
       if (storedManifest.signingCertificateSha256 !== signer.fingerprint)
         return {

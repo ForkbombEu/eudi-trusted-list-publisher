@@ -22,6 +22,8 @@ import {
   createApplicationRecord,
   type SubmissionParseResult,
 } from "./submission-parser.js";
+import type { AuthoringInput } from "../model/authoring.js";
+import type { ValidationFinding } from "../validate/validate.js";
 
 export type ServiceResult<T> =
   | { success: true; data: T; message?: string; warning?: string }
@@ -301,6 +303,71 @@ export class ApplicationService {
             ? e.message
             : "Publication failed";
       return { success: false, error: msg };
+    }
+  }
+
+  async preview(app: WalletProviderApplication): Promise<{
+    compilerInput: AuthoringInput | null;
+    compilerInputJson: string | null;
+    etsiValid: boolean | null;
+    etsiFindings: ValidationFinding[];
+    error?: string;
+  }> {
+    const listEntry = this.resolveListConfig(app);
+    if (!listEntry) {
+      return {
+        compilerInput: null,
+        compilerInputJson: null,
+        etsiValid: null,
+        etsiFindings: [],
+        error: `No signing configuration found for list key '${app.targetListKey}'.`,
+      };
+    }
+
+    try {
+      const now = new Date();
+      let nextSeq = 1;
+      const existingIndex = await this.publicationStore.loadIndex(
+        app.targetListKey,
+      );
+      if (existingIndex && existingIndex.versions.length > 0) {
+        nextSeq =
+          existingIndex.versions[existingIndex.versions.length - 1]!
+            .sequenceNumber + 1;
+      }
+
+      const input = normalizeToAuthoringInput(
+        app,
+        listEntry.schemeOperatorName,
+        listEntry.schemeName,
+        listEntry.schemeTerritory,
+        {
+          streetAddress: listEntry.schemeOperatorStreet,
+          country: listEntry.schemeOperatorCountry,
+        },
+        listEntry.schemeOperatorContactUri,
+        listEntry.distributionPointUri,
+        now.toISOString(),
+        new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+        nextSeq,
+      );
+      const compilerInputJson = JSON.stringify(input, null, 2);
+      const { document } = compile(input);
+      const etsiResult = await validateEtsiStruct(document);
+      return {
+        compilerInput: input,
+        compilerInputJson,
+        etsiValid: etsiResult.valid,
+        etsiFindings: etsiResult.findings,
+      };
+    } catch (e) {
+      return {
+        compilerInput: null,
+        compilerInputJson: null,
+        etsiValid: null,
+        etsiFindings: [],
+        error: e instanceof Error ? e.message : "Preview failed",
+      };
     }
   }
 

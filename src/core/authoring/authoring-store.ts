@@ -137,9 +137,69 @@ function isApplication(obj: unknown): obj is WalletProviderApplication {
   if (a.family !== "wallet-providers") return false;
   if (typeof a.targetListKey !== "string" || a.targetListKey.length === 0)
     return false;
-  if (typeof a.state !== "string") return false;
-  if (typeof a.submittedAt !== "string") return false;
-  if (typeof a.applicantData !== "object" || a.applicantData === null)
+  const allowedStates = ["submitted", "approved", "rejected", "published"];
+  if (typeof a.state !== "string" || !allowedStates.includes(a.state))
+    return false;
+  if (typeof a.submittedAt !== "string" || isNaN(Date.parse(a.submittedAt)))
+    return false;
+  if (!isValidApplicantData(a.applicantData)) return false;
+  if (a.state === "published" && a.publication !== undefined) {
+    if (typeof a.publication !== "object" || a.publication === null)
+      return false;
+    const p = a.publication as Record<string, unknown>;
+    if (
+      typeof p.listKey !== "string" ||
+      typeof p.sequenceNumber !== "number" ||
+      typeof p.compactJadesSha256 !== "string" ||
+      typeof p.publicationTimestamp !== "string"
+    )
+      return false;
+  }
+  return true;
+}
+
+function isValidApplicantData(data: unknown): boolean {
+  if (typeof data !== "object" || data === null) return false;
+  const d = data as Record<string, unknown>;
+  if (typeof d.entityName !== "string" || !d.entityName.trim()) return false;
+  if (
+    typeof d.entityStreetAddress !== "string" ||
+    !d.entityStreetAddress.trim()
+  )
+    return false;
+  if (
+    typeof d.entityCountry !== "string" ||
+    !/^[A-Z]{2}$/.test(d.entityCountry)
+  )
+    return false;
+  if (
+    typeof d.entityInformationURI !== "string" ||
+    !d.entityInformationURI.trim()
+  )
+    return false;
+  if (!Array.isArray(d.services) || d.services.length === 0) return false;
+  for (const svc of d.services) {
+    if (!isValidService(svc)) return false;
+  }
+  return true;
+}
+
+function isValidService(svc: unknown): boolean {
+  if (typeof svc !== "object" || svc === null) return false;
+  const s = svc as Record<string, unknown>;
+  if (!["issuance", "revocation"].includes(s.serviceType as string))
+    return false;
+  if (typeof s.serviceName !== "string" || !(s.serviceName as string).trim())
+    return false;
+  if (
+    typeof s.certificatePem !== "string" ||
+    !(s.certificatePem as string).trim()
+  )
+    return false;
+  if (
+    typeof s.serviceUniqueIdentifier !== "string" ||
+    !(s.serviceUniqueIdentifier as string).trim()
+  )
     return false;
   return true;
 }

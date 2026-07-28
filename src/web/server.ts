@@ -1037,53 +1037,17 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
             | undefined;
           let compilerInputJson: string | undefined;
 
-          try {
-            const { compile } = await import("../core/compile/compile.js");
-            const { validateEtsiStruct } =
-              await import("../core/validate/validate.js");
-            const { normalizeToAuthoringInput } =
-              await import("../core/authoring/application-model.js");
-
-            const listEntry = signingConfig
-              ? (
-                  await import("../core/authoring/signing-config.js")
-                ).findSigningConfig(signingConfig, app.targetListKey)
-              : undefined;
-
-            if (listEntry) {
-              const now = new Date();
-              let nextSeq = 1;
-              const existingIndex = await store.loadIndex(app.targetListKey);
-              if (existingIndex && existingIndex.versions.length > 0) {
-                nextSeq =
-                  existingIndex.versions[existingIndex.versions.length - 1]!
-                    .sequenceNumber + 1;
-              }
-
-              const input = normalizeToAuthoringInput(
-                app,
-                listEntry.schemeOperatorName,
-                listEntry.schemeName,
-                listEntry.schemeTerritory,
-                {
-                  streetAddress: listEntry.schemeOperatorStreet,
-                  country: listEntry.schemeOperatorCountry,
-                },
-                listEntry.schemeOperatorContactUri,
-                listEntry.distributionPointUri,
-                now.toISOString(),
-                new Date(
-                  now.getTime() + 180 * 24 * 60 * 60 * 1000,
-                ).toISOString(),
-                nextSeq,
-              );
-              compilerInputJson = JSON.stringify(input, null, 2);
-              const { document } = compile(input);
-              const es = await validateEtsiStruct(document);
-              etsiStatus = { valid: es.valid, findings: es.findings };
+          if (appService) {
+            const previewResult = await appService.preview(app);
+            if (previewResult.compilerInputJson) {
+              compilerInputJson = previewResult.compilerInputJson;
             }
-          } catch {
-            /* inline preview may fail, still show the page */
+            if (previewResult.etsiValid !== null) {
+              etsiStatus = {
+                valid: previewResult.etsiValid,
+                findings: previewResult.etsiFindings,
+              };
+            }
           }
 
           sendHtml(
