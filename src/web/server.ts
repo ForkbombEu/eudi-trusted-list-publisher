@@ -279,6 +279,65 @@ export function getApiRoutes(): ReadonlyArray<ApiRoute> {
   return API_ROUTES;
 }
 
+export interface RouteParityError {
+  kind: "unimplemented" | "undocumented" | "wrong_method";
+  detail: string;
+}
+
+const ALL_HTTP_METHODS = new Set([
+  "GET",
+  "HEAD",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "OPTIONS",
+]);
+
+export function checkApiRouteParity(
+  registry: ReadonlyArray<{ method: string; path: string }>,
+  spec: { paths?: Record<string, unknown> },
+): RouteParityError[] {
+  const errors: RouteParityError[] = [];
+  const implSet = new Set(registry.map((r) => `${r.method} ${r.path}`));
+  const docPaths = spec.paths ?? {};
+
+  for (const route of registry) {
+    const opPath = route.path;
+    if (!docPaths[opPath]) {
+      errors.push({
+        kind: "undocumented",
+        detail: `implemented ${route.method} ${opPath} not found in OpenAPI`,
+      });
+      continue;
+    }
+    const docMethods = docPaths[opPath] as Record<string, unknown>;
+    if (!docMethods[route.method.toLowerCase()]) {
+      errors.push({
+        kind: "wrong_method",
+        detail: `implemented ${route.method} ${opPath} documented under different method`,
+      });
+    }
+  }
+
+  for (const [docPath, docMethodsObj] of Object.entries(docPaths)) {
+    const docMethods = docMethodsObj as Record<string, unknown>;
+    for (const m of Object.keys(docMethods)) {
+      const upper = m.toUpperCase();
+      if (!ALL_HTTP_METHODS.has(upper)) continue;
+      const key = `${upper} ${docPath}`;
+      if (!implSet.has(key)) {
+        errors.push({
+          kind: "unimplemented",
+          detail: `documented ${upper} ${docPath} not in implemented registry`,
+        });
+      }
+    }
+  }
+
+  return errors;
+}
+
 export function createWebServer(config: ServerConfig) {
   const assetsDir = config.assetsDir
     ? resolve(config.assetsDir)
