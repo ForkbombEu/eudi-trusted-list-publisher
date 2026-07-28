@@ -178,8 +178,8 @@ export function walletProviderFormHtml(
 
 <script>
 (function() {
-  var existing = document.querySelectorAll("#services-container .service-block").length;
-  var nextIdx = existing > 0 ? existing : 1;
+  var initialNext = ${computeNextServiceIndex(v)};
+  var nextIdx = initialNext;
   document.getElementById("add-service-btn").onclick = function() {
     var template = document.createElement("template");
     template.innerHTML = ${JSON.stringify(serviceBlockHtml(-1, {}, {}))};
@@ -276,3 +276,14 @@ function escape(s: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+function computeNextServiceIndex(v: Record<string, string>): number {
+  let max = -1;
+  for (const key of Object.keys(v)) {
+    const m = key.match(/^service\[(\d+)\]\./);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  return Math.max(0, max + 1);
+}
+
+export { computeNextServiceIndex };

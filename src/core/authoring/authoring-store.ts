@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { resolve, sep } from "node:path";
 import { randomUUID, randomBytes } from "node:crypto";
+import { X509Certificate } from "node:crypto";
 import type { WalletProviderApplication } from "./application-model.js";
 import { APPLICATION_SCHEMA_VERSION } from "./application-model.js";
 
@@ -205,10 +206,15 @@ function validateApplication(
   if (state === "published") {
     if (!isIsoString(app.approvedAt as string))
       return { valid: false, reason: "published without valid approvedAt" };
-    if (!isValidPublication(app.publication))
+    if (app.rejectedAt !== undefined)
+      return { valid: false, reason: "published with rejectedAt" };
+    if (app.adminNote !== undefined)
+      return { valid: false, reason: "published with adminNote" };
+    if (!isValidPublication(app))
       return {
         valid: false,
-        reason: "published without complete publication metadata",
+        reason:
+          "published without complete publication metadata or listKey mismatch",
       };
   }
 
@@ -217,23 +223,38 @@ function validateApplication(
 
 function isIsoString(s: unknown): boolean {
   if (typeof s !== "string") return false;
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(s);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(s)) return false;
+  const d = new Date(s);
+  return !isNaN(d.getTime());
 }
 
-function isValidPublication(pub: unknown): boolean {
+function isValidUri(s: string): boolean {
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isValidPublication(app: Record<string, unknown>): boolean {
+  const pub = app.publication;
   if (typeof pub !== "object" || pub === null) return false;
   const p = pub as Record<string, unknown>;
   if (typeof p.listKey !== "string" || !p.listKey.trim()) return false;
-  if (typeof p.sequenceNumber !== "number" || p.sequenceNumber < 1)
-    return false;
+  if (p.listKey !== app.targetListKey) return false;
   if (
-    typeof p.manifestSha256 !== "string" ||
-    !/^[0-9a-f]{64}$/.test(p.manifestSha256)
+    typeof p.sequenceNumber !== "number" ||
+    p.sequenceNumber < 1 ||
+    !Number.isInteger(p.sequenceNumber)
   )
+    return false;
+  const shaRe = /^[0-9a-f]{64}$/;
+  if (typeof p.manifestSha256 !== "string" || !shaRe.test(p.manifestSha256))
     return false;
   if (
     typeof p.compactJadesSha256 !== "string" ||
-    !/^[0-9a-f]{64}$/.test(p.compactJadesSha256)
+    !shaRe.test(p.compactJadesSha256)
   )
     return false;
   if (
@@ -260,9 +281,20 @@ function isValidApplicantData(data: unknown): boolean {
     return false;
   if (
     typeof d.entityInformationURI !== "string" ||
-    !d.entityInformationURI.trim()
+    !isValidUri(d.entityInformationURI)
   )
     return false;
+
+  if (d.entityTradeName !== undefined) {
+    if (typeof d.entityTradeName !== "string") return false;
+  }
+  if (d.entityLocality !== undefined) {
+    if (typeof d.entityLocality !== "string") return false;
+  }
+  if (d.entityPostalCode !== undefined) {
+    if (typeof d.entityPostalCode !== "string") return false;
+  }
+
   if (!Array.isArray(d.services) || d.services.length === 0) return false;
   for (const svc of d.services) {
     if (!isValidService(svc)) return false;
@@ -275,18 +307,22 @@ function isValidService(svc: unknown): boolean {
   const s = svc as Record<string, unknown>;
   if (!["issuance", "revocation"].includes(s.serviceType as string))
     return false;
-  if (typeof s.serviceName !== "string" || !(s.serviceName as string).trim())
+  if (typeof s.serviceName !== "string" || !s.serviceName.trim()) return false;
+  if (typeof s.certificatePem !== "string" || !s.certificatePem.trim())
     return false;
-  if (
-    typeof s.certificatePem !== "string" ||
-    !(s.certificatePem as string).trim()
-  )
+  try {
+    new X509Certificate(s.certificatePem);
+  } catch {
     return false;
+  }
   if (
     typeof s.serviceUniqueIdentifier !== "string" ||
-    !(s.serviceUniqueIdentifier as string).trim()
+    !isValidUri(s.serviceUniqueIdentifier)
   )
     return false;
+  if (s.serviceSupplyPoints !== undefined) {
+    if (!Array.isArray(s.serviceSupplyPoints)) return false;
+  }
   return true;
 }
 

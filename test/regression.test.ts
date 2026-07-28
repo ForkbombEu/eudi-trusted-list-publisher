@@ -1385,8 +1385,7 @@ describe("Authoritative store validation", () => {
           {
             serviceType: "issuance",
             serviceName: "Svc",
-            certificatePem:
-              "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----",
+            certificatePem: testCertPem,
             serviceUniqueIdentifier: "https://svc.example",
           },
         ],
