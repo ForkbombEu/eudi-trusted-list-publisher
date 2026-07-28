@@ -1,0 +1,34 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.secret
+
+# Dependencies and build output
+node_modules/
+vendor/
+bin/
+build/
+dist/
+out/
+.cache/
+coverage/
+
+# Logs and local data
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Editor and operating system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
