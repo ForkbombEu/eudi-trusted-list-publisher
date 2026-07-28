@@ -49,6 +49,7 @@ must never be committed or uploaded through a public web interface.
 - **ajv** (^8.x): JSON Schema validation (vendor schemas, no network fetch)
 - **jose** (^5.x): JOSE/JWS signing and verification
 - **commander** (^12.x): CLI argument parsing
+- **ajv-formats** (^3.x): JSON Schema format validation (date-time, uri)
 
 ### Dev dependencies
 
@@ -83,21 +84,24 @@ CLI -> exported publisher core
 ```
 src/
   core/
-    model/           — TypeScript types for LoTE data model
+    model/            — TypeScript types for LoTE data model
     profiles/
       wallet-provider/ — Wallet Provider profile types and constants
-    compile/         — Compile authoring input -> LoTE
-    validate/        — Schema validation (authoring + ETSI)
-    signing/         — JAdES Compact signing
-    verification/    — JAdES Compact verification
-  cli/               — CLI commands and entry point
+    compile/          — Compile authoring input -> LoTE
+    validate/         — Schema validation (authoring + ETSI)
+    signing/          — JAdES Compact signing
+    verification/     — JAdES Compact verification
+    publication/      — Manifest generation and immutable filesystem store
+  cli/                — CLI commands and entry point
+  web/                — Read-only web server and HTML rendering
+    assets/           — Runtime copies of HITL design assets + app.css + OpenAPI
 schemas/
-  etsi/              — Vendored ETSI JSON schemas
-  authoring/         — Authoring input JSON schema
+  etsi/               — Vendored ETSI JSON schemas
+  authoring/          — Authoring input JSON schema
 examples/
-  wallet-provider/   — Example Wallet Provider input files
+  wallet-provider/    — Example Wallet Provider input files
 test/
-  fixtures/          — Test keys, certs, and WE BUILD fixtures
+  fixtures/           — Test keys, certs
 ```
 
 ## CLI, web, and API interfaces
@@ -109,6 +113,8 @@ trusted-list-publisher compile  — produce unsigned deterministic LoTE
 trusted-list-publisher validate — validate authoring input and ETSI structure
 trusted-list-publisher sign     — sign a compiled LoTE
 trusted-list-publisher verify   — verify a signed LoTE
+trusted-list-publisher publish  — verify + store signed LoTE immutably
+trusted-list-publisher serve    — start read-only publication web server
 ```
 
 ### CLI design
@@ -162,3 +168,95 @@ Not implemented in this slice.
 - No private keys committed
 - No pushing without explicit approval
 - Conventional Commits with `reason` and `prompt`
+
+## Publication store
+
+### Architecture
+
+Immutable filesystem store under a configurable publication root (`--publication-dir`):
+
+```
+publications/
+  <safe-list-key>/
+    index.json
+    versions/
+      <sequence-number>/
+        lote.json
+        lote.jades
+        manifest.json
+```
+
+### Trust boundary
+
+- `publish` requires an expected certificate (`--cert-file`)
+- Cryptographic signature validity (`signatureValid`) is distinct from trust (`signerTrustStatus`)
+- `signerTrustStatus` is always `"not_evaluated"`
+- No `trusted: true` result is ever exposed
+- Signer described by certificate subject, issuer, validity, and SHA-256 fingerprint
+
+### Manifest
+
+Each version includes a machine-readable `manifest.json` with:
+- manifest version, list key, LoTE identifier, sequence number
+- Issue/next-update dates, LoTE type, scheme operator, territory
+- Publication timestamp, SHA-256 of .jades and .json artifacts
+- Signing certificate SHA-256, subject, issuer, validity
+- `signatureValid`, `etsiSchemaValid`, `signerTrustStatus`
+
+## Web server
+
+### Architecture
+
+Read-only `node:http` server. No framework. Separated from the core library.
+
+```
+CLI -> exported publisher core
+          ^
+          |
+       web server (read-only HTTP adapter)
+```
+
+### Security
+
+- No signing, no private keys, no certificate uploads
+- No POST/PUT/PATCH/DELETE
+- No modification of the publication directory
+- No network fetches
+- HTML escaping, route validation, path traversal protection
+- Security headers: X-Content-Type-Options, X-Frame-Options, Referrer-Policy
+- Request IDs, structured logging, graceful shutdown
+- No stack traces in responses
+
+### Routes
+
+```
+GET /                                 — Catalogue
+GET /lists/:listKey                   — List detail
+GET /lists/:listKey/versions/:seq     — Version detail
+GET /healthz                          — Health check
+GET /docs                             — Stoplight Elements
+GET /openapi.yaml                     — OpenAPI 3.1 source
+GET /openapi.json                     — OpenAPI 3.1 derived
+GET /favicon.svg                      — Credimi favicon
+GET /api/v1/lists                     — List catalogue (JSON)
+GET /api/v1/lists/:listKey            — List index (JSON)
+GET /api/v1/lists/:listKey/versions/:seq     — Version manifest (JSON)
+GET /api/v1/lists/:listKey/versions/:seq/lote       — LoTE JSON download
+GET /api/v1/lists/:listKey/versions/:seq/signature   — JAdES download
+GET /api/v1/lists/:listKey/versions/:seq/manifest    — Manifest download
+```
+
+### OpenAPI
+
+One authoritative YAML document at `src/web/assets/openapi.yaml`. JSON derived.
+Stoplight Elements pinned at v7.15.0.
+
+### Runtime asset locations
+
+```
+src/web/assets/style.css              — byte-for-byte copy of HITL/style.css
+src/web/assets/credimi_logo.svg       — byte-for-byte copy of HITL/credimi_logo.svg
+src/web/assets/credimi_logo_negative.svg — byte-for-byte copy of HITL/credimi_logo_negative.svg
+src/web/assets/app.css                — application-specific layout
+src/web/assets/openapi.yaml           — OpenAPI 3.1 specification
+```

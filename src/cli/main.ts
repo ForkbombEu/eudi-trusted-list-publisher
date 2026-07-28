@@ -11,6 +11,8 @@ import {
   serializeCompactJAdES,
   serializeSignedLoTE,
   verify,
+  publish,
+  PublicationStore,
 } from "../core/index.js";
 import type { AuthoringInput, LoTEDocument } from "../core/index.js";
 
@@ -287,6 +289,147 @@ program
         message: e instanceof Error ? e.message : "Unknown error",
       });
     }
+  });
+
+program
+  .command("publish")
+  .description("Publish a signed LoTE to the immutable publication store")
+  .requiredOption("-i, --input <path>", "Compact JAdES signed LoTE file")
+  .requiredOption("-c, --cert-file <path>", "Expected signer certificate PEM")
+  .option(
+    "--publication-dir <path>",
+    "Publication root directory",
+    "./publications",
+  )
+  .action(async (options) => {
+    try {
+      const content = readFileSync(options.input, "utf-8").trim();
+
+      // Reject WE BUILD detached format
+      if (content.startsWith("{")) {
+        const obj = JSON.parse(content);
+        if (obj.signature?.protected && obj.signature?.signature) {
+          exitWithDiagnostic(1, {
+            status: "error",
+            message:
+              "WE BUILD detached format is not supported. Use Compact JAdES serialization (header.payload.signature).",
+          });
+        }
+      }
+
+      const compactJws = content;
+      const certPem = readFileSync(options.certFile, "utf-8");
+
+      const result = await publish({ compactJws, certificatePem: certPem });
+
+      const store = new PublicationStore({
+        publicationDir: options.publicationDir,
+      });
+
+      const loteJson = JSON.stringify(
+        JSON.parse(
+          new TextDecoder().decode(
+            Buffer.from(compactJws.split(".")[1]!, "base64url"),
+          ),
+        ),
+        null,
+        2,
+      );
+      const manifestJson = JSON.stringify(result.manifest, null, 2);
+
+      store.store(result, compactJws, loteJson, manifestJson);
+
+      const diag = {
+        status: "published",
+        listKey: result.listKey,
+        sequenceNumber: result.sequenceNumber,
+        signatureValid: result.manifest.signatureValid,
+        etsiSchemaValid: result.manifest.etsiSchemaValid,
+        signerTrustStatus: result.manifest.signerTrustStatus,
+        compactJadesSha256: result.manifest.compactJadesSha256,
+        signingCertificateSha256: result.manifest.signingCertificateSha256,
+      };
+      process.stderr.write(JSON.stringify(diag) + "\n");
+      process.stdout.write(
+        JSON.stringify(
+          {
+            status: "ok",
+            listKey: result.listKey,
+            sequenceNumber: result.sequenceNumber,
+            signatureValid: result.manifest.signatureValid,
+            etsiSchemaValid: result.manifest.etsiSchemaValid,
+            signerTrustStatus: result.manifest.signerTrustStatus,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    } catch (e) {
+      exitWithDiagnostic(1, {
+        status: "error",
+        message: e instanceof Error ? e.message : "Unknown error",
+      });
+    }
+  });
+
+program
+  .command("serve")
+  .description("Start the read-only publication web server")
+  .option(
+    "--publication-dir <path>",
+    "Publication root directory",
+    "./publications",
+  )
+  .option("--host <host>", "Bind address", "127.0.0.1")
+  .option("--port <port>", "Bind port", "8080")
+  .action(async (options) => {
+    const { createWebServer } = await import("../web/server.js");
+
+    const host = options.host || process.env["TLP_HOST"] || "127.0.0.1";
+    const port = parseInt(
+      options.port || process.env["TLP_PORT"] || "8080",
+      10,
+    );
+
+    const server = createWebServer({
+      publicationDir: options.publicationDir,
+      host,
+      port,
+    });
+
+    server.listen(port, host, () => {
+      const addr = server.address();
+      const bindAddr =
+        typeof addr === "object" && addr
+          ? `${addr.address}:${addr.port}`
+          : `${host}:${port}`;
+      process.stderr.write(
+        JSON.stringify({ status: "listening", address: bindAddr }) + "\n",
+      );
+
+      // Console signature
+      console.log(
+        "%cCredimi %cTrusted List Publisher %c\u00A0",
+        "color: #2563eb; font-weight: bold; font-size: 1.2em;",
+        "color: #1e293b; font-weight: normal;",
+        "",
+      );
+      console.log(
+        `%cread-only publication viewer \u2014 ${bindAddr}`,
+        "color: #64748b;",
+      );
+      console.log("%csigner trust: not evaluated", "color: #d97706;");
+    });
+
+    const shutdown = () => {
+      process.stderr.write(JSON.stringify({ status: "shutting_down" }) + "\n");
+      server.close(() => {
+        process.exit(0);
+      });
+    };
+
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   });
 
 program.parse();

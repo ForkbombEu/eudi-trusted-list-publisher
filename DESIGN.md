@@ -22,3 +22,17 @@ original. Do not generate PNG or ICO logo variants.
 The chosen stack determines the runtime asset locations. Record those locations
 in the derived project's `SPECS.md`; this template intentionally does not
 prescribe paths.
+
+## Project asset locations
+
+Runtime copies installed under `src/web/assets/`:
+
+| Asset | Runtime path | Canonical source |
+|-------|-------------|------------------|
+| `style.css` | `src/web/assets/style.css` | `HITL/style.css` |
+| `credimi_logo.svg` | `src/web/assets/credimi_logo.svg` | `HITL/credimi_logo.svg` |
+| `credimi_logo_negative.svg` | `src/web/assets/credimi_logo_negative.svg` | `HITL/credimi_logo_negative.svg` |
+
+All three files are byte-for-byte identical to their HITL sources (verified by test).
+Application CSS (`src/web/assets/app.css`) loads after `style.css` and provides
+page-specific layout only; it does not redefine shared design foundation.

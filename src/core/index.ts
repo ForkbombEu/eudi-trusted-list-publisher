@@ -50,3 +50,16 @@ export {
   LOTE_VERSION_IDENTIFIER,
   MAX_NEXT_UPDATE_MONTHS,
 } from "./profiles/wallet-provider/constants.js";
+export {
+  publish,
+  type PublicationInput,
+  type PublicationResult,
+  type Manifest,
+  type SignerInfo,
+} from "./publication/manifest.js";
+export {
+  PublicationStore,
+  type StoreConfig,
+  type IndexEntry,
+  type IndexVersionEntry,
+} from "./publication/store.js";

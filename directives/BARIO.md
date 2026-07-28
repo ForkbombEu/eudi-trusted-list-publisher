@@ -355,6 +355,127 @@ must be clean or explained.
 
 ---
 
+## Rolling Task Handoffs
+
+Every coding task MUST maintain a repository-local rolling handoff.
+
+Handoffs exist so another agent can continue safely from a fresh session
+without access to chat history, terminal scrollback, or the previous agent's
+context.
+
+### Location And Git Hygiene
+
+Handoffs MUST be written under:
+
+```text
+./handoffs/
+```
+
+The root `.gitignore` MUST contain:
+
+```gitignore
+/handoffs/
+```
+
+Handoffs are local operational records. They MUST NOT be staged, committed, or
+included in release artifacts.
+
+If `./handoffs/` is not ignored:
+
+→ add `/handoffs/` to the root `.gitignore` before creating a handoff
+
+→ verify with `git check-ignore handoffs/<handoff-file>.md`
+
+### Lifecycle
+
+Near the start of a task, after reading required governance and inspecting the
+repository state, the agent MUST:
+
+1. read the newest relevant handoff, if one exists
+2. create or update the current task's handoff
+3. set its status to `in_progress`
+4. record the prompt that initiated the task
+
+Do NOT postpone the first handoff write until the task is complete.
+
+Use one file per task and update it in place. Name new files:
+
+```text
+YYYYMMDDTHHMMSSZ_<short-task-slug>.md
+```
+
+Use a UTC timestamp. Keep the same file when continuing the same objective.
+Create a new file when starting a materially different objective.
+
+The handoff MUST be refreshed:
+
+- after each coherent implementation phase
+- after an important decision or discovery
+- after a failure that changes the working hypothesis
+- before a long-running command or background wait
+- before an expected context compaction or session handover
+- before committing
+- immediately before the final response
+
+The handoff MUST describe the repository state that actually exists when it is
+written. Plans and intended changes MUST NOT be reported as completed work.
+
+### Required Contents
+
+Every handoff MUST contain:
+
+1. task title and current status: `in_progress`, `blocked`,
+   `needs_human_review`, or `complete`
+2. the initiating prompt verbatim, plus material follow-up instructions
+3. objective, scope, and explicit non-goals
+4. completed work
+5. decisions made and their rationale
+6. changed-file inventory, grouped by purpose
+7. decisive commands and results, including exact test counts where available
+8. failures, rejected hypotheses, blockers, and unresolved issues
+9. current branch and `HEAD`
+10. current `git diff --stat` and `git status --short`
+11. commit hashes created during the task, if any
+12. the exact safest next action or command
+
+If the task produces many generated artifacts, list each output directory once
+and summarize its contents. Do NOT enumerate hundreds of files.
+
+The handoff MUST contain enough concrete paths, commands, decisions, and current
+state for a new agent to continue without replaying the transcript.
+
+### Authority And Completion
+
+A handoff records state and continuity. It does NOT override:
+
+- the current user prompt
+- `BARIO.md`
+- `STANDARDS.md`
+- `SPECS.md`
+- `DESIGN.md`
+- human-approved decisions
+
+If a handoff conflicts with current repository state, record the discrepancy
+and trust the verified repository state.
+
+Before finishing, the agent MUST:
+
+1. update the handoff with final status and verification results
+2. confirm the file exists under `./handoffs/`
+3. confirm Git ignores it
+4. print the handoff path in the final response
+5. stop without starting a new task or proposed next phase
+
+Printing a handoff only to the terminal or final response:
+
+→ FAILURE
+
+Starting a new phase without an explicit user request:
+
+→ FAILURE
+
+---
+
 ## Engineering Style
 
 Prefer:

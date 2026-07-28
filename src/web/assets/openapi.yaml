@@ -1,0 +1,223 @@
+openapi: "3.1.0"
+info:
+  title: EUDI Trusted List Publisher API
+  description: Read-only API for published TS 119 602 JSON Wallet Provider LoTEs.
+  version: "0.1.0"
+  contact:
+    name: Credimi
+    url: https://github.com/ForkbombEu/eudi-trusted-list-publisher
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+paths:
+  /api/v1/lists:
+    get:
+      summary: List all published lists
+      operationId: listLists
+      responses:
+        "200":
+          description: Array of published list summaries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lists:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ListSummary"
+  /api/v1/lists/{listKey}:
+    get:
+      summary: Get list index
+      operationId: getList
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List index with all versions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndexEntry"
+        "404":
+          description: List not found
+  /api/v1/lists/{listKey}/versions/{sequence}:
+    get:
+      summary: Get version manifest
+      operationId: getVersion
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Version manifest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Manifest"
+        "404":
+          description: Version not found
+  /api/v1/lists/{listKey}/versions/{sequence}/lote:
+    get:
+      summary: Download decoded LoTE JSON
+      operationId: getLoteJson
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: LoTE JSON artifact
+          content:
+            application/json: {}
+  /api/v1/lists/{listKey}/versions/{sequence}/signature:
+    get:
+      summary: Download Compact JAdES signature artifact
+      operationId: getSignature
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Compact JAdES artifact
+          content:
+            application/octet-stream: {}
+  /api/v1/lists/{listKey}/versions/{sequence}/manifest:
+    get:
+      summary: Download publication manifest
+      operationId: getManifest
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Publication manifest JSON
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Manifest"
+components:
+  schemas:
+    ListSummary:
+      type: object
+      properties:
+        listKey:
+          type: string
+        versionCount:
+          type: integer
+        latestSequenceNumber:
+          type: integer
+        latestIssueDate:
+          type: string
+        latestNextUpdate:
+          type: string
+    IndexEntry:
+      type: object
+      properties:
+        listKey:
+          type: string
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/IndexVersionEntry"
+    IndexVersionEntry:
+      type: object
+      properties:
+        sequenceNumber:
+          type: integer
+        issueDate:
+          type: string
+        nextUpdateDate:
+          type: string
+        publicationTimestamp:
+          type: string
+        compactJadesSha256:
+          type: string
+        loteJsonSha256:
+          type: string
+        signatureValid:
+          type: boolean
+        etsiSchemaValid:
+          type: boolean
+        signerTrustStatus:
+          type: string
+    Manifest:
+      type: object
+      properties:
+        manifestVersion:
+          type: integer
+        listKey:
+          type: string
+        loteIdentifier:
+          type: string
+        sequenceNumber:
+          type: integer
+        issueDate:
+          type: string
+        nextUpdateDate:
+          type: string
+        loteType:
+          type: string
+        schemeOperatorName:
+          type: string
+        territory:
+          type: string
+        publicationTimestamp:
+          type: string
+        compactJadesSha256:
+          type: string
+        loteJsonSha256:
+          type: string
+        signingCertificateSha256:
+          type: string
+        certificateSubject:
+          type: string
+        certificateIssuer:
+          type: string
+        certificateValidFrom:
+          type: string
+        certificateValidTo:
+          type: string
+        signatureValid:
+          type: boolean
+        etsiSchemaValid:
+          type: boolean
+        signerTrustStatus:
+          type: string
+  securitySchemes: {}
+security: []

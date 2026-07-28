@@ -1,0 +1,73 @@
+.trust-notice {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+  border-radius: 4px;
+}
+
+.catalogue-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+.catalogue-table th,
+.catalogue-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+.catalogue-table th {
+  background: #f5f5f5;
+  font-weight: 600;
+}
+
+.kv-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.kv-table th {
+  text-align: left;
+  width: 200px;
+  padding: 0.35rem 0.5rem;
+  color: #555;
+  font-weight: 600;
+  vertical-align: top;
+}
+
+.kv-table td {
+  padding: 0.35rem 0.5rem;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 1.25rem;
+  margin: 1rem 0;
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+.api-docs {
+  max-width: 100%;
+}
+
+.logo-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.product-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
