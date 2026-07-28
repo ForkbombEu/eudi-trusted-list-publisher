@@ -104,6 +104,7 @@ export class ApplicationService {
     app.state = "rejected";
     app.rejectedAt = new Date().toISOString();
     app.adminNote = trimmed;
+    app.approvedAt = undefined;
     this.authoringStore.save(app);
     return { success: true, data: app };
   }
@@ -187,6 +188,7 @@ export class ApplicationService {
 
   async publishApplication(
     id: string,
+    clock?: Date,
   ): Promise<ServiceResult<WalletProviderApplication>> {
     const app = this.getApplication(id);
     if (!app) return { success: false, error: "Application not found." };
@@ -212,7 +214,7 @@ export class ApplicationService {
       };
     }
 
-    const prepare = await this.preparePublishInput(app);
+    const prepare = await this.preparePublishInput(app, clock);
     if (!prepare.success) {
       return { success: false, error: prepare.error };
     }
@@ -314,14 +316,17 @@ export class ApplicationService {
     }
   }
 
-  async preview(app: WalletProviderApplication): Promise<{
+  async preview(
+    app: WalletProviderApplication,
+    clock?: Date,
+  ): Promise<{
     compilerInput: AuthoringInput | null;
     compilerInputJson: string | null;
     etsiValid: boolean | null;
     etsiFindings: ValidationFinding[];
     error?: string;
   }> {
-    const prepare = await this.preparePublishInput(app);
+    const prepare = await this.preparePublishInput(app, clock);
     if (!prepare.success) {
       return {
         compilerInput: null,

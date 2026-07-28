@@ -1981,3 +1981,364 @@ describe("Multi-service form indexes", () => {
     expect(idx3).toBe(0);
   });
 });
+
+// ============================================================
+// 16. Save boundary validation
+// ============================================================
+describe("Save boundary validation", () => {
+  it("save() rejects malformed certificate and creates no file", async () => {
+    const authDir = tmpDir();
+    const store = new AuthoringStore({ authoringDir: authDir });
+    const id = store.createId();
+    try {
+      const app: any = {
+        id,
+        schemaVersion: 1,
+        family: "wallet-providers",
+        targetListKey: "eu_test",
+        state: "submitted",
+        submittedAt: "2026-01-01T00:00:00Z",
+        applicantData: {
+          entityName: "Corp",
+          entityStreetAddress: "123 St",
+          entityCountry: "IT",
+          entityInformationURI: "https://x.example",
+          services: [
+            {
+              serviceType: "issuance",
+              serviceName: "Svc",
+              certificatePem: "not-a-valid-cert",
+              serviceUniqueIdentifier: "https://svc.example",
+            },
+          ],
+        },
+      };
+      expect(() => store.save(app)).toThrow();
+      // No file created
+      const filePath = resolve(authDir, `${id}.json`);
+      expect(existsSync(filePath)).toBe(false);
+    } finally {
+      try {
+        rmSync(authDir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+});
+
+// ============================================================
+// 17. Rejected lifecycle (no approvedAt)
+// ============================================================
+describe("Rejected lifecycle", () => {
+  it("load rejects rejected record with approvedAt present", async () => {
+    const authDir = tmpDir();
+    const store = new AuthoringStore({ authoringDir: authDir });
+    const id = randomUUID();
+    try {
+      const app: any = {
+        id,
+        schemaVersion: 1,
+        family: "wallet-providers",
+        targetListKey: "eu_test",
+        state: "rejected",
+        submittedAt: "2026-01-01T00:00:00Z",
+        approvedAt: "2026-02-01T00:00:00Z",
+        rejectedAt: "2026-03-01T00:00:00Z",
+        adminNote: "bad app",
+        applicantData: {
+          entityName: "Corp",
+          entityStreetAddress: "123 St",
+          entityCountry: "IT",
+          entityInformationURI: "https://x.example",
+          services: [
+            {
+              serviceType: "issuance",
+              serviceName: "Svc",
+              certificatePem: testCertPem,
+              serviceUniqueIdentifier: "https://svc.example",
+            },
+          ],
+        },
+      };
+      const p = resolve(authDir, `${id}.json`);
+      writeFileSync(p, JSON.stringify(app, null, 2), "utf-8");
+      expect(store.load(id)).toBeNull();
+    } finally {
+      try {
+        rmSync(authDir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+});
+
+// ============================================================
+// 18. Strict timestamp validation
+// ============================================================
+describe("Strict timestamp validation", () => {
+  it("rejects calendar-impossible timestamps at store level", () => {
+    const authDir = tmpDir();
+    const store = new AuthoringStore({ authoringDir: authDir });
+    try {
+      const invalidTimestamps = [
+        "2026-02-31T00:00:00Z",
+        "2025-02-29T12:00:00Z",
+        "2026-01-01T25:00:00Z",
+        "2026-13-01T00:00:00Z",
+        "2026-01-32T00:00:00Z",
+      ];
+      for (const ts of invalidTimestamps) {
+        const id = randomUUID();
+        const app: any = {
+          id,
+          schemaVersion: 1,
+          family: "wallet-providers",
+          targetListKey: "eu_test",
+          state: "submitted",
+          submittedAt: ts,
+          applicantData: {
+            entityName: "Corp",
+            entityStreetAddress: "123 St",
+            entityCountry: "IT",
+            entityInformationURI: "https://x.example",
+            services: [
+              {
+                serviceType: "issuance",
+                serviceName: "Svc",
+                certificatePem: testCertPem,
+                serviceUniqueIdentifier: "https://svc.example",
+              },
+            ],
+          },
+        };
+        const p = resolve(authDir, `${id}.json`);
+        writeFileSync(p, JSON.stringify(app, null, 2), "utf-8");
+        expect(store.load(id)).toBeNull();
+        unlinkSync(p);
+      }
+    } finally {
+      try {
+        rmSync(authDir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  it("accepts valid leap day (Feb 29 in leap year)", () => {
+    const authDir = tmpDir();
+    const store = new AuthoringStore({ authoringDir: authDir });
+    try {
+      const id = randomUUID();
+      const app: any = {
+        id,
+        schemaVersion: 1,
+        family: "wallet-providers",
+        targetListKey: "eu_test",
+        state: "submitted",
+        submittedAt: "2024-02-29T12:00:00Z",
+        applicantData: {
+          entityName: "Corp",
+          entityStreetAddress: "123 St",
+          entityCountry: "IT",
+          entityInformationURI: "https://x.example",
+          services: [
+            {
+              serviceType: "issuance",
+              serviceName: "Svc",
+              certificatePem: testCertPem,
+              serviceUniqueIdentifier: "https://svc.example",
+            },
+          ],
+        },
+      };
+      expect(() => store.save(app)).not.toThrow();
+      expect(store.load(id)).not.toBeNull();
+    } finally {
+      try {
+        rmSync(authDir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+});
+
+// ============================================================
+// 19. Empty/small service indexes
+// ============================================================
+describe("Empty/small service indexes", () => {
+  it("empty form → next index is 1", async () => {
+    const { computeNextServiceIndex } =
+      await import("../src/web/views/onboarding.js");
+    expect(computeNextServiceIndex({})).toBe(1);
+  });
+
+  it("indexes 0 and 1 → next is 2", async () => {
+    const { computeNextServiceIndex } =
+      await import("../src/web/views/onboarding.js");
+    const v: Record<string, string> = {
+      "service[0].serviceType": "issuance",
+      "service[1].serviceType": "revocation",
+    };
+    expect(computeNextServiceIndex(v)).toBe(2);
+  });
+
+  it("sparse indexes 0 and 2 → next is 3", async () => {
+    const { computeNextServiceIndex } =
+      await import("../src/web/views/onboarding.js");
+    const v: Record<string, string> = {
+      "service[0].serviceType": "issuance",
+      "service[2].serviceType": "revocation",
+    };
+    expect(computeNextServiceIndex(v)).toBe(3);
+  });
+
+  it("error-only sparse indexes", async () => {
+    const { computeNextServiceIndex } =
+      await import("../src/web/views/onboarding.js");
+    const errs: Record<string, string> = {
+      "service[2].serviceName": "bad",
+    };
+    expect(computeNextServiceIndex({}, errs)).toBe(3);
+  });
+
+  it("empty form renders service 0 and next idx script sets 1", async () => {
+    const { walletProviderFormHtml } =
+      await import("../src/web/views/onboarding.js");
+    const html = walletProviderFormHtml({}, {}, []);
+    expect(html).toContain("service[0]");
+    expect(html).toContain("initialNext = 1");
+    expect(html).not.toContain("initialNext = 0");
+  });
+});
+
+// ============================================================
+// 20. Real preview/publication equivalence
+// ============================================================
+describe("Real preview/publication equivalence", () => {
+  it("preview and publishApplication with same clock produce identical timestamps and entity data", async () => {
+    const pubDir = tmpDir();
+    const authDir = tmpDir();
+    const configPath = join(tmpdir(), "sc.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        lists: [
+          {
+            listKey: "eu_test_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Test Authority",
+            schemeOperatorStreet: "1 Test St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Test Wallet Providers",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:test@test.org",
+            distributionPointUri: "https://test.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+        ],
+      }),
+    );
+    const signingConfig = (
+      await import("../src/core/authoring/signing-config.js")
+    ).loadSigningConfig(configPath);
+    const pubStore = new PublicationStore({ publicationDir: pubDir });
+    const authoringStore = new AuthoringStore({ authoringDir: authDir });
+    const service = new ApplicationService(
+      authoringStore,
+      pubStore,
+      signingConfig,
+    );
+
+    const clock = new Date("2026-12-15T12:00:00Z");
+
+    const app: any = {
+      id: authoringStore.createId(),
+      schemaVersion: 1,
+      family: "wallet-providers",
+      targetListKey: "eu_test_authority",
+      state: "approved",
+      submittedAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      applicantData: {
+        entityName: "EqCorp",
+        entityStreetAddress: "1 St",
+        entityCountry: "IT",
+        entityInformationURI: "https://eq.example",
+        services: [
+          {
+            serviceType: "issuance",
+            serviceName: "SvcEq",
+            certificatePem: testCertPem,
+            serviceUniqueIdentifier: "https://eq.svc.example",
+          },
+        ],
+      },
+    };
+    authoringStore.save(app);
+
+    const preview = await service.preview(app, clock);
+    expect(preview.compilerInputJson).toBeTruthy();
+
+    const pubResult = await service.publishApplication(app.id, clock);
+    expect(pubResult.success).toBe(true);
+
+    // Load the published LoTE
+    const idx = await pubStore.loadIndex("eu_test_authority");
+    expect(idx).not.toBeNull();
+    const seq = pubResult.success
+      ? pubResult.data.publication!.sequenceNumber
+      : 0;
+    expect(seq).toBeGreaterThan(0);
+
+    const loteBytes = await pubStore.loadVersionBytes(
+      "eu_test_authority",
+      seq,
+      "lote",
+    );
+    expect(loteBytes).not.toBeNull();
+    const lote = JSON.parse(loteBytes!);
+    const info = lote.LoTE.ListAndSchemeInformation;
+
+    // Timestamps must be exactly the injected clock and clock + 180 days
+    expect(info.ListIssueDateTime).toBe("2026-12-15T12:00:00.000Z");
+    expect(info.NextUpdate).toBe("2027-06-13T12:00:00.000Z");
+    expect(info.LoTESequenceNumber).toBe(seq);
+
+    // Entity name and service data must match the applicant data
+    const entity = lote.LoTE.TrustedEntitiesList[0];
+    expect(entity.TrustedEntityInformation.TEName[0].value).toBe("EqCorp");
+    expect(
+      entity.TrustedEntityServices[0].ServiceInformation.ServiceName[0].value,
+    ).toBe("SvcEq");
+    expect(
+      entity.TrustedEntityServices[0].ServiceInformation
+        .ServiceInformationExtensions[0].ServiceUniqueIdentifier,
+    ).toBe("https://eq.svc.example");
+
+    try {
+      rmSync(pubDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      unlinkSync(configPath);
+    } catch {}
+  });
+});
+
+// ============================================================
+// 21. Shipped OpenAPI document parity
+// ============================================================
+describe("Shipped OpenAPI document parity", () => {
+  it("real openapi.yaml passes checkApiRouteParity with zero errors", async () => {
+    const { getApiRoutes, checkApiRouteParity } =
+      await import("../src/web/server.js");
+    const { parse: parseYaml } = await import("yaml");
+    const yamlContent = readFileSync(
+      resolve(__dirname, "..", "src", "web", "assets", "openapi.yaml"),
+      "utf-8",
+    );
+    const spec = parseYaml(yamlContent) as any;
+    const routes = getApiRoutes();
+    const errors = checkApiRouteParity(routes, spec);
+    expect(errors).toEqual([]);
+  });
+});

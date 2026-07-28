@@ -61,6 +61,10 @@ export class AuthoringStore {
 
   save(app: WalletProviderApplication): void {
     this.assertCanonicalRoot();
+    const ver = validateApplication(app, app.id);
+    if (!ver.valid) {
+      throw new Error(`Cannot save invalid application: ${ver.reason}`);
+    }
     const path = this.appPath(app.id);
     const tmpPath = `${path}.${randomBytes(8).toString("hex")}.tmp`;
     try {
@@ -200,6 +204,8 @@ function validateApplication(
       return { valid: false, reason: "rejected without valid rejectedAt" };
     if (typeof app.adminNote !== "string" || !app.adminNote.trim())
       return { valid: false, reason: "rejected without non-empty adminNote" };
+    if (app.approvedAt !== undefined)
+      return { valid: false, reason: "rejected with approvedAt" };
     if (app.publication !== undefined)
       return { valid: false, reason: "rejected with publication" };
   }
@@ -223,9 +229,40 @@ function validateApplication(
 
 function isIsoString(s: unknown): boolean {
   if (typeof s !== "string") return false;
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(s)) return false;
-  const d = new Date(s);
-  return !isNaN(d.getTime());
+  const m = s.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?Z$/,
+  );
+  if (!m) return false;
+  const year = parseInt(m[1]!, 10);
+  const month = parseInt(m[2]!, 10);
+  const day = parseInt(m[3]!, 10);
+  const hour = parseInt(m[4]!, 10);
+  const min = parseInt(m[5]!, 10);
+  const sec = parseInt(m[6]!, 10);
+  if (month < 1 || month > 12) return false;
+  if (hour > 23 || min > 59 || sec > 59) return false;
+  const daysInMonth = [
+    31,
+    isLeapYear(year) ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  if (day < 1 || day > daysInMonth[month - 1]!) return false;
+  return true;
+}
+
+function isLeapYear(y: number): boolean {
+  if (y % 400 === 0) return true;
+  if (y % 100 === 0) return false;
+  return y % 4 === 0;
 }
 
 function isValidUri(s: string): boolean {
