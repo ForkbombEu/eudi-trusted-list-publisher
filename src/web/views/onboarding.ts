@@ -1,4 +1,22 @@
+import { LIST_FAMILIES } from "../../core/authoring/list-family-catalogue.js";
+
 export function onboardingCatalogueHtml(): string {
+  let rows = "";
+  for (const f of LIST_FAMILIES) {
+    const status = f.enabled
+      ? '<span class="badge ok">Available</span>'
+      : `<span class="badge muted">${escape(f.notImplementedNote)}</span>`;
+    const action = f.enabled
+      ? `<a href="/onboarding/${f.key}" class="btn">Start Application</a>`
+      : "&mdash;";
+    rows += `
+      <tr>
+        <td>${escape(f.label)}</td>
+        <td>${status}</td>
+        <td>${action}</td>
+      </tr>`;
+  }
+
   return `
 <h1>Onboarding &mdash; EUDI Trusted List Publisher</h1>
 <div class="test-notice">
@@ -13,56 +31,53 @@ export function onboardingCatalogueHtml(): string {
       <tr><th>Family</th><th>Status</th><th>Action</th></tr>
     </thead>
     <tbody>
-      <tr>
-        <td>PID Providers</td>
-        <td><span class="badge muted">Not implemented yet</span></td>
-        <td>&mdash;</td>
-      </tr>
-      <tr>
-        <td>Non-qualified EAA Providers</td>
-        <td><span class="badge muted">Not implemented yet</span></td>
-        <td>&mdash;</td>
-      </tr>
-      <tr>
-        <td>QEAA Providers</td>
-        <td><span class="badge muted">Not implemented yet</span></td>
-        <td>&mdash;</td>
-      </tr>
-      <tr>
-        <td>Wallet Providers</td>
-        <td><span class="badge ok">Available</span></td>
-        <td><a href="/onboarding/wallet-provider" class="btn">Start Application</a></td>
-      </tr>
-      <tr>
-        <td>WRPAC / Access CA Providers</td>
-        <td><span class="badge muted">Not implemented yet</span></td>
-        <td>&mdash;</td>
-      </tr>
-      <tr>
-        <td>WRPRC Providers</td>
-        <td><span class="badge muted">Not implemented yet</span></td>
-        <td>&mdash;</td>
-      </tr>
-      <tr>
-        <td>Registrars</td>
-        <td><span class="badge muted">Not implemented yet</span></td>
-        <td>&mdash;</td>
-      </tr>
+      ${rows}
     </tbody>
   </table>
 </div>
 `;
 }
 
+export interface ListOption {
+  key: string;
+  label: string;
+}
+
 export function walletProviderFormHtml(
   values?: Record<string, string>,
   errors?: Record<string, string>,
+  listOptions?: ListOption[],
 ): string {
   const v = values ?? {};
+  const opts = listOptions ?? [];
   const fieldError = (name: string): string =>
     errors?.[name]
       ? `<span class="field-error">${escape(errors[name] ?? "")}</span>`
       : "";
+
+  let listSelect = "";
+  if (opts.length === 0) {
+    listSelect = `<p class="field-error">No Wallet Provider lists are configured. Add entries to your signing-config.</p>`;
+  } else if (opts.length === 1) {
+    listSelect = `
+      <input type="hidden" name="targetListKey" value="${escape(opts[0]!.key)}">
+      <p><strong>Target List:</strong> <code>${escape(opts[0]!.key)}</code> &mdash; ${escape(opts[0]!.label)}</p>`;
+  } else {
+    listSelect = `
+      <div class="form-group">
+        <label for="targetListKey">Target List <span class="required">*</span></label>
+        <select name="targetListKey" id="targetListKey" required>
+          <option value="">-- Select a list --</option>
+          ${opts
+            .map(
+              (o) =>
+                `<option value="${escape(o.key)}" ${v.targetListKey === o.key ? "selected" : ""}>${escape(o.label)}</option>`,
+            )
+            .join("")}
+        </select>
+        ${fieldError("targetListKey")}
+      </div>`;
+  }
 
   return `
 <h1>Wallet Provider Application</h1>
@@ -71,6 +86,11 @@ export function walletProviderFormHtml(
 </div>
 
 <form method="post" action="/onboarding/wallet-provider" class="onboarding-form">
+  <div class="card">
+    <h2>List Selection</h2>
+    ${listSelect}
+  </div>
+
   <div class="card">
     <h2>Entity Information</h2>
     <p class="field-help">The legal entity applying for Wallet Provider status.</p>
@@ -158,13 +178,15 @@ export function walletProviderFormHtml(
 
 <script>
 (function() {
-  var idx = 1;
+  var nextIdx = 1;
   document.getElementById("add-service-btn").onclick = function() {
-    var html = ${JSON.stringify(serviceBlockHtml(-1, {}, {}))}.replace(/\\.service_idx\\./g, String(idx));
+    var template = document.createElement("template");
+    template.innerHTML = ${JSON.stringify(serviceBlockHtml(-1, {}, {}))};
+    var html = template.innerHTML.replace(/\\.service_marker\\./g, "[" + nextIdx + "]");
     var div = document.createElement("div");
     div.innerHTML = html;
     document.getElementById("services-container").appendChild(div.firstElementChild);
-    idx++;
+    nextIdx++;
   };
 })();
 </script>
@@ -176,7 +198,7 @@ function serviceBlockHtml(
   v: Record<string, string>,
   errs?: Record<string, string>,
 ): string {
-  const suffix = i >= 0 ? `[${i}]` : ".service_idx.";
+  const suffix = i >= 0 ? `[${i}]` : ".service_marker.";
   const f = (n: string) => `service${suffix}.${n}`;
   const e = (n: string): string =>
     errs?.[f(n)]

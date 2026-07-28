@@ -61,6 +61,7 @@ export function adminApplicationsHtml(
   <tr>
     <td>${escape(a.id.slice(0, 8))}...</td>
     <td>${escape(familyLabel)}</td>
+    <td>${escape(a.targetListKey)}</td>
     <td><span class="badge ${stateBadge(a.state)}">${escape(a.state)}</span></td>
     <td>${escape(a.submittedAt)}</td>
     <td><a href="/admin/applications/${escape(a.id)}" class="btn btn-sm">View</a></td>
@@ -72,31 +73,41 @@ export function adminApplicationsHtml(
 <div class="test-notice"><strong>&#x26A0; Testing tool.</strong></div>
 <p>Filter:${filterHtml}</p>
 <table class="catalogue-table">
-<thead><tr><th>ID</th><th>Family</th><th>State</th><th>Submitted</th><th></th></tr></thead>
+<thead><tr><th>ID</th><th>Family</th><th>List</th><th>State</th><th>Submitted</th><th></th></tr></thead>
 <tbody>${rows}</tbody>
 </table>
 <p><a href="/admin" class="btn">Back to Admin</a></p>
 `;
 }
 
+export interface DetailParams {
+  error?: string;
+  warning?: string;
+  success?: string;
+  published?: string;
+}
+
+export interface EtsiStatus {
+  valid: boolean;
+  findings: Array<{ path: string; message: string }>;
+}
+
 export function adminApplicationDetailHtml(
   app: WalletProviderApplication,
-  errors?: string[],
-  warnings?: string[],
-  success?: string,
+  params?: DetailParams,
+  etsiStatus?: EtsiStatus,
+  compilerInputJson?: string,
 ): string {
   const data = app.applicantData;
+  const p = params ?? {};
 
   let messages = "";
-  if (success) messages += `<div class="success-msg">${escape(success)}</div>`;
-  if (errors) {
-    for (const e of errors)
-      messages += `<div class="error-msg">${escape(e)}</div>`;
-  }
-  if (warnings) {
-    for (const w of warnings)
-      messages += `<div class="warn-msg">${escape(w)}</div>`;
-  }
+  if (p.error) messages += `<div class="error-msg">${escape(p.error)}</div>`;
+  if (p.warning) messages += `<div class="warn-msg">${escape(p.warning)}</div>`;
+  if (p.success)
+    messages += `<div class="success-msg">${escape(p.success)}</div>`;
+  if (p.published)
+    messages += `<div class="success-msg">&#x2705; ${escape(p.published)}</div>`;
 
   const servicesHtml = data.services
     .map(
@@ -116,6 +127,25 @@ export function adminApplicationDetailHtml(
   const actions = actionsHtml(app);
   const pubInfo = publicationInfoHtml(app);
 
+  let etsiSection = "";
+  if (etsiStatus) {
+    etsiSection = `
+<div class="card">
+  <h2>ETSI Schema Validation</h2>
+  <p>Status: <span class="badge ${etsiStatus.valid ? "ok" : "error"}">${etsiStatus.valid ? "Valid" : "Invalid"}</span></p>
+  ${etsiStatus.findings.length > 0 ? `<pre class="cert-preview">${escape(JSON.stringify(etsiStatus.findings, null, 2))}</pre>` : ""}
+</div>`;
+  }
+
+  let compilerSection = "";
+  if (compilerInputJson) {
+    compilerSection = `
+<div class="card">
+  <h2>Compiler Input (Normalized AuthoringInput)</h2>
+  <pre class="cert-preview">${escape(compilerInputJson)}</pre>
+</div>`;
+  }
+
   return `
 <h1>Application: <code>${escape(app.id)}</code></h1>
 <div class="test-notice"><strong>&#x26A0; Testing tool.</strong></div>
@@ -126,6 +156,7 @@ ${messages}
   <table class="kv-table">
     <tr><th>ID</th><td><code>${escape(app.id)}</code></td></tr>
     <tr><th>Family</th><td>Wallet Providers</td></tr>
+    <tr><th>Target List Key</th><td><code>${escape(app.targetListKey)}</code></td></tr>
     <tr><th>State</th><td><span class="badge ${stateBadge(app.state)}">${escape(app.state)}</span></td></tr>
     <tr><th>Schema Version</th><td>${app.schemaVersion}</td></tr>
     <tr><th>Submitted</th><td>${escape(app.submittedAt)}</td></tr>
@@ -154,6 +185,9 @@ ${pubInfo}
   <h2>Services (${data.services.length})</h2>
   ${servicesHtml}
 </div>
+
+${etsiSection}
+${compilerSection}
 
 <div class="card">
   <h2>Required Documents</h2>
@@ -244,6 +278,7 @@ export function adminNoAccessHtml(): string {
 <h1>Access Denied</h1>
 <div class="card">
   <p>Administrator access is required to view this page.</p>
+  <p>Use <code>/admin?token=YOUR_TOKEN</code> to sign in, or set a token in the configuration.</p>
 </div>
 `;
 }

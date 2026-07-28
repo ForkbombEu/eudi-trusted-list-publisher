@@ -5,6 +5,13 @@ import { parse as parseYaml } from "yaml";
 export interface SigningConfigEntry {
   listKey: string;
   family: string;
+  schemeOperatorName: string;
+  schemeOperatorStreet: string;
+  schemeOperatorCountry: string;
+  schemeName: string;
+  schemeTerritory: string;
+  schemeOperatorContactUri: string;
+  distributionPointUri: string;
   keyFile: string;
   certFile: string;
 }
@@ -35,6 +42,12 @@ export function findSigningConfig(
   listKey: string,
 ): SigningConfigEntry | undefined {
   return config.lists.find((e) => e.listKey === listKey);
+}
+
+export function getWalletProviderConfigs(
+  config: SigningConfig,
+): SigningConfigEntry[] {
+  return config.lists.filter((e) => e.family === "wallet-providers");
 }
 
 export function signingConfigDisplay(

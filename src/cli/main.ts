@@ -445,13 +445,6 @@ program
       authoringDir: guiEnabled ? options.authoringDir : undefined,
       adminToken: guiEnabled ? options.adminToken : undefined,
       signingConfigPath: guiEnabled ? options.signingConfig : undefined,
-      schemeOperatorName: process.env["TLP_SCHEME_OPERATOR_NAME"],
-      schemeName: process.env["TLP_SCHEME_NAME"],
-      schemeTerritory: process.env["TLP_SCHEME_TERRITORY"],
-      schemeOperatorStreet: process.env["TLP_SCHEME_OPERATOR_STREET"],
-      schemeOperatorCountry: process.env["TLP_SCHEME_OPERATOR_COUNTRY"],
-      schemeOperatorContactUri: process.env["TLP_SCHEME_OPERATOR_CONTACT_URI"],
-      distributionPointUri: process.env["TLP_DISTRIBUTION_POINT_URI"],
     });
 
     server.listen(port, host, () => {

@@ -39,6 +39,7 @@ export interface WalletProviderApplication {
   id: string;
   schemaVersion: number;
   family: "wallet-providers";
+  targetListKey: string;
   state: ApplicationState;
   submittedAt: string;
   applicantData: WalletProviderApplicantData;

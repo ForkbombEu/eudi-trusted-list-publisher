@@ -22,9 +22,21 @@ export {
 export {
   loadSigningConfig,
   findSigningConfig,
+  getWalletProviderConfigs,
   signingConfigDisplay,
   loadSigningKey,
   type SigningConfig,
   type SigningConfigEntry,
   type SigningConfigEntryDisplay,
 } from "./signing-config.js";
+export {
+  parseAndValidateSubmission,
+  createApplicationRecord,
+  type SubmissionFieldError,
+  type SubmissionParseResult,
+} from "./submission-parser.js";
+export {
+  ApplicationService,
+  type ServiceResult,
+  type PublishResult,
+} from "./application-service.js";

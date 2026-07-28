@@ -3,6 +3,13 @@
     {
       "listKey": "eu_credimi",
       "family": "wallet-providers",
+      "schemeOperatorName": "Credimi",
+      "schemeOperatorStreet": "Via Roma 1",
+      "schemeOperatorCountry": "IT",
+      "schemeName": "EU Wallet Providers List",
+      "schemeTerritory": "EU",
+      "schemeOperatorContactUri": "https://credimi.eu",
+      "distributionPointUri": "https://credimi.eu/wallet-providers/latest",
       "keyFile": "/path/to/signing-key.pem",
       "certFile": "/path/to/signing-cert.pem"
     }

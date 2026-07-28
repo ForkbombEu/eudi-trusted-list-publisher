@@ -12,6 +12,7 @@ import {
 import { resolve, sep } from "node:path";
 import { randomUUID, randomBytes } from "node:crypto";
 import type { WalletProviderApplication } from "./application-model.js";
+import { APPLICATION_SCHEMA_VERSION } from "./application-model.js";
 
 export interface AuthoringStoreConfig {
   authoringDir: string;
@@ -132,8 +133,14 @@ function isApplication(obj: unknown): obj is WalletProviderApplication {
   if (typeof obj !== "object" || obj === null) return false;
   const a = obj as Record<string, unknown>;
   if (typeof a.id !== "string" || !SAFE_ID_RE.test(a.id)) return false;
-  if (typeof a.schemaVersion !== "number") return false;
+  if (a.schemaVersion !== APPLICATION_SCHEMA_VERSION) return false;
   if (a.family !== "wallet-providers") return false;
+  if (typeof a.targetListKey !== "string" || a.targetListKey.length === 0)
+    return false;
+  if (typeof a.state !== "string") return false;
+  if (typeof a.submittedAt !== "string") return false;
+  if (typeof a.applicantData !== "object" || a.applicantData === null)
+    return false;
   return true;
 }
 

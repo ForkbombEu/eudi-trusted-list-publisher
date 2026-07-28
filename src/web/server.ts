@@ -5,25 +5,16 @@ import {
 } from "node:http";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { resolve, extname } from "node:path";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 import { PublicationStore } from "../core/publication/store.js";
-import { compile } from "../core/compile/compile.js";
-import { validateEtsiStruct } from "../core/validate/validate.js";
-import { sign as signLote } from "../core/signing/signing.js";
-import { verify } from "../core/verification/verification.js";
-import { publish, PublicationError } from "../core/publication/manifest.js";
 import {
   AuthoringStore,
-  canTransition,
-  normalizeToAuthoringInput,
   loadSigningConfig,
-  findSigningConfig,
+  getWalletProviderConfigs,
   signingConfigDisplay,
-  loadSigningKey,
-  type WalletProviderApplication,
+  ApplicationService,
   type SigningConfig,
-  type WalletProviderApplicantData,
 } from "../core/authoring/index.js";
 
 const MIME: Record<string, string> = {
@@ -38,6 +29,7 @@ const MIME: Record<string, string> = {
 };
 
 const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024;
+const ADMIN_COOKIE = "tlp_admin_token";
 
 function escapeHtml(s: string): string {
   return s
@@ -113,13 +105,6 @@ export interface ServerConfig {
   authoringDir?: string;
   adminToken?: string;
   signingConfigPath?: string;
-  schemeOperatorName?: string;
-  schemeName?: string;
-  schemeTerritory?: string;
-  schemeOperatorStreet?: string;
-  schemeOperatorCountry?: string;
-  schemeOperatorContactUri?: string;
-  distributionPointUri?: string;
 }
 
 function securityHeaders(): Record<string, string> {
@@ -297,35 +282,32 @@ export function createWebServer(config: ServerConfig) {
   const guiEnabled = config.dataCollectionGui === true;
   const adminToken = config.adminToken ?? "";
 
+  if (guiEnabled && !adminToken) {
+    throw new Error(
+      "DATA_COLLECTION_GUI requires TLP_ADMIN_TOKEN to be set. An empty admin token is not permitted when the GUI is enabled.",
+    );
+  }
+
   const store = new PublicationStore({
     publicationDir: config.publicationDir,
   });
 
   let authoringStore: AuthoringStore | null = null;
   let signingConfig: SigningConfig | null = null;
+  let appService: ApplicationService | null = null;
+  let walletProviderLists: string[] = [];
 
   if (guiEnabled && config.authoringDir) {
     authoringStore = new AuthoringStore({ authoringDir: config.authoringDir });
   }
   if (guiEnabled && config.signingConfigPath) {
-    try {
-      signingConfig = loadSigningConfig(config.signingConfigPath);
-    } catch {
-      signingConfig = { lists: [] };
-    }
+    signingConfig = loadSigningConfig(config.signingConfigPath);
+    const wp = getWalletProviderConfigs(signingConfig);
+    walletProviderLists = wp.map((e) => e.listKey);
   }
-
-  const schemeDefaults = {
-    operatorName: config.schemeOperatorName ?? "Credimi",
-    schemeName: config.schemeName ?? "EU Wallet Providers List",
-    schemeTerritory: config.schemeTerritory ?? "EU",
-    operatorStreet: config.schemeOperatorStreet ?? "Via Roma 1",
-    operatorCountry: config.schemeOperatorCountry ?? "IT",
-    operatorContactUri: config.schemeOperatorContactUri ?? "https://credimi.eu",
-    distributionPointUri:
-      config.distributionPointUri ??
-      "https://credimi.eu/wallet-providers/latest",
-  };
+  if (authoringStore) {
+    appService = new ApplicationService(authoringStore, store, signingConfig);
+  }
 
   function guiPage(title: string, body: string): string {
     const guiNav = `
@@ -477,6 +459,7 @@ export function createWebServer(config: ServerConfig) {
 
     if (guiEnabled) {
       const reqMethod = req.method ?? "GET";
+
       if (reqMethod === "POST") {
         handleGuiPost(req, res, url, requestId);
         return;
@@ -501,14 +484,11 @@ export function createWebServer(config: ServerConfig) {
     contentType: string,
     cacheControl: string,
   ): void {
-    const path = resolve(assetsDir, name);
-    const content = readFileBounded(path, maxFileBytes);
+    const p = resolve(assetsDir, name);
+    const content = readFileBounded(p, maxFileBytes);
     if (content === null) {
-      if (!existsSync(path)) {
-        send404(res);
-      } else {
-        send413(res);
-      }
+      if (!existsSync(p)) send404(res);
+      else send413(res);
       return;
     }
     const headers: Record<string, string> = {
@@ -521,8 +501,8 @@ export function createWebServer(config: ServerConfig) {
   }
 
   function serveOpenApi(res: ServerResponse, format: "yaml" | "json"): void {
-    const path = resolve(assetsDir, "openapi.yaml");
-    const content = readFileBounded(path, maxFileBytes);
+    const p = resolve(assetsDir, "openapi.yaml");
+    const content = readFileBounded(p, maxFileBytes);
     if (content === null) {
       send404(res, "OpenAPI spec not found");
       return;
@@ -532,7 +512,6 @@ export function createWebServer(config: ServerConfig) {
     } else {
       try {
         const parsed = parseYaml(content);
-        // Validate basic OpenAPI structure
         if (
           typeof parsed !== "object" ||
           parsed === null ||
@@ -653,7 +632,6 @@ export function createWebServer(config: ServerConfig) {
         send404(res, `List "${listKey}" not found`);
         return;
       }
-
       let rows = "";
       for (const v of index.versions) {
         rows += `
@@ -665,7 +643,6 @@ export function createWebServer(config: ServerConfig) {
         <td>${v.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
       </tr>`;
       }
-
       sendHtml(
         res,
         200,
@@ -696,7 +673,6 @@ export function createWebServer(config: ServerConfig) {
         send404(res, `Version ${sequence} not found`);
         return;
       }
-
       const loteData = await s.loadVersionBytes(listKey, sequence, "lote");
       let entityRows = "";
       if (loteData) {
@@ -725,18 +701,14 @@ export function createWebServer(config: ServerConfig) {
           entityRows = `<tr><td colspan="2">Could not parse LoTE</td></tr>`;
         }
       }
-
       sendHtml(
         res,
         200,
         htmlPage(
           `Version ${sequence} — ${listKey}`,
           `<h1>Version ${sequence} — <code>${escapeHtml(listKey)}</code></h1>
-
 <div class="trust-notice"><strong>&#x26A0; Signer trust: not evaluated.</strong> Cryptographic signature is ${manifest.signatureValid ? "valid" : "INVALID"}.</div>
-
-<div class="card">
-<h2>List Information</h2>
+<div class="card"><h2>List Information</h2>
 <table class="kv-table">
 <tr><th>List Key</th><td><code>${escapeHtml(manifest.listKey)}</code></td></tr>
 <tr><th>LoTE Identifier</th><td><code>${escapeHtml(manifest.loteIdentifier)}</code></td></tr>
@@ -746,58 +718,32 @@ export function createWebServer(config: ServerConfig) {
 <tr><th>Scheme Operator</th><td>${escapeHtml(manifest.schemeOperatorName)}</td></tr>
 <tr><th>Territory</th><td>${escapeHtml(manifest.territory)}</td></tr>
 <tr><th>Publication Timestamp</th><td>${escapeHtml(manifest.publicationTimestamp)}</td></tr>
-</table>
-</div>
-
-<div class="card">
-<h2>Signature &amp; Validation</h2>
+</table></div>
+<div class="card"><h2>Signature &amp; Validation</h2>
 <table class="kv-table">
 <tr><th>Signature Valid</th><td>${manifest.signatureValid ? "&#x2705; Yes" : "&#x274C; No"}</td></tr>
 <tr><th>ETSI Schema Valid</th><td>${manifest.etsiSchemaValid ? "&#x2705; Yes" : "&#x274C; No"}</td></tr>
 <tr><th>Signer Trust</th><td><strong>not evaluated</strong></td></tr>
-</table>
-</div>
-
-<div class="card">
-<h2>Signing Certificate</h2>
+</table></div>
+<div class="card"><h2>Signing Certificate</h2>
 <table class="kv-table">
 <tr><th>Subject</th><td>${escapeHtml(manifest.certificateSubject)}</td></tr>
 <tr><th>Issuer</th><td>${escapeHtml(manifest.certificateIssuer)}</td></tr>
 <tr><th>Valid From</th><td>${escapeHtml(manifest.certificateValidFrom)}</td></tr>
 <tr><th>Valid To</th><td>${escapeHtml(manifest.certificateValidTo)}</td></tr>
 <tr><th>SHA-256</th><td><code>${escapeHtml(manifest.signingCertificateSha256)}</code></td></tr>
-</table>
-</div>
-
-${
-  entityRows
-    ? `
-<div class="card">
-<h2>Entities &amp; Services</h2>
-<table class="catalogue-table">
-<thead><tr><th>Entity</th><th>Services</th></tr></thead>
-<tbody>${entityRows}</tbody>
-</table>
-</div>`
-    : ""
-}
-
-<div class="card">
-<h2>Downloads</h2>
-<ul>
+</table></div>
+${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="catalogue-table"><thead><tr><th>Entity</th><th>Services</th></tr></thead><tbody>${entityRows}</tbody></table></div>` : ""}
+<div class="card"><h2>Downloads</h2><ul>
 <li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${String(sequence)}/signature">Compact JAdES artifact (lote.jades)</a></li>
 <li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${String(sequence)}/lote">Decoded LoTE JSON</a></li>
 <li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${String(sequence)}/manifest">Publication manifest</a></li>
-</ul>
-</div>
-
-<div class="card">
-<h2>Artifact Hashes</h2>
+</ul></div>
+<div class="card"><h2>Artifact Hashes</h2>
 <table class="kv-table">
 <tr><th>Compact JAdES SHA-256</th><td><code>${escapeHtml(manifest.compactJadesSha256)}</code></td></tr>
 <tr><th>LoTE JSON SHA-256</th><td><code>${escapeHtml(manifest.loteJsonSha256)}</code></td></tr>
-</table>
-</div>
+</table></div>
 `,
         ),
       );
@@ -887,23 +833,11 @@ ${
         });
         return;
       }
-
-      const contentType = (() => {
-        switch (fileType) {
-          case "lote":
-            return "application/json";
-          case "signature":
-            return "application/octet-stream";
-          case "manifest":
-            return "application/json";
-        }
-      })();
-
-      const cacheControl =
-        fileType === "manifest"
-          ? "public, max-age=86400, immutable"
-          : "public, max-age=86400, immutable";
-
+      const contentType =
+        fileType === "signature"
+          ? "application/octet-stream"
+          : "application/json";
+      const cacheControl = "public, max-age=86400, immutable";
       sendResponse(res, 200, content, contentType, cacheControl);
     } catch {
       sendJson(res, 500, { error: "internal_error" });
@@ -917,21 +851,18 @@ ${
     requestId: string,
   ): void {
     const path = url.pathname;
-
     try {
       if (path === "/api/v1/lists") {
         apiListKeys(res, req);
         logRequest("GET", path, res.statusCode, requestId);
         return;
       }
-
       const listKeyMatch = path.match(/^\/api\/v1\/lists\/([a-z0-9_.@()-]+)$/);
       if (listKeyMatch) {
         apiListDetail(res, listKeyMatch[1]!);
         logRequest("GET", path, res.statusCode, requestId);
         return;
       }
-
       const versionMatch = path.match(
         /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)$/,
       );
@@ -940,7 +871,6 @@ ${
         logRequest("GET", path, res.statusCode, requestId);
         return;
       }
-
       const fileMatch = path.match(
         /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/(lote|signature|manifest)$/,
       );
@@ -954,7 +884,6 @@ ${
         logRequest("GET", path, res.statusCode, requestId);
         return;
       }
-
       sendJson(res, 404, {
         error: "not_found",
         message: "API route not found",
@@ -970,92 +899,47 @@ ${
     }
   }
 
-  function handleOnboarding(
-    req: IncomingMessage,
-    res: ServerResponse,
-    url: URL,
-    requestId: string,
-  ): void {
-    const path = url.pathname;
+  // --- GUI handlers ---
 
-    if (path === "/onboarding") {
-      import("../web/views/onboarding.js")
-        .then(({ onboardingCatalogueHtml }) => {
-          sendHtml(res, 200, guiPage("Onboarding", onboardingCatalogueHtml()));
-          logRequest("GET", path, 200, requestId);
-        })
-        .catch(() => {
-          send500(res, requestId);
-          logRequest("GET", path, 500, requestId);
-        });
-      return;
+  function getCookie(req: IncomingMessage, name: string): string | undefined {
+    const cookieHeader = req.headers.cookie;
+    if (!cookieHeader) return undefined;
+    for (const part of cookieHeader.split(";")) {
+      const [k, ...v] = part.trim().split("=");
+      if (k === name) return decodeURIComponent(v.join("="));
     }
-
-    if (path === "/onboarding/wallet-provider") {
-      import("../web/views/onboarding.js")
-        .then(({ walletProviderFormHtml }) => {
-          sendHtml(
-            res,
-            200,
-            guiPage("Wallet Provider Application", walletProviderFormHtml()),
-          );
-          logRequest("GET", path, 200, requestId);
-        })
-        .catch(() => {
-          send500(res, requestId);
-          logRequest("GET", path, 500, requestId);
-        });
-      return;
-    }
-
-    const submittedMatch = path.match(
-      /^\/onboarding\/submitted\/([a-f0-9-]+)$/,
-    );
-    if (submittedMatch && authoringStore) {
-      const appId = submittedMatch[1]!;
-      const app = authoringStore.load(appId);
-      if (!app) {
-        send404(res, "Application not found");
-        logRequest("GET", path, 404, requestId);
-        return;
-      }
-      sendHtml(
-        res,
-        200,
-        guiPage(
-          "Application Submitted",
-          `<h1>Application Submitted</h1>
-<div class="test-notice"><strong>&#x26A0; Testing tool.</strong></div>
-<div class="card">
-<h2>&#x2705; Your application has been submitted.</h2>
-<table class="kv-table">
-<tr><th>Application ID</th><td><code>${escapeHtml(app.id)}</code></td></tr>
-<tr><th>Status</th><td><span class="badge info">${escapeHtml(app.state)}</span></td></tr>
-<tr><th>Submitted</th><td>${escapeHtml(app.submittedAt)}</td></tr>
-<tr><th>Entity</th><td>${escapeHtml(app.applicantData.entityName)}</td></tr>
-</table>
-<p>An administrator will review your application. Keep this ID for reference.</p>
-</div>
-<p><a href="/" class="btn">Return to Catalogue</a></p>`,
-        ),
-      );
-      logRequest("GET", path, 200, requestId);
-      return;
-    }
-
-    send404(res);
-    logRequest("GET", path, 404, requestId);
+    return undefined;
   }
 
-  function handleAdmin(
+  function checkAdminAuth(req: IncomingMessage, url: URL): boolean {
+    if (!adminToken) return false;
+    if (getCookie(req, ADMIN_COOKIE) === adminToken) return true;
+    if (url.searchParams.get("token") === adminToken) return true;
+    return false;
+  }
+
+  async function handleAdmin(
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
     requestId: string,
-  ): void {
+  ): Promise<void> {
     const path = url.pathname;
 
-    if (adminToken && !checkAdminAuth(url)) {
+    // Handle initial admin login via ?token= parameter
+    if (url.searchParams.get("token") === adminToken) {
+      if (path === "/admin" || path.startsWith("/admin/")) {
+        res.writeHead(303, {
+          "Set-Cookie": `${ADMIN_COOKIE}=${encodeURIComponent(adminToken)}; Path=/; HttpOnly; SameSite=Lax`,
+          Location: path.split("?")[0]!,
+        });
+        res.end();
+        logRequest("GET", path.split("?")[0]!, 303, requestId);
+        return;
+      }
+    }
+
+    if (!checkAdminAuth(req, url)) {
       import("../web/views/admin.js")
         .then(({ adminNoAccessHtml }) => {
           sendHtml(res, 403, guiPage("Access Denied", adminNoAccessHtml()));
@@ -1087,11 +971,11 @@ ${
       return;
     }
 
-    if (path === "/admin/applications" && authoringStore) {
+    if (path === "/admin/applications" && appService) {
       const stateFilter = url.searchParams.get("state") ?? undefined;
       import("../web/views/admin.js")
         .then(({ adminApplicationsHtml }) => {
-          const apps = authoringStore!.list();
+          const apps = appService!.listApplications();
           sendHtml(
             res,
             200,
@@ -1125,21 +1009,89 @@ ${
     }
 
     const appDetailMatch = path.match(/^\/admin\/applications\/([a-f0-9-]+)$/);
-    if (appDetailMatch && authoringStore) {
-      const app = authoringStore.load(appDetailMatch[1]!);
+    if (appDetailMatch && appService) {
+      const app = appService.getApplication(appDetailMatch[1]!);
       if (!app) {
         send404(res, "Application not found");
         logRequest("GET", path, 404, requestId);
         return;
       }
+      const detailParams = {
+        error: url.searchParams.get("error") ?? undefined,
+        warning: url.searchParams.get("warning") ?? undefined,
+        success: url.searchParams.get("success") ?? undefined,
+        published: url.searchParams.get("published") ?? undefined,
+      };
       import("../web/views/admin.js")
-        .then(({ adminApplicationDetailHtml }) => {
+        .then(async ({ adminApplicationDetailHtml }) => {
+          let etsiStatus:
+            | {
+                valid: boolean;
+                findings: Array<{ path: string; message: string }>;
+              }
+            | undefined;
+          let compilerInputJson: string | undefined;
+
+          try {
+            const { compile } = await import("../core/compile/compile.js");
+            const { validateEtsiStruct } =
+              await import("../core/validate/validate.js");
+            const { normalizeToAuthoringInput } =
+              await import("../core/authoring/application-model.js");
+
+            const listEntry = signingConfig
+              ? (
+                  await import("../core/authoring/signing-config.js")
+                ).findSigningConfig(signingConfig, app.targetListKey)
+              : undefined;
+
+            if (listEntry) {
+              const now = new Date();
+              let nextSeq = 1;
+              const existingIndex = await store.loadIndex(app.targetListKey);
+              if (existingIndex && existingIndex.versions.length > 0) {
+                nextSeq =
+                  existingIndex.versions[existingIndex.versions.length - 1]!
+                    .sequenceNumber + 1;
+              }
+
+              const input = normalizeToAuthoringInput(
+                app,
+                listEntry.schemeOperatorName,
+                listEntry.schemeName,
+                listEntry.schemeTerritory,
+                {
+                  streetAddress: listEntry.schemeOperatorStreet,
+                  country: listEntry.schemeOperatorCountry,
+                },
+                listEntry.schemeOperatorContactUri,
+                listEntry.distributionPointUri,
+                now.toISOString(),
+                new Date(
+                  now.getTime() + 180 * 24 * 60 * 60 * 1000,
+                ).toISOString(),
+                nextSeq,
+              );
+              compilerInputJson = JSON.stringify(input, null, 2);
+              const { document } = compile(input);
+              const es = await validateEtsiStruct(document);
+              etsiStatus = { valid: es.valid, findings: es.findings };
+            }
+          } catch {
+            /* inline preview may fail, still show the page */
+          }
+
           sendHtml(
             res,
             200,
             guiPage(
               `Application ${app.id.slice(0, 8)}`,
-              adminApplicationDetailHtml(app),
+              adminApplicationDetailHtml(
+                app,
+                detailParams,
+                etsiStatus,
+                compilerInputJson,
+              ),
             ),
           );
           logRequest("GET", path, 200, requestId);
@@ -1155,6 +1107,99 @@ ${
     logRequest("GET", path, 404, requestId);
   }
 
+  function handleOnboarding(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    requestId: string,
+  ): void {
+    const path = url.pathname;
+
+    if (path === "/onboarding") {
+      import("../web/views/onboarding.js")
+        .then((mod) => {
+          sendHtml(
+            res,
+            200,
+            guiPage("Onboarding", mod.onboardingCatalogueHtml()),
+          );
+          logRequest("GET", path, 200, requestId);
+        })
+        .catch(() => {
+          send500(res, requestId);
+          logRequest("GET", path, 500, requestId);
+        });
+      return;
+    }
+
+    if (path === "/onboarding/wallet-provider") {
+      import("../web/views/onboarding.js")
+        .then((mod) => {
+          sendHtml(
+            res,
+            200,
+            guiPage(
+              "Wallet Provider Application",
+              mod.walletProviderFormHtml(
+                {},
+                {},
+                signingConfig
+                  ? getWalletProviderConfigs(signingConfig).map((e) => ({
+                      key: e.listKey,
+                      label: `${e.schemeOperatorName} (${e.listKey})`,
+                    }))
+                  : [],
+              ),
+            ),
+          );
+          logRequest("GET", path, 200, requestId);
+        })
+        .catch(() => {
+          send500(res, requestId);
+          logRequest("GET", path, 500, requestId);
+        });
+      return;
+    }
+
+    const submittedMatch = path.match(
+      /^\/onboarding\/submitted\/([a-f0-9-]+)$/,
+    );
+    if (submittedMatch && appService) {
+      const app = appService.getApplication(submittedMatch[1]!);
+      if (!app) {
+        send404(res, "Application not found");
+        logRequest("GET", path, 404, requestId);
+        return;
+      }
+      sendHtml(
+        res,
+        200,
+        guiPage(
+          "Application Submitted",
+          `<h1>Application Submitted</h1>
+<div class="test-notice"><strong>&#x26A0; Testing tool.</strong></div>
+<div class="card">
+<h2>&#x2705; Your application has been submitted.</h2>
+<table class="kv-table">
+<tr><th>Application ID</th><td><code>${escapeHtml(app.id)}</code></td></tr>
+<tr><th>Status</th><td><span class="badge info">${escapeHtml(app.state)}</span></td></tr>
+<tr><th>Submitted</th><td>${escapeHtml(app.submittedAt)}</td></tr>
+<tr><th>Entity</th><td>${escapeHtml(app.applicantData.entityName)}</td></tr>
+<tr><th>Target List</th><td><code>${escapeHtml(app.targetListKey)}</code></td></tr>
+</table>
+<p>An administrator will review your application. Keep this ID for reference.</p>
+</div>
+<p><a href="/" class="btn">Return to Catalogue</a></p>`,
+        ),
+      );
+      logRequest("GET", path, 200, requestId);
+      return;
+    }
+
+    send404(res);
+    logRequest("GET", path, 404, requestId);
+  }
+
   async function handleGuiPost(
     req: IncomingMessage,
     res: ServerResponse,
@@ -1163,7 +1208,7 @@ ${
   ): Promise<void> {
     const path = url.pathname;
 
-    if (path.startsWith("/admin") && adminToken && !checkAdminAuth(url)) {
+    if (path.startsWith("/admin") && !checkAdminAuth(req, url)) {
       sendResponse(
         res,
         403,
@@ -1183,7 +1228,7 @@ ${
         return;
       }
 
-      if (path.startsWith("/admin/applications/") && authoringStore) {
+      if (path.startsWith("/admin/applications/") && appService) {
         const parts = path.split("/");
         const action = parts[4];
         const appId = parts[3];
@@ -1194,18 +1239,63 @@ ${
         }
 
         switch (action) {
-          case "approve":
-            await handleApprove(res, appId, requestId);
+          case "approve": {
+            const r = appService.approve(appId);
+            if (r.success) {
+              res.writeHead(303, {
+                Location: `/admin/applications/${appId}`,
+              });
+              res.end();
+              logRequest("POST", path, 303, requestId);
+            } else {
+              redirectWithParams(res, appId, { error: r.error });
+              logRequest("POST", path, 400, requestId);
+            }
             break;
-          case "reject":
-            await handleReject(res, appId, body, requestId);
+          }
+          case "reject": {
+            const fields = parseFormBody(body);
+            const r = appService.reject(appId, fields["note"] ?? "");
+            if (r.success) {
+              res.writeHead(303, {
+                Location: `/admin/applications/${appId}`,
+              });
+              res.end();
+              logRequest("POST", path, 303, requestId);
+            } else {
+              redirectWithParams(res, appId, { error: r.error });
+              logRequest("POST", path, 400, requestId);
+            }
             break;
-          case "publish":
-            await handlePublish(res, appId, requestId);
+          }
+          case "publish": {
+            const r = await appService.publishApplication(appId);
+            if (r.success) {
+              const params: Record<string, string> = {};
+              if (r.message) params.success = r.message;
+              if (r.warning) params.warning = r.warning;
+              redirectWithParams(res, appId, params);
+              logRequest("POST", path, 303, requestId);
+            } else {
+              redirectWithParams(res, appId, { error: r.error });
+              logRequest("POST", path, 400, requestId);
+            }
             break;
-          case "delete":
-            await handleDelete(res, appId, requestId);
+          }
+          case "delete": {
+            const r = appService.deleteApplication(appId);
+            if (r.success) {
+              res.writeHead(303, {
+                Location: "/admin/applications",
+              });
+              res.end();
+              logRequest("POST", path, 303, requestId);
+            } else {
+              redirectWithParams(res, appId, { error: r.error });
+              logRequest("POST", path, 400, requestId);
+            }
             break;
+          }
           default:
             send404(res);
             logRequest("POST", path, 404, requestId);
@@ -1226,24 +1316,45 @@ ${
     body: string,
     requestId: string,
   ): void {
-    if (!authoringStore) {
+    if (!appService) {
       send500(res, requestId);
       logRequest("POST", "/onboarding/wallet-provider", 500, requestId);
       return;
     }
 
     const fields = parseFormBody(body);
-    const errors = validateApplicationForm(fields);
 
-    if (Object.keys(errors).length > 0) {
+    let targetListKey = fields["targetListKey"] ?? "";
+    if (!targetListKey && walletProviderLists.length === 1) {
+      targetListKey = walletProviderLists[0]!;
+    }
+
+    const result = appService.submitApplication(fields, targetListKey);
+
+    if (!result.valid) {
+      const errMap: Record<string, string> = {};
+      for (const fe of result.errors) {
+        errMap[fe.field] = fe.message;
+      }
+      const formValues = result.preservedFields;
+      formValues["targetListKey"] = targetListKey;
       import("../web/views/onboarding.js")
-        .then(({ walletProviderFormHtml }) => {
+        .then((mod) => {
           sendHtml(
             res,
             400,
             guiPage(
               "Wallet Provider Application",
-              walletProviderFormHtml(fields, errors),
+              mod.walletProviderFormHtml(
+                formValues,
+                errMap,
+                signingConfig
+                  ? getWalletProviderConfigs(signingConfig).map((e) => ({
+                      key: e.listKey,
+                      label: `${e.schemeOperatorName} (${e.listKey})`,
+                    }))
+                  : [],
+              ),
             ),
           );
           logRequest("POST", "/onboarding/wallet-provider", 400, requestId);
@@ -1255,360 +1366,24 @@ ${
       return;
     }
 
-    const services = parseServicesFromForm(fields);
-    const applicantData: WalletProviderApplicantData = {
-      entityName: fields["entityName"] ?? "",
-      entityTradeName: fields["entityTradeName"] || undefined,
-      entityStreetAddress: fields["entityStreetAddress"] ?? "",
-      entityLocality: fields["entityLocality"] || undefined,
-      entityPostalCode: fields["entityPostalCode"] || undefined,
-      entityCountry: fields["entityCountry"] ?? "",
-      entityInformationURI: fields["entityInformationURI"] ?? "",
-      services,
-    };
-
-    const app: WalletProviderApplication = {
-      id: authoringStore.createId(),
-      schemaVersion: 1,
-      family: "wallet-providers",
-      state: "submitted",
-      submittedAt: new Date().toISOString(),
-      applicantData,
-    };
-
-    authoringStore.save(app);
+    const app = appService.createApp(targetListKey, result.applicantData!);
 
     res.writeHead(303, { Location: `/onboarding/submitted/${app.id}` });
     res.end();
     logRequest("POST", "/onboarding/wallet-provider", 303, requestId);
   }
 
-  async function handleApprove(
+  function redirectWithParams(
     res: ServerResponse,
     appId: string,
-    requestId: string,
-  ): Promise<void> {
-    if (!authoringStore) return;
-    const app = authoringStore.load(appId);
-    if (!app) {
-      send404(res, "Application not found");
-      logRequest(
-        "POST",
-        `/admin/applications/${appId}/approve`,
-        404,
-        requestId,
-      );
-      return;
-    }
-    if (!canTransition(app.state, "approved")) {
-      redirectWithError(
-        res,
-        appId,
-        "Cannot approve application in state: " + app.state,
-      );
-      logRequest(
-        "POST",
-        `/admin/applications/${appId}/approve`,
-        400,
-        requestId,
-      );
-      return;
-    }
-
-    app.state = "approved";
-    app.approvedAt = new Date().toISOString();
-    authoringStore.save(app);
-
-    res.writeHead(303, { Location: `/admin/applications/${appId}` });
-    res.end();
-    logRequest("POST", `/admin/applications/${appId}/approve`, 303, requestId);
-  }
-
-  async function handleReject(
-    res: ServerResponse,
-    appId: string,
-    body: string,
-    requestId: string,
-  ): Promise<void> {
-    if (!authoringStore) return;
-    const app = authoringStore.load(appId);
-    if (!app) {
-      send404(res, "Application not found");
-      logRequest("POST", `/admin/applications/${appId}/reject`, 404, requestId);
-      return;
-    }
-    if (!canTransition(app.state, "rejected")) {
-      redirectWithError(
-        res,
-        appId,
-        "Cannot reject application in state: " + app.state,
-      );
-      logRequest("POST", `/admin/applications/${appId}/reject`, 400, requestId);
-      return;
-    }
-
-    const fields = parseFormBody(body);
-    const note = (fields["note"] ?? "").trim();
-    if (!note) {
-      redirectWithError(res, appId, "Rejection note is required");
-      logRequest("POST", `/admin/applications/${appId}/reject`, 400, requestId);
-      return;
-    }
-
-    app.state = "rejected";
-    app.rejectedAt = new Date().toISOString();
-    app.adminNote = note;
-    authoringStore.save(app);
-
-    res.writeHead(303, { Location: `/admin/applications/${appId}` });
-    res.end();
-    logRequest("POST", `/admin/applications/${appId}/reject`, 303, requestId);
-  }
-
-  async function handlePublish(
-    res: ServerResponse,
-    appId: string,
-    requestId: string,
-  ): Promise<void> {
-    if (!authoringStore) return;
-    const app = authoringStore.load(appId);
-    if (!app) {
-      send404(res, "Application not found");
-      logRequest(
-        "POST",
-        `/admin/applications/${appId}/publish`,
-        404,
-        requestId,
-      );
-      return;
-    }
-    if (!canTransition(app.state, "published")) {
-      redirectWithError(
-        res,
-        appId,
-        "Cannot publish application in state: " + app.state,
-      );
-      logRequest(
-        "POST",
-        `/admin/applications/${appId}/publish`,
-        400,
-        requestId,
-      );
-      return;
-    }
-
-    const now = new Date();
-    const listIssueDateTime = now.toISOString();
-    const nextUpdate = new Date(
-      now.getTime() + 180 * 24 * 60 * 60 * 1000,
-    ).toISOString();
-
-    let nextSeq = 1;
-    const existingIndex = await store.loadIndex("eu_credimi");
-    if (existingIndex && existingIndex.versions.length > 0) {
-      nextSeq =
-        existingIndex.versions[existingIndex.versions.length - 1]!
-          .sequenceNumber + 1;
-    }
-
-    const input = normalizeToAuthoringInput(
-      app,
-      schemeDefaults.operatorName,
-      schemeDefaults.schemeName,
-      schemeDefaults.schemeTerritory,
-      {
-        streetAddress: schemeDefaults.operatorStreet,
-        country: schemeDefaults.operatorCountry,
-      },
-      schemeDefaults.operatorContactUri,
-      schemeDefaults.distributionPointUri,
-      listIssueDateTime,
-      nextUpdate,
-      nextSeq,
-    );
-
-    try {
-      const compileResult = compile(input);
-      const etsiResult = await validateEtsiStruct(compileResult.document);
-      if (!etsiResult.valid) {
-        const reasons = etsiResult.findings
-          .map(
-            (f: { path: string; message: string }) => f.path + ": " + f.message,
-          )
-          .join("; ");
-        redirectWithError(res, appId, "ETSI validation failed: " + reasons);
-        logRequest(
-          "POST",
-          `/admin/applications/${appId}/publish`,
-          400,
-          requestId,
-        );
-        return;
-      }
-
-      if (!signingConfig) {
-        redirectWithError(
-          res,
-          appId,
-          "No signing configuration available. Configure TLP_SIGNING_CONFIG.",
-        );
-        logRequest(
-          "POST",
-          `/admin/applications/${appId}/publish`,
-          400,
-          requestId,
-        );
-        return;
-      }
-
-      const listEntry = findSigningConfig(signingConfig, "eu_credimi");
-      if (!listEntry) {
-        redirectWithError(
-          res,
-          appId,
-          "No signing configuration found for list key 'eu_credimi'. Check signing-config.",
-        );
-        logRequest(
-          "POST",
-          `/admin/applications/${appId}/publish`,
-          400,
-          requestId,
-        );
-        return;
-      }
-
-      const keyPem = loadSigningKey(listEntry.keyFile);
-      const certPem = loadSigningKey(listEntry.certFile);
-
-      const privateKey = (await import("node:crypto")).createPrivateKey(keyPem);
-      const jwk = privateKey.export({ format: "jwk" });
-      const signingKey = await crypto.subtle.importKey(
-        "jwk",
-        jwk as JsonWebKey,
-        { name: "ECDSA", namedCurve: "P-256" },
-        false,
-        ["sign"],
-      );
-
-      const signed = await signLote({
-        document: compileResult.document,
-        key: signingKey,
-        certificatePem: certPem,
-      });
-
-      const verifyResult = await verify({
-        compactJws: signed.compact,
-        certificatePem: certPem,
-      });
-      if (!verifyResult.valid) {
-        redirectWithError(res, appId, "Post-sign verification failed");
-        logRequest(
-          "POST",
-          `/admin/applications/${appId}/publish`,
-          400,
-          requestId,
-        );
-        return;
-      }
-
-      const pubResult = await publish({
-        compactJws: signed.compact,
-        certificatePem: certPem,
-      });
-      const manifestJson = JSON.stringify(pubResult.manifest, null, 2);
-
-      const storeResult = await store.store(
-        pubResult,
-        signed.compact,
-        pubResult.loteJson,
-        manifestJson,
-      );
-
-      const manifestHash = createHash("sha256")
-        .update(manifestJson)
-        .digest("hex");
-
-      app.state = "published";
-      app.publication = {
-        listKey: pubResult.listKey,
-        sequenceNumber: pubResult.sequenceNumber,
-        manifestSha256: manifestHash,
-        compactJadesSha256: pubResult.manifest.compactJadesSha256,
-        publicationTimestamp: pubResult.manifest.publicationTimestamp,
-      };
-      authoringStore.save(app);
-
-      let successMsg = "Application published successfully.";
-      if (storeResult.indexWarning) {
-        successMsg += " Warning: " + storeResult.indexWarning;
-      }
-
-      res.writeHead(303, {
-        Location: `/admin/applications/${appId}?published=1`,
-      });
-      res.end();
-      logRequest(
-        "POST",
-        `/admin/applications/${appId}/publish`,
-        303,
-        requestId,
-      );
-    } catch (e) {
-      const msg =
-        e instanceof PublicationError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : "Publication failed";
-      redirectWithError(res, appId, msg);
-      logRequest(
-        "POST",
-        `/admin/applications/${appId}/publish`,
-        400,
-        requestId,
-      );
-    }
-  }
-
-  async function handleDelete(
-    res: ServerResponse,
-    appId: string,
-    requestId: string,
-  ): Promise<void> {
-    if (!authoringStore) return;
-    const app = authoringStore.load(appId);
-    if (!app) {
-      send404(res, "Application not found");
-      logRequest("POST", `/admin/applications/${appId}/delete`, 404, requestId);
-      return;
-    }
-    if (app.state === "published") {
-      redirectWithError(res, appId, "Cannot delete published application");
-      logRequest("POST", `/admin/applications/${appId}/delete`, 400, requestId);
-      return;
-    }
-
-    authoringStore.delete(appId);
-    res.writeHead(303, { Location: "/admin/applications" });
-    res.end();
-    logRequest("POST", `/admin/applications/${appId}/delete`, 303, requestId);
-  }
-
-  function checkAdminAuth(url: URL): boolean {
-    if (!adminToken) return true;
-    const token = url.searchParams.get("token");
-    if (token === adminToken) return true;
-    return false;
-  }
-
-  function redirectWithError(
-    res: ServerResponse,
-    appId: string,
-    error: string,
+    params: Record<string, string>,
   ): void {
-    const encoded = encodeURIComponent(error);
+    const qs = Object.entries(params)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v!)}`)
+      .join("&");
     res.writeHead(303, {
-      Location: `/admin/applications/${appId}?error=${encoded}`,
+      Location: `/admin/applications/${appId}${qs ? "?" + qs : ""}`,
     });
     res.end();
   }
@@ -1642,121 +1417,6 @@ ${
       }
     }
     return fields;
-  }
-
-  function validateApplicationForm(
-    fields: Record<string, string>,
-  ): Record<string, string> {
-    const errors: Record<string, string> = {};
-
-    if (!fields["entityName"]?.trim()) {
-      errors["entityName"] = "Entity name is required.";
-    }
-    if (!fields["entityStreetAddress"]?.trim()) {
-      errors["entityStreetAddress"] = "Street address is required.";
-    }
-    if (!fields["entityCountry"]?.trim()) {
-      errors["entityCountry"] = "Country is required.";
-    } else if (!/^[A-Z]{2}$/.test(fields["entityCountry"]?.trim() ?? "")) {
-      errors["entityCountry"] =
-        "Country must be a 2-letter ISO code (e.g. IT).";
-    }
-    if (!fields["entityInformationURI"]?.trim()) {
-      errors["entityInformationURI"] = "Information URI is required.";
-    } else {
-      try {
-        new URL(fields["entityInformationURI"]?.trim() ?? "");
-      } catch {
-        errors["entityInformationURI"] = "Information URI must be a valid URL.";
-      }
-    }
-
-    const serviceFields = Object.keys(fields).filter((k) =>
-      k.startsWith("service["),
-    );
-    const serviceIndices = new Set<number>();
-    for (const kf of serviceFields) {
-      const m = kf.match(/^service\[(\d+)\]\./);
-      if (m) serviceIndices.add(parseInt(m[1]!, 10));
-    }
-
-    if (serviceIndices.size === 0) {
-      errors["services"] = "At least one service is required.";
-    }
-
-    for (const idx of serviceIndices) {
-      const prefix = `service[${idx}].`;
-
-      if (!fields[`${prefix}serviceType`]?.trim()) {
-        errors[`${prefix}serviceType`] = "Service type is required.";
-      } else if (
-        !["issuance", "revocation"].includes(
-          fields[`${prefix}serviceType`]!.trim(),
-        )
-      ) {
-        errors[`${prefix}serviceType`] = "Invalid service type.";
-      }
-
-      if (!fields[`${prefix}serviceName`]?.trim()) {
-        errors[`${prefix}serviceName`] = "Service name is required.";
-      }
-
-      if (!fields[`${prefix}certificatePem`]?.trim()) {
-        errors[`${prefix}certificatePem`] = "Certificate is required.";
-      } else {
-        const certVal = fields[`${prefix}certificatePem`]!.trim();
-        if (
-          !certVal.includes("-----BEGIN CERTIFICATE-----") ||
-          !certVal.includes("-----END CERTIFICATE-----")
-        ) {
-          errors[`${prefix}certificatePem`] =
-            "Certificate must be in PEM format.";
-        }
-      }
-
-      if (!fields[`${prefix}serviceUniqueIdentifier`]?.trim()) {
-        errors[`${prefix}serviceUniqueIdentifier`] =
-          "Service unique identifier is required.";
-      } else {
-        try {
-          new URL(fields[`${prefix}serviceUniqueIdentifier`]!.trim());
-        } catch {
-          errors[`${prefix}serviceUniqueIdentifier`] =
-            "Service unique identifier must be a valid URL/URI.";
-        }
-      }
-    }
-
-    return errors;
-  }
-
-  function parseServicesFromForm(fields: Record<string, string>): Array<{
-    serviceType: "issuance" | "revocation";
-    serviceName: string;
-    certificatePem: string;
-    serviceUniqueIdentifier: string;
-  }> {
-    const serviceFields = Object.keys(fields).filter((k) =>
-      k.startsWith("service["),
-    );
-    const serviceIndices = new Set<number>();
-    for (const kf of serviceFields) {
-      const m = kf.match(/^service\[(\d+)\]\./);
-      if (m) serviceIndices.add(parseInt(m[1]!, 10));
-    }
-
-    const sorted = Array.from(serviceIndices).sort((a, b) => a - b);
-    return sorted.map((idx) => {
-      const prefix = `service[${idx}].`;
-      return {
-        serviceType: fields[`${prefix}serviceType`]!.trim() as
-          "issuance" | "revocation",
-        serviceName: fields[`${prefix}serviceName`]!.trim(),
-        certificatePem: fields[`${prefix}certificatePem`]!.trim(),
-        serviceUniqueIdentifier:
-          fields[`${prefix}serviceUniqueIdentifier`]!.trim(),
-      };
-    });
   }
 
   return server;
