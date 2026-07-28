@@ -759,4 +759,215 @@ describe("publication gate tests", () => {
       expect(typeof s).toBe("number");
     }
   });
+
+  it("canonical root resolves symlinked parent correctly", async () => {
+    const realParent = resolve(tmpdir(), `real-parent-${randomUUID()}`);
+    const symlinkParent = resolve(tmpdir(), `sym-parent-${randomUUID()}`);
+    const childDir = resolve(symlinkParent, "child-pub");
+    mkdirSync(realParent, { recursive: true });
+    symlinkSync(realParent, symlinkParent, "dir");
+    try {
+      // Store created below a symlinked parent should resolve canonical root
+      const s = new PublicationStore({ publicationDir: childDir });
+      // canonicalRoot should resolve through the symlink to the real parent
+      expect(s.getCanonicalRoot()).not.toContain(symlinkParent);
+      expect(existsSync(s.getCanonicalRoot())).toBe(false); // not created until store()
+
+      const result = await publish({
+        compactJws: signedCompact,
+        certificatePem: testCertPem,
+      });
+      s.store(
+        result,
+        signedCompact,
+        result.loteJson,
+        JSON.stringify(result.manifest, null, 2),
+      );
+
+      // Verify published in the real parent, not the symlink
+      expect(existsSync(s.getCanonicalRoot())).toBe(true);
+      expect(existsSync(resolve(realParent, "child-pub"))).toBe(true);
+    } finally {
+      try {
+        rmSync(realParent, { recursive: true, force: true });
+      } catch {}
+      try {
+        unlinkSync(symlinkParent);
+      } catch {}
+    }
+  });
+
+  it("rejects manifest with manifestVersion 999", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    const badManifest = { ...result.manifest, manifestVersion: 999 };
+    writeFileSync(
+      store.manifestPath(result.listKey, 1),
+      JSON.stringify(badManifest),
+      "utf-8",
+    );
+
+    const mani = store.loadManifest(result.listKey, 1);
+    expect(mani).toBeNull();
+  });
+
+  it("rejects manifest with object issueDate", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    const badManifest = { ...result.manifest, issueDate: { not: "a string" } };
+    writeFileSync(
+      store.manifestPath(result.listKey, 1),
+      JSON.stringify(badManifest),
+      "utf-8",
+    );
+
+    expect(store.loadManifest(result.listKey, 1)).toBeNull();
+  });
+
+  it("rejects manifest with signatureValid false", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    const badManifest = { ...result.manifest, signatureValid: false };
+    writeFileSync(
+      store.manifestPath(result.listKey, 1),
+      JSON.stringify(badManifest),
+      "utf-8",
+    );
+
+    expect(store.loadManifest(result.listKey, 1)).toBeNull();
+  });
+
+  it("rejects manifest with signerTrustStatus trusted", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    const badManifest = { ...result.manifest, signerTrustStatus: "trusted" };
+    writeFileSync(
+      store.manifestPath(result.listKey, 1),
+      JSON.stringify(badManifest),
+      "utf-8",
+    );
+
+    expect(store.loadManifest(result.listKey, 1)).toBeNull();
+  });
+
+  it("rejects manifest with invalid SHA-256 fingerprint", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    const badManifest = {
+      ...result.manifest,
+      signingCertificateSha256: "not-a-fingerprint",
+    };
+    writeFileSync(
+      store.manifestPath(result.listKey, 1),
+      JSON.stringify(badManifest),
+      "utf-8",
+    );
+
+    expect(store.loadManifest(result.listKey, 1)).toBeNull();
+  });
+
+  it("one corrupt version does not hide healthy version", async () => {
+    const result1 = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result1,
+      signedCompact,
+      result1.loteJson,
+      JSON.stringify(result1.manifest, null, 2),
+    );
+
+    // Publish a second version
+    const input2 = { ...AUTHORING, loTESequenceNumber: 2 };
+    const doc2 = compile(input2).document;
+    const signed2 = await sign({
+      document: doc2,
+      key: testKey,
+      certificatePem: testCertPem,
+    });
+    const result2 = await publish({
+      compactJws: signed2.compact,
+      certificatePem: testCertPem,
+    });
+    store.store(
+      result2,
+      signed2.compact,
+      result2.loteJson,
+      JSON.stringify(result2.manifest, null, 2),
+    );
+
+    // Corrupt version 1
+    const badManifest = { ...result1.manifest, manifestVersion: 999 };
+    writeFileSync(
+      store.manifestPath(result1.listKey, 1),
+      JSON.stringify(badManifest),
+      "utf-8",
+    );
+
+    // loadManifest should return null for corrupt version
+    expect(store.loadManifest(result1.listKey, 1)).toBeNull();
+
+    // loadManifest should still return healthy version
+    expect(store.loadManifest(result1.listKey, 2)).not.toBeNull();
+
+    // Index should still include healthy version
+    const index = store.loadIndex(result1.listKey);
+    expect(index).not.toBeNull();
+    // Version 1 should be excluded (corrupt), version 2 should be included
+    const versions = index!.versions;
+    expect(versions.find((v) => v.sequenceNumber === 1)).toBeFalsy();
+    expect(versions.find((v) => v.sequenceNumber === 2)).toBeTruthy();
+  });
 });

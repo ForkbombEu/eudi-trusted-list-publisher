@@ -207,31 +207,54 @@ function readFileBounded(filePath: string, maxBytes: number): string | null {
   return readFileSync(filePath, "utf-8");
 }
 
-const API_ROUTES: Array<{ path: string; description: string }> = [
-  { path: "/api/v1/lists", description: "List all published lists" },
-  { path: "/api/v1/lists/{listKey}", description: "Get list index" },
+export interface ApiRoute {
+  method: "GET";
+  path: string;
+  matcher: RegExp;
+  handler: string;
+}
+
+const API_ROUTES: ApiRoute[] = [
   {
+    method: "GET",
+    path: "/api/v1/lists",
+    matcher: /^\/api\/v1\/lists$/,
+    handler: "listLists",
+  },
+  {
+    method: "GET",
+    path: "/api/v1/lists/{listKey}",
+    matcher: /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)$/,
+    handler: "getList",
+  },
+  {
+    method: "GET",
     path: "/api/v1/lists/{listKey}/versions/{sequence}",
-    description: "Get version manifest",
+    matcher: /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)$/,
+    handler: "getVersion",
   },
   {
+    method: "GET",
     path: "/api/v1/lists/{listKey}/versions/{sequence}/lote",
-    description: "Download LoTE JSON",
+    matcher: /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/lote$/,
+    handler: "getLoteJson",
   },
   {
+    method: "GET",
     path: "/api/v1/lists/{listKey}/versions/{sequence}/signature",
-    description: "Download Compact JAdES artifact",
+    matcher:
+      /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/signature$/,
+    handler: "getSignature",
   },
   {
+    method: "GET",
     path: "/api/v1/lists/{listKey}/versions/{sequence}/manifest",
-    description: "Download publication manifest",
+    matcher: /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/manifest$/,
+    handler: "getManifest",
   },
 ];
 
-export function getApiRoutes(): ReadonlyArray<{
-  path: string;
-  description: string;
-}> {
+export function getApiRoutes(): ReadonlyArray<ApiRoute> {
   return API_ROUTES;
 }
 

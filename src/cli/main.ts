@@ -318,20 +318,41 @@ program
 
       const manifestJson = JSON.stringify(result.manifest, null, 2);
 
-      store.store(result, content, result.loteJson, manifestJson);
-
-      process.stderr.write(
-        JSON.stringify({
-          status: "published",
-          listKey: result.listKey,
-          sequenceNumber: result.sequenceNumber,
-          signatureValid: result.manifest.signatureValid,
-          etsiSchemaValid: result.manifest.etsiSchemaValid,
-          signerTrustStatus: result.manifest.signerTrustStatus,
-          compactJadesSha256: result.manifest.compactJadesSha256,
-          signingCertificateSha256: result.manifest.signingCertificateSha256,
-        }) + "\n",
+      const storeResult = store.store(
+        result,
+        content,
+        result.loteJson,
+        manifestJson,
       );
+
+      if (storeResult.indexWarning) {
+        process.stderr.write(
+          JSON.stringify({
+            status: "published",
+            listKey: result.listKey,
+            sequenceNumber: result.sequenceNumber,
+            signatureValid: result.manifest.signatureValid,
+            etsiSchemaValid: result.manifest.etsiSchemaValid,
+            signerTrustStatus: result.manifest.signerTrustStatus,
+            compactJadesSha256: result.manifest.compactJadesSha256,
+            signingCertificateSha256: result.manifest.signingCertificateSha256,
+            indexWarning: storeResult.indexWarning,
+          }) + "\n",
+        );
+      } else {
+        process.stderr.write(
+          JSON.stringify({
+            status: "published",
+            listKey: result.listKey,
+            sequenceNumber: result.sequenceNumber,
+            signatureValid: result.manifest.signatureValid,
+            etsiSchemaValid: result.manifest.etsiSchemaValid,
+            signerTrustStatus: result.manifest.signerTrustStatus,
+            compactJadesSha256: result.manifest.compactJadesSha256,
+            signingCertificateSha256: result.manifest.signingCertificateSha256,
+          }) + "\n",
+        );
+      }
       process.stdout.write(
         JSON.stringify(
           {
