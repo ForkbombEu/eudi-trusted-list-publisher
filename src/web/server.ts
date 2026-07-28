@@ -20,7 +20,7 @@ const MIME: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
 };
 
-const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 function escapeHtml(s: string): string {
   return s
@@ -92,7 +92,15 @@ export interface ServerConfig {
   maxFileBytes?: number;
 }
 
-function send(
+function securityHeaders(): Record<string, string> {
+  return {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+  };
+}
+
+function sendResponse(
   res: ServerResponse,
   status: number,
   body: string,
@@ -100,10 +108,8 @@ function send(
   cacheControl: string,
 ): void {
   const headers: Record<string, string> = {
+    ...securityHeaders(),
     "Content-Type": contentType,
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
     "Cache-Control": cacheControl,
   };
   res.writeHead(status, headers);
@@ -114,54 +120,71 @@ function sendJson(
   res: ServerResponse,
   status: number,
   data: unknown,
-  cacheControl?: string,
+  cacheControl = "no-store",
 ): void {
-  send(
+  sendResponse(
     res,
     status,
     JSON.stringify(data),
     "application/json",
-    cacheControl ?? "no-store",
+    cacheControl,
   );
 }
 
 function sendHtml(res: ServerResponse, status: number, body: string): void {
-  send(res, status, body, "text/html; charset=utf-8", "no-store");
+  sendResponse(res, status, body, "text/html; charset=utf-8", "no-store");
 }
 
 function send404(res: ServerResponse, message?: string): void {
-  sendHtml(
+  sendResponse(
     res,
     404,
     htmlPage(
       "404 Not Found",
       `<h1>Not Found</h1><p>${escapeHtml(message ?? "The requested resource does not exist.")}</p>`,
     ),
+    "text/html; charset=utf-8",
+    "no-store",
   );
 }
 
 function send405(res: ServerResponse): void {
-  res.writeHead(405, {
+  const headers: Record<string, string> = {
+    ...securityHeaders(),
     "Content-Type": "text/plain; charset=utf-8",
     Allow: "GET, HEAD",
-  });
+    "Cache-Control": "no-store",
+  };
+  res.writeHead(405, headers);
   res.end("405 Method Not Allowed");
 }
 
 function send500(res: ServerResponse, requestId: string): void {
-  sendHtml(
+  sendResponse(
     res,
     500,
     htmlPage(
       "500 Internal Error",
       `<h1>Internal Error</h1><p>Request ID: <code>${escapeHtml(requestId)}</code></p>`,
     ),
+    "text/html; charset=utf-8",
+    "no-store",
+  );
+}
+
+function send413(res: ServerResponse): void {
+  sendResponse(
+    res,
+    413,
+    "413 Payload Too Large",
+    "text/plain; charset=utf-8",
+    "no-store",
   );
 }
 
 function logRequest(
   method: string,
-  url: string,
+  pathname: string,
   status: number,
   requestId: string,
 ): void {
@@ -169,7 +192,7 @@ function logRequest(
     JSON.stringify({
       event: "request",
       method,
-      url,
+      path: pathname,
       status,
       requestId,
       timestamp: new Date().toISOString(),
@@ -182,6 +205,34 @@ function readFileBounded(filePath: string, maxBytes: number): string | null {
   const st = statSync(filePath);
   if (st.size > maxBytes) return null;
   return readFileSync(filePath, "utf-8");
+}
+
+const API_ROUTES: Array<{ path: string; description: string }> = [
+  { path: "/api/v1/lists", description: "List all published lists" },
+  { path: "/api/v1/lists/{listKey}", description: "Get list index" },
+  {
+    path: "/api/v1/lists/{listKey}/versions/{sequence}",
+    description: "Get version manifest",
+  },
+  {
+    path: "/api/v1/lists/{listKey}/versions/{sequence}/lote",
+    description: "Download LoTE JSON",
+  },
+  {
+    path: "/api/v1/lists/{listKey}/versions/{sequence}/signature",
+    description: "Download Compact JAdES artifact",
+  },
+  {
+    path: "/api/v1/lists/{listKey}/versions/{sequence}/manifest",
+    description: "Download publication manifest",
+  },
+];
+
+export function getApiRoutes(): ReadonlyArray<{
+  path: string;
+  description: string;
+}> {
+  return API_ROUTES;
 }
 
 export function createWebServer(config: ServerConfig) {
@@ -203,7 +254,7 @@ export function createWebServer(config: ServerConfig) {
 
       if (method !== "GET" && method !== "HEAD") {
         send405(res);
-        logRequest(method, req.url ?? "/", 405, requestId);
+        logRequest(method, req.url?.split("?")[0] ?? "/", 405, requestId);
         return;
       }
 
@@ -216,7 +267,12 @@ export function createWebServer(config: ServerConfig) {
       if (!res.headersSent) {
         send500(res, requestId);
       }
-      logRequest(req.method ?? "GET", req.url ?? "/", 500, requestId);
+      logRequest(
+        req.method ?? "GET",
+        req.url?.split("?")[0] ?? "/",
+        500,
+        requestId,
+      );
     }
   });
 
@@ -228,14 +284,12 @@ export function createWebServer(config: ServerConfig) {
   ): void {
     const path = url.pathname;
 
-    // Health check
     if (path === "/healthz") {
       sendJson(res, 200, { status: "ok" }, "no-store");
       logRequest("GET", path, 200, requestId);
       return;
     }
 
-    // Favicon
     if (path === "/favicon.svg") {
       serveAsset(
         res,
@@ -247,7 +301,6 @@ export function createWebServer(config: ServerConfig) {
       return;
     }
 
-    // Static assets
     if (path.startsWith("/assets/")) {
       const assetName = path.slice("/assets/".length);
       if (assetName.includes("..") || assetName.includes("/")) {
@@ -277,7 +330,6 @@ export function createWebServer(config: ServerConfig) {
       return;
     }
 
-    // OpenAPI spec
     if (path === "/openapi.yaml") {
       serveOpenApi(res, "yaml");
       logRequest("GET", path, res.statusCode, requestId);
@@ -289,27 +341,23 @@ export function createWebServer(config: ServerConfig) {
       return;
     }
 
-    // API docs
     if (path === "/docs") {
       serveDocs(res);
       logRequest("GET", path, res.statusCode, requestId);
       return;
     }
 
-    // JSON API routes
     if (path.startsWith("/api/v1/")) {
       handleApi(req, res, url, requestId);
       return;
     }
 
-    // Catalogue home
     if (path === "/") {
       serveCatalogue(res, store);
       logRequest("GET", path, res.statusCode, requestId);
       return;
     }
 
-    // List detail: /lists/:listKey
     const listMatch = path.match(/^\/lists\/([a-z0-9_.@()-]+)$/);
     if (listMatch) {
       serveListDetail(res, store, listMatch[1]!);
@@ -317,7 +365,6 @@ export function createWebServer(config: ServerConfig) {
       return;
     }
 
-    // Version detail: /lists/:listKey/versions/:sequence
     const versionMatch = path.match(
       /^\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)$/,
     );
@@ -343,22 +390,18 @@ export function createWebServer(config: ServerConfig) {
     cacheControl: string,
   ): void {
     const path = resolve(assetsDir, name);
-    if (!existsSync(path)) {
-      res.writeHead(404);
-      res.end();
-      return;
-    }
     const content = readFileBounded(path, maxFileBytes);
     if (content === null) {
-      res.writeHead(413, { "Content-Type": "text/plain" });
-      res.end("413 Payload Too Large");
+      if (!existsSync(path)) {
+        send404(res);
+      } else {
+        send413(res);
+      }
       return;
     }
     const headers: Record<string, string> = {
+      ...securityHeaders(),
       "Content-Type": contentType,
-      "X-Content-Type-Options": "nosniff",
-      "X-Frame-Options": "DENY",
-      "Referrer-Policy": "no-referrer",
       "Cache-Control": cacheControl,
     };
     res.writeHead(200, headers);
@@ -373,13 +416,40 @@ export function createWebServer(config: ServerConfig) {
       return;
     }
     if (format === "yaml") {
-      send(res, 200, content, "application/yaml", "no-store");
+      sendResponse(res, 200, content, "application/yaml", "no-store");
     } else {
       try {
         const parsed = parseYaml(content);
-        send(res, 200, JSON.stringify(parsed), "application/json", "no-store");
+        // Validate basic OpenAPI structure
+        if (
+          typeof parsed !== "object" ||
+          parsed === null ||
+          !("openapi" in parsed)
+        ) {
+          sendResponse(
+            res,
+            500,
+            "Invalid OpenAPI document",
+            "text/plain; charset=utf-8",
+            "no-store",
+          );
+          return;
+        }
+        sendResponse(
+          res,
+          200,
+          JSON.stringify(parsed),
+          "application/json",
+          "no-store",
+        );
       } catch {
-        send500(res, "parse-error");
+        sendResponse(
+          res,
+          500,
+          "OpenAPI parse error",
+          "text/plain; charset=utf-8",
+          "no-store",
+        );
       }
     }
   }
@@ -720,10 +790,10 @@ ${
 
       const cacheControl =
         fileType === "manifest"
-          ? "no-store"
+          ? "public, max-age=86400, immutable"
           : "public, max-age=86400, immutable";
 
-      send(res, 200, content, contentType, cacheControl);
+      sendResponse(res, 200, content, contentType, cacheControl);
     } catch {
       sendJson(res, 500, { error: "internal_error" });
     }
@@ -738,14 +808,12 @@ ${
     const path = url.pathname;
 
     try {
-      // GET /api/v1/lists
       if (path === "/api/v1/lists") {
         apiListKeys(res, req);
         logRequest("GET", path, res.statusCode, requestId);
         return;
       }
 
-      // GET /api/v1/lists/:listKey
       const listKeyMatch = path.match(/^\/api\/v1\/lists\/([a-z0-9_.@()-]+)$/);
       if (listKeyMatch) {
         apiListDetail(res, listKeyMatch[1]!);
@@ -753,7 +821,6 @@ ${
         return;
       }
 
-      // GET /api/v1/lists/:listKey/versions/:sequence
       const versionMatch = path.match(
         /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)$/,
       );
@@ -763,7 +830,6 @@ ${
         return;
       }
 
-      // GET /api/v1/lists/:listKey/versions/:sequence/:file
       const fileMatch = path.match(
         /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/(lote|signature|manifest)$/,
       );

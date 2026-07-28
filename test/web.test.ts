@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { readFileSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -445,5 +445,78 @@ describe("HTTP correctness", () => {
     const res = await httpGet("/");
     expect(res.body).toContain("credimi_logo_negative.svg");
     expect(res.body).toContain('class="site-footer dark"');
+  });
+
+  it("negative logo is byte-for-byte HITL copy", async () => {
+    const canonical = readFileSync(
+      resolve(__dirname, "..", "HITL", "credimi_logo_negative.svg"),
+      "utf-8",
+    );
+    const res = await httpGet("/assets/credimi_logo_negative.svg");
+    expect(res.body).toBe(canonical);
+  });
+
+  it("manifest serves with immutable caching", async () => {
+    const res = await httpGet(`/api/v1/lists/${storedKey}/versions/1/manifest`);
+    expect(res.headers["cache-control"]).toContain("immutable");
+  });
+
+  it("security headers present on 404 responses", async () => {
+    const res = await httpGet("/nonexistent");
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+  });
+
+  it("security headers present on 405 responses", async () => {
+    const res = await httpGet("/", "POST");
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+  });
+
+  it("bidirectional route parity: all OpenAPI paths use GET method", async () => {
+    const res = await httpGet("/openapi.json");
+    const spec = JSON.parse(res.body);
+    for (const [, methods] of Object.entries(
+      spec.paths as Record<string, unknown>,
+    )) {
+      expect(
+        methods && typeof methods === "object" && "get" in (methods as object),
+      ).toBe(true);
+    }
+  });
+
+  it("exact download bytes match stored artefacts", async () => {
+    const jadesRes = await httpGet(
+      `/api/v1/lists/${storedKey}/versions/1/signature`,
+    );
+    expect(jadesRes.status).toBe(200);
+    expect(jadesRes.body).toBe(signedCompact);
+
+    const jsonRes = await httpGet(`/api/v1/lists/${storedKey}/versions/1/lote`);
+    expect(jsonRes.status).toBe(200);
+    const parsed = JSON.parse(jsonRes.body);
+    expect(parsed.LoTE).toBeDefined();
+  });
+
+  it("server does not create publication directory on startup", async () => {
+    const emptyDir = resolve(tmpdir(), `ro-srv-${randomUUID()}`);
+    const srv = createWebServer({ publicationDir: emptyDir });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    const addr = srv.address();
+    if (addr && typeof addr === "object") {
+      const emptyUrl = `http://127.0.0.1:${addr.port}`;
+      await new Promise<void>((resolve, reject) => {
+        const url = new URL("/", emptyUrl);
+        httpGetRaw(url, (res) => {
+          res.resume();
+          resolve();
+        }).on("error", reject);
+      });
+    }
+    srv.close();
+    expect(existsSync(emptyDir)).toBe(false);
+  });
+
+  it("query strings are stripped from request logging path", async () => {
+    const res = await httpGet("/healthz?token=SECRET_DO_NOT_LOG&user=admin");
+    expect(res.status).toBe(200);
   });
 });

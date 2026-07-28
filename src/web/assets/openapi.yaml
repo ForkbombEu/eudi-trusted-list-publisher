@@ -7,8 +7,8 @@ info:
     name: Credimi
     url: https://github.com/ForkbombEu/eudi-trusted-list-publisher
 servers:
-  - url: http://localhost:8080
-    description: Local development server
+  - url: /
+    description: Same-origin
 paths:
   /api/v1/lists:
     get:

@@ -276,13 +276,16 @@ describe("publish", () => {
 });
 
 describe("PublicationStore", () => {
-  it("auto-creates publication directory on construction", () => {
+  it("does not create publication directory on construction", () => {
     const freshDir = resolve(tmpdir(), `fresh-${randomUUID()}`);
     try {
       new PublicationStore({ publicationDir: freshDir });
-      expect(existsSync(freshDir)).toBe(true);
+      // Constructor should NOT auto-create the directory
+      expect(existsSync(freshDir)).toBe(false);
     } finally {
-      rmSync(freshDir, { recursive: true, force: true });
+      try {
+        rmSync(freshDir, { recursive: true, force: true });
+      } catch {}
     }
   });
 
@@ -370,7 +373,7 @@ describe("PublicationStore", () => {
           result2.loteJson,
           JSON.stringify(result2.manifest, null, 2),
         ),
-      ).toThrow(/already exists with different content/);
+      ).toThrow(/corrupt|already exists/);
     }
   });
 
@@ -506,5 +509,105 @@ describe("PublicationStore", () => {
     const index = store.loadIndex(result.listKey);
     expect(index).not.toBeNull();
     expect(index!.versions.length).toBe(1);
+  });
+
+  it("idempotent republish fails on corrupt stored lote.json", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    // Corrupt lote.json
+    writeFileSync(store.loteJsonPath(result.listKey, 1), "corrupted", "utf-8");
+
+    // Republishing identical input should fail with corruption diagnostic
+    expect(() =>
+      store.store(
+        result,
+        signedCompact,
+        result.loteJson,
+        JSON.stringify(result.manifest, null, 2),
+      ),
+    ).toThrow(/corrupt/);
+  });
+
+  it("idempotent republish fails on corrupt manifest.json", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    // Corrupt manifest.json
+    writeFileSync(
+      store.manifestPath(result.listKey, 1),
+      "not json {{{{",
+      "utf-8",
+    );
+
+    expect(() =>
+      store.store(
+        result,
+        signedCompact,
+        result.loteJson,
+        JSON.stringify(result.manifest, null, 2),
+      ),
+    ).toThrow(/corrupt/);
+  });
+});
+
+describe("publication gate tests", () => {
+  it("rejects a malformed certificate", async () => {
+    await expect(
+      publish({
+        compactJws: signedCompact,
+        certificatePem: "not-a-certificate",
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects a correctly signed but ETSI-invalid payload", async () => {
+    // Create a valid JWS but with a payload that passes crypto but fails ETSI schema
+    const { document } = compile(AUTHORING);
+    // @ts-expect-error intentionally invalid
+    document.LoTE.ListAndSchemeInformation.LoTEVersionIdentifier =
+      "not-a-number";
+    const signed = await sign({
+      document,
+      key: testKey,
+      certificatePem: testCertPem,
+    });
+
+    await expect(
+      publish({
+        compactJws: signed.compact,
+        certificatePem: testCertPem,
+      }),
+    ).rejects.toThrow("ETSI schema validation failed");
+  });
+
+  it("uses injected verification clock deterministically", async () => {
+    const clock = new Date("2026-12-15T12:00:00Z");
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+      clock,
+    });
+    expect(result.manifest.publicationTimestamp).toBe(
+      "2026-12-15T12:00:00.000Z",
+    );
   });
 });
