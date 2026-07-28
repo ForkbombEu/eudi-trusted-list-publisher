@@ -663,10 +663,15 @@ export class PublicationStore {
     const versionsDir = resolve(this.canonicalRoot, listKey, "versions");
     if (!this.fs.existsSync(versionsDir)) return;
 
+    if (this.fs.lstatSync(versionsDir).isSymbolicLink()) {
+      throw new Error("versions directory is a symlink");
+    }
+
     const entries: Array<IndexVersionEntry | null> = [];
     for (const d of this.fs
       .readdirSync(versionsDir, { withFileTypes: true })
       .filter((d) => d.isDirectory())) {
+      if (d.isSymbolicLink?.() ?? false) continue;
       const seq = parseInt(d.name, 10);
       if (!SAFE_SEQ_RE.test(d.name)) continue;
       const outcome = await loadVersionArtifacts(
@@ -716,10 +721,14 @@ export class PublicationStore {
     assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
     const versionsDir = resolve(this.canonicalRoot, listKey, "versions");
     if (!this.fs.existsSync(versionsDir)) return null;
+
+    if (this.fs.lstatSync(versionsDir).isSymbolicLink()) return null;
+
     const entries: Array<IndexVersionEntry | null> = [];
     for (const d of this.fs
       .readdirSync(versionsDir, { withFileTypes: true })
       .filter((d) => d.isDirectory())) {
+      if (d.isSymbolicLink?.() ?? false) continue;
       const seq = parseInt(d.name, 10);
       if (!SAFE_SEQ_RE.test(d.name)) continue;
       const outcome = await loadVersionArtifacts(
@@ -810,7 +819,12 @@ export class PublicationStore {
     }
     return this.fs
       .readdirSync(this.canonicalRoot, { withFileTypes: true })
-      .filter((d) => d.isDirectory() && !d.name.startsWith(".staging_"))
+      .filter(
+        (d) =>
+          d.isDirectory() &&
+          !d.name.startsWith(".staging_") &&
+          !(d.isSymbolicLink?.() ?? false),
+      )
       .map((d) => d.name)
       .filter((n) => SAFE_KEY_RE.test(n))
       .sort();

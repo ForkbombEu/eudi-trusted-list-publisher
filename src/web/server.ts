@@ -3,7 +3,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, existsSync, statSync, lstatSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { parse as parseYaml } from "yaml";
@@ -218,6 +218,11 @@ function logRequest(
 
 function readFileBounded(filePath: string, maxBytes: number): string | null {
   if (!existsSync(filePath)) return null;
+  try {
+    if (lstatSync(filePath).isSymbolicLink()) return null;
+  } catch {
+    return null;
+  }
   const st = statSync(filePath);
   if (st.size > maxBytes) return null;
   return readFileSync(filePath, "utf-8");
