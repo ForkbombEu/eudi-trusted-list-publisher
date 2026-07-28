@@ -60,7 +60,10 @@ export {
 } from "./publication/manifest.js";
 export {
   PublicationStore,
+  loadVersionArtifacts,
   type StoreConfig,
   type IndexEntry,
   type IndexVersionEntry,
+  type VersionArtifacts,
+  type VersionReadResult,
 } from "./publication/store.js";

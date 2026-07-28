@@ -110,6 +110,7 @@ export async function publish(
   const verifyResult = await verifyJades({
     compactJws: trimmed,
     certificatePem: input.certificatePem,
+    clock: input.clock,
   });
 
   if (!verifyResult.payload) {

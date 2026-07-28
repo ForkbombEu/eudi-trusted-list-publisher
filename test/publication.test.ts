@@ -5,6 +5,7 @@ import {
   mkdirSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -609,5 +610,153 @@ describe("publication gate tests", () => {
     expect(result.manifest.publicationTimestamp).toBe(
       "2026-12-15T12:00:00.000Z",
     );
+  });
+
+  it("rejects symlinked publication root", async () => {
+    const realDir = resolve(tmpdir(), `real-pub-${randomUUID()}`);
+    const linkDir = resolve(tmpdir(), `link-pub-${randomUUID()}`);
+    mkdirSync(realDir, { recursive: true });
+    symlinkSync(realDir, linkDir, "dir");
+    try {
+      expect(() => {
+        new PublicationStore({ publicationDir: linkDir });
+      }).toThrow(/symlink/);
+    } finally {
+      try {
+        rmSync(realDir, { recursive: true, force: true });
+      } catch {}
+      try {
+        unlinkSync(linkDir);
+      } catch {}
+    }
+  });
+
+  it("symlinked artefact file produces no download", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    // Replace lote.json with a symlink to an external file
+    const externalFile = resolve(tmpdir(), `external-${randomUUID()}.json`);
+    writeFileSync(externalFile, '{"secret":"external content"}', "utf-8");
+    const lotePath = store.loteJsonPath(result.listKey, 1);
+    rmSync(lotePath);
+    symlinkSync(externalFile, lotePath, "file");
+
+    try {
+      // Download should fail — symlink rejected
+      const bytes = store.loadVersionBytes(result.listKey, 1, "lote");
+      expect(bytes).toBeNull();
+    } finally {
+      try {
+        unlinkSync(externalFile);
+      } catch {}
+    }
+  });
+
+  it("parseable but structurally invalid manifest rejected", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    // Write a parseable but structurally invalid manifest
+    writeFileSync(
+      store.manifestPath(result.listKey, 1),
+      JSON.stringify({
+        manifestVersion: "not-a-number",
+        listKey: result.listKey,
+        sequenceNumber: 1,
+      }),
+      "utf-8",
+    );
+
+    const mani = store.loadManifest(result.listKey, 1);
+    expect(mani).toBeNull();
+  });
+
+  it("manifest with wrong listKey or sequenceNumber rejected", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    // Write manifest with wrong listKey
+    writeFileSync(
+      store.manifestPath(result.listKey, 1),
+      JSON.stringify({ ...result.manifest, listKey: "wrong_key" }),
+      "utf-8",
+    );
+
+    const mani = store.loadManifest(result.listKey, 1);
+    expect(mani).toBeNull();
+  });
+
+  it("index.json with HTML-injecting sequenceNumber is sanitised", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    // Write a malicious index.json with HTML injection
+    const indexPath = store.indexPath(result.listKey);
+    writeFileSync(
+      indexPath,
+      JSON.stringify({
+        listKey: result.listKey,
+        versions: [
+          {
+            sequenceNumber: "<script>alert(1)</script>",
+            issueDate: "x",
+            nextUpdateDate: "x",
+            publicationTimestamp: "x",
+            compactJadesSha256: "x",
+            loteJsonSha256: "x",
+            signatureValid: true,
+            etsiSchemaValid: true,
+            signerTrustStatus: "not_evaluated",
+          },
+        ],
+      }),
+      "utf-8",
+    );
+
+    // loadIndex should derive from manifests, ignoring the malicious index
+    const index = store.loadIndex(result.listKey);
+    // The derived index uses the validated manifest's actual sequence number
+    expect(index).not.toBeNull();
+    const seqs = index!.versions.map((v) => v.sequenceNumber);
+    for (const s of seqs) {
+      expect(typeof s).toBe("number");
+    }
   });
 });

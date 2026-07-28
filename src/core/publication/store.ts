@@ -63,6 +63,7 @@ function removeDir(dir: string): void {
 
 function readFileBounded(filePath: string, maxBytes: number): string | null {
   if (!existsSync(filePath)) return null;
+  if (lstatSync(filePath).isSymbolicLink()) return null;
   const st = statSync(filePath);
   if (st.size > maxBytes) return null;
   return readFileSync(filePath, "utf-8");
@@ -72,32 +73,78 @@ function sha256(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-function validateVersionIntegrity(
+export interface VersionArtifacts {
+  manifest: Manifest;
+  loteJsonBytes: string;
+  jadesBytes: string;
+  manifestBytes: string;
+}
+
+export interface VersionReadResult {
+  artifacts: VersionArtifacts | null;
+  diagnostic: string;
+}
+
+function validateManifestShape(
+  obj: unknown,
+  listKey: string,
+  sequence: number,
+): Manifest | null {
+  if (typeof obj !== "object" || obj === null) return null;
+  const m = obj as Record<string, unknown>;
+  if (
+    typeof m.manifestVersion !== "number" ||
+    typeof m.listKey !== "string" ||
+    typeof m.sequenceNumber !== "number" ||
+    typeof m.compactJadesSha256 !== "string" ||
+    typeof m.loteJsonSha256 !== "string" ||
+    typeof m.signatureValid !== "boolean" ||
+    typeof m.etsiSchemaValid !== "boolean" ||
+    typeof m.signerTrustStatus !== "string"
+  ) {
+    return null;
+  }
+  if (m.listKey !== listKey || m.sequenceNumber !== sequence) {
+    return null;
+  }
+  return m as unknown as Manifest;
+}
+
+export function loadVersionArtifacts(
   baseDir: string,
   listKey: string,
   sequenceNumber: number,
   maxBytes: number,
-  expectedJadesHash?: string,
-  expectedJsonHash?: string,
-): { manifest: Manifest | null; corrupt: boolean; diagnostic: string } {
-  const verDir = resolve(baseDir, listKey, "versions", String(sequenceNumber));
-  if (!existsSync(verDir)) {
-    return {
-      manifest: null,
-      corrupt: false,
-      diagnostic: "version directory missing",
-    };
+): VersionReadResult {
+  if (!existsSync(baseDir)) {
+    return { artifacts: null, diagnostic: "publication root does not exist" };
   }
 
-  rejectSymlinksInPath(baseDir, verDir);
+  try {
+    if (lstatSync(baseDir).isSymbolicLink()) {
+      return { artifacts: null, diagnostic: "publication root is a symlink" };
+    }
+  } catch {
+    return { artifacts: null, diagnostic: "cannot stat publication root" };
+  }
+
+  const verDir = resolve(baseDir, listKey, "versions", String(sequenceNumber));
+  if (!existsSync(verDir)) {
+    return { artifacts: null, diagnostic: "version directory missing" };
+  }
 
   const jadesPath = resolve(verDir, "lote.jades");
   const jsonPath = resolve(verDir, "lote.json");
   const maniPath = resolve(verDir, "manifest.json");
 
-  rejectSymlinksInPath(baseDir, jadesPath);
-  rejectSymlinksInPath(baseDir, jsonPath);
-  rejectSymlinksInPath(baseDir, maniPath);
+  try {
+    rejectSymlinksInPath(baseDir, verDir);
+    rejectSymlinksInPath(baseDir, jadesPath);
+    rejectSymlinksInPath(baseDir, jsonPath);
+    rejectSymlinksInPath(baseDir, maniPath);
+  } catch {
+    return { artifacts: null, diagnostic: "symlink rejected in version path" };
+  }
 
   const jadesContent = readFileBounded(jadesPath, maxBytes);
   const jsonContent = readFileBounded(jsonPath, maxBytes);
@@ -105,43 +152,23 @@ function validateVersionIntegrity(
 
   if (jadesContent === null || jsonContent === null || maniContent === null) {
     return {
-      manifest: null,
-      corrupt: true,
-      diagnostic: "one or more artifact files missing or too large",
+      artifacts: null,
+      diagnostic: "one or more artifact files missing, too large, or symlinked",
     };
   }
 
-  let manifest: Manifest;
+  let manifest: Manifest | null;
   try {
-    manifest = JSON.parse(maniContent) as Manifest;
+    const parsed = JSON.parse(maniContent);
+    manifest = validateManifestShape(parsed, listKey, sequenceNumber);
   } catch {
-    return {
-      manifest: null,
-      corrupt: true,
-      diagnostic: "manifest is not valid JSON",
-    };
+    return { artifacts: null, diagnostic: "manifest is not valid JSON" };
   }
 
-  if (
-    typeof manifest.manifestVersion !== "number" ||
-    typeof manifest.listKey !== "string" ||
-    typeof manifest.sequenceNumber !== "number"
-  ) {
+  if (!manifest) {
     return {
-      manifest: null,
-      corrupt: true,
-      diagnostic: "manifest missing required fields",
-    };
-  }
-
-  if (
-    manifest.listKey !== listKey ||
-    manifest.sequenceNumber !== sequenceNumber
-  ) {
-    return {
-      manifest: null,
-      corrupt: true,
-      diagnostic: "manifest listKey or sequenceNumber mismatch",
+      artifacts: null,
+      diagnostic: "manifest shape invalid or listKey/sequence mismatch",
     };
   }
 
@@ -149,46 +176,41 @@ function validateVersionIntegrity(
   const actualJsonHash = sha256(jsonContent);
 
   if (manifest.compactJadesSha256 !== actualJadesHash) {
-    return {
-      manifest: null,
-      corrupt: true,
-      diagnostic: "Compact JAdES hash mismatch",
-    };
+    return { artifacts: null, diagnostic: "Compact JAdES hash mismatch" };
   }
   if (manifest.loteJsonSha256 !== actualJsonHash) {
-    return {
-      manifest: null,
-      corrupt: true,
-      diagnostic: "LoTE JSON hash mismatch",
-    };
+    return { artifacts: null, diagnostic: "LoTE JSON hash mismatch" };
   }
 
-  if (
-    expectedJadesHash !== undefined &&
-    expectedJadesHash !== actualJadesHash
-  ) {
-    return {
-      manifest: null,
-      corrupt: true,
-      diagnostic: "Compact JAdES hash does not match expected",
-    };
-  }
-  if (expectedJsonHash !== undefined && expectedJsonHash !== actualJsonHash) {
-    return {
-      manifest: null,
-      corrupt: true,
-      diagnostic: "LoTE JSON hash does not match expected",
-    };
-  }
-
-  return { manifest, corrupt: false, diagnostic: "" };
+  return {
+    artifacts: {
+      manifest,
+      loteJsonBytes: jsonContent,
+      jadesBytes: jadesContent,
+      manifestBytes: maniContent,
+    },
+    diagnostic: "",
+  };
 }
 
 export class PublicationStore {
   readonly publicationDir: string;
+  private canonicalRoot: string;
 
   constructor(config: StoreConfig) {
     this.publicationDir = resolve(config.publicationDir);
+    this.canonicalRoot = this.publicationDir;
+    if (existsSync(this.publicationDir)) {
+      if (lstatSync(this.publicationDir).isSymbolicLink()) {
+        throw new Error(
+          "Publication root is a symlink — rejected for security",
+        );
+      }
+    }
+  }
+
+  getCanonicalRoot(): string {
+    return this.canonicalRoot;
   }
 
   versionDir(listKey: string, sequenceNumber: number): string {
@@ -221,41 +243,43 @@ export class PublicationStore {
     loteJson: string,
     manifestJson: string,
   ): void {
+    if (existsSync(this.publicationDir)) {
+      if (lstatSync(this.publicationDir).isSymbolicLink()) {
+        throw new Error(
+          "Publication root is a symlink — rejected for security",
+        );
+      }
+    }
+
     const finalDir = this.versionDir(result.listKey, result.sequenceNumber);
 
-    // Check for existing version
     if (existsSync(finalDir)) {
-      rejectSymlinksInPath(this.publicationDir, finalDir);
+      rejectSymlinksInPath(this.canonicalRoot, finalDir);
 
-      const integrity = validateVersionIntegrity(
-        this.publicationDir,
+      const outcome = loadVersionArtifacts(
+        this.canonicalRoot,
         result.listKey,
         result.sequenceNumber,
         DEFAULT_MAX_FILE_BYTES,
-        result.manifest.compactJadesSha256,
-        result.manifest.loteJsonSha256,
       );
 
-      if (integrity.corrupt) {
+      if (!outcome.artifacts) {
         throw new Error(
-          `Existing publication is corrupt: ${integrity.diagnostic}`,
+          `Existing publication is corrupt: ${outcome.diagnostic}`,
         );
       }
 
-      if (integrity.manifest) {
-        const m = integrity.manifest;
-        if (
-          m.compactJadesSha256 === result.manifest.compactJadesSha256 &&
-          m.loteJsonSha256 === result.manifest.loteJsonSha256 &&
-          m.listKey === result.manifest.listKey &&
-          m.sequenceNumber === result.manifest.sequenceNumber &&
-          m.schemeOperatorName === result.manifest.schemeOperatorName &&
-          m.territory === result.manifest.territory &&
-          m.signingCertificateSha256 ===
-            result.manifest.signingCertificateSha256
-        ) {
-          return; // Idempotent: byte-identical and metadata match
-        }
+      const m = outcome.artifacts.manifest;
+      if (
+        m.compactJadesSha256 === result.manifest.compactJadesSha256 &&
+        m.loteJsonSha256 === result.manifest.loteJsonSha256 &&
+        m.listKey === result.manifest.listKey &&
+        m.sequenceNumber === result.manifest.sequenceNumber &&
+        m.schemeOperatorName === result.manifest.schemeOperatorName &&
+        m.territory === result.manifest.territory &&
+        m.signingCertificateSha256 === result.manifest.signingCertificateSha256
+      ) {
+        return; // Idempotent
       }
 
       throw new Error(
@@ -263,7 +287,7 @@ export class PublicationStore {
       );
     }
 
-    rejectSymlinksInPath(this.publicationDir, finalDir);
+    rejectSymlinksInPath(this.canonicalRoot, finalDir);
 
     const stageDir = resolve(
       this.publicationDir,
@@ -323,16 +347,16 @@ export class PublicationStore {
         const seq = parseInt(d.name, 10);
         if (!SAFE_SEQ_RE.test(d.name)) return null;
 
-        const integrity = validateVersionIntegrity(
-          this.publicationDir,
+        const outcome = loadVersionArtifacts(
+          this.canonicalRoot,
           listKey,
           seq,
           DEFAULT_MAX_FILE_BYTES,
         );
 
-        if (integrity.corrupt || !integrity.manifest) return null;
+        if (!outcome.artifacts) return null;
 
-        const m = integrity.manifest;
+        const m = outcome.artifacts.manifest;
         return {
           sequenceNumber: seq,
           issueDate: m.issueDate,
@@ -353,7 +377,6 @@ export class PublicationStore {
       versions: entries,
     };
 
-    // Atomic write: stage temp file, then rename
     const tmpPath = indexPath + "." + randomBytes(8).toString("hex") + ".tmp";
     try {
       writeFileSync(tmpPath, JSON.stringify(index, null, 2), {
@@ -382,14 +405,14 @@ export class PublicationStore {
       .map((d) => {
         const seq = parseInt(d.name, 10);
         if (!SAFE_SEQ_RE.test(d.name)) return null;
-        const integrity = validateVersionIntegrity(
-          this.publicationDir,
+        const outcome = loadVersionArtifacts(
+          this.canonicalRoot,
           listKey,
           seq,
           DEFAULT_MAX_FILE_BYTES,
         );
-        if (integrity.corrupt || !integrity.manifest) return null;
-        const m = integrity.manifest;
+        if (!outcome.artifacts) return null;
+        const m = outcome.artifacts.manifest;
         return {
           sequenceNumber: seq,
           issueDate: m.issueDate,
@@ -416,35 +439,82 @@ export class PublicationStore {
   loadIndex(listKey: string): IndexEntry | null {
     assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
     const indexPath = this.indexPath(listKey);
-    if (!existsSync(indexPath)) {
-      return this.deriveIndexInMemory(listKey);
+
+    // Try to read index.json
+    if (existsSync(indexPath)) {
+      try {
+        if (lstatSync(indexPath).isSymbolicLink()) {
+          return this.deriveIndexInMemory(listKey);
+        }
+        const raw = JSON.parse(
+          readFileBounded(indexPath, DEFAULT_MAX_FILE_BYTES) ?? "null",
+        );
+        if (
+          raw &&
+          typeof raw === "object" &&
+          Array.isArray((raw as Record<string, unknown>).versions)
+        ) {
+          // Index exists and parses — but we still derive from manifests for authority
+          // Only use it as a fast path if it has versions. Derive to be safe.
+          return this.deriveIndexInMemory(listKey);
+        }
+      } catch {
+        // fall through to derivation
+      }
     }
-    rejectSymlinksInPath(this.publicationDir, indexPath);
-    try {
-      return JSON.parse(readFileSync(indexPath, "utf-8")) as IndexEntry;
-    } catch {
-      // corrupt — derive in memory, do not write
-      return this.deriveIndexInMemory(listKey);
-    }
+
+    return this.deriveIndexInMemory(listKey);
   }
 
   loadManifest(listKey: string, sequenceNumber: number): Manifest | null {
     assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
     assertSafeSegment(String(sequenceNumber), SAFE_SEQ_RE, "sequence number");
 
-    const integrity = validateVersionIntegrity(
-      this.publicationDir,
+    const outcome = loadVersionArtifacts(
+      this.canonicalRoot,
       listKey,
       sequenceNumber,
       DEFAULT_MAX_FILE_BYTES,
     );
 
-    if (integrity.corrupt || !integrity.manifest) return null;
-    return integrity.manifest;
+    if (!outcome.artifacts) return null;
+    return outcome.artifacts.manifest;
+  }
+
+  loadVersionBytes(
+    listKey: string,
+    sequenceNumber: number,
+    fileType: "lote" | "signature" | "manifest",
+  ): string | null {
+    assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
+    assertSafeSegment(String(sequenceNumber), SAFE_SEQ_RE, "sequence number");
+
+    const outcome = loadVersionArtifacts(
+      this.canonicalRoot,
+      listKey,
+      sequenceNumber,
+      DEFAULT_MAX_FILE_BYTES,
+    );
+
+    if (!outcome.artifacts) return null;
+
+    switch (fileType) {
+      case "lote":
+        return outcome.artifacts.loteJsonBytes;
+      case "signature":
+        return outcome.artifacts.jadesBytes;
+      case "manifest":
+        return outcome.artifacts.manifestBytes;
+    }
   }
 
   listKeys(): string[] {
     if (!existsSync(this.publicationDir)) return [];
+    try {
+      if (lstatSync(this.publicationDir).isSymbolicLink()) return [];
+    } catch {
+      return [];
+    }
     return readdirSync(this.publicationDir, { withFileTypes: true })
       .filter((d) => d.isDirectory() && !d.name.startsWith(".staging_"))
       .map((d) => d.name)

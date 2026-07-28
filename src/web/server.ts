@@ -543,7 +543,7 @@ export function createWebServer(config: ServerConfig) {
       for (const v of index.versions) {
         rows += `
       <tr>
-        <td><a href="/lists/${escapeHtml(listKey)}/versions/${v.sequenceNumber}">${v.sequenceNumber}</a></td>
+        <td><a href="/lists/${escapeHtml(listKey)}/versions/${String(v.sequenceNumber)}">${String(v.sequenceNumber)}</a></td>
         <td>${escapeHtml(v.issueDate)}</td>
         <td>${escapeHtml(v.nextUpdateDate)}</td>
         <td>${escapeHtml(v.publicationTimestamp)}</td>
@@ -582,12 +582,11 @@ export function createWebServer(config: ServerConfig) {
         return;
       }
 
-      const loteJsonPath = s.loteJsonPath(listKey, sequence);
+      const loteData = s.loadVersionBytes(listKey, sequence, "lote");
       let entityRows = "";
-      const loteContent = readFileBounded(loteJsonPath, maxFileBytes);
-      if (loteContent) {
+      if (loteData) {
         try {
-          const doc = JSON.parse(loteContent);
+          const doc = JSON.parse(loteData);
           const entities = doc?.LoTE?.TrustedEntitiesList ?? [];
           for (const e of entities) {
             const names =
@@ -671,9 +670,9 @@ ${
 <div class="card">
 <h2>Downloads</h2>
 <ul>
-<li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${sequence}/signature">Compact JAdES artifact (lote.jades)</a></li>
-<li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${sequence}/lote">Decoded LoTE JSON</a></li>
-<li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${sequence}/manifest">Publication manifest</a></li>
+<li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${String(sequence)}/signature">Compact JAdES artifact (lote.jades)</a></li>
+<li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${String(sequence)}/lote">Decoded LoTE JSON</a></li>
+<li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${String(sequence)}/manifest">Publication manifest</a></li>
 </ul>
 </div>
 
@@ -757,22 +756,11 @@ ${
     fileType: "lote" | "signature" | "manifest",
   ): void {
     try {
-      const filePath = (() => {
-        switch (fileType) {
-          case "lote":
-            return store.loteJsonPath(listKey, sequence);
-          case "signature":
-            return store.loteJadesPath(listKey, sequence);
-          case "manifest":
-            return store.manifestPath(listKey, sequence);
-        }
-      })();
-
-      const content = readFileBounded(filePath, maxFileBytes);
+      const content = store.loadVersionBytes(listKey, sequence, fileType);
       if (content === null) {
         sendJson(res, 404, {
           error: "not_found",
-          message: "File not found or too large",
+          message: "File not found or corrupt",
         });
         return;
       }

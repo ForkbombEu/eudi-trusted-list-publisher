@@ -6,6 +6,7 @@ export interface VerificationInput {
   compactJws: string;
   certificatePem?: string;
   trustedCertificates?: string[];
+  clock?: Date;
 }
 
 export interface VerificationResult {
@@ -195,7 +196,7 @@ export async function verify(
   if (certPem) {
     try {
       const cert = pemToCert(certPem);
-      const now = new Date();
+      const now = input.clock ?? new Date();
       const validFrom = new Date(cert.validFrom);
       const validTo = new Date(cert.validTo);
       if (now < validFrom) {

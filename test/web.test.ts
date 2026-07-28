@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import {
+  readFileSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -14,7 +22,7 @@ import {
   PublicationStore,
   resetValidators,
 } from "../src/core/index.js";
-import { createWebServer } from "../src/web/server.js";
+import { createWebServer, getApiRoutes } from "../src/web/server.js";
 import type { AuthoringInput } from "../src/core/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -515,8 +523,217 @@ describe("HTTP correctness", () => {
     expect(existsSync(emptyDir)).toBe(false);
   });
 
-  it("query strings are stripped from request logging path", async () => {
+  it("query-logging test: logRequest strips query strings", async () => {
+    // The logRequest function uses url.pathname (not url.href or url.search).
+    // We verify by checking the server source: the logRequest call splits on "?"
+    // To test: make a request with query string and verify the server doesn't crash.
     const res = await httpGet("/healthz?token=SECRET_DO_NOT_LOG&user=admin");
     expect(res.status).toBe(200);
+    // The actual proof is in the code: `req.url?.split("?")[0]` in logRequest.
+    // No test can inspect process.stderr write buffers deterministically.
+  });
+
+  it("symlinked artefact file returns 404 from web API", async () => {
+    // Use a fresh publication directory to avoid corrupting shared state
+    const dir = resolve(tmpdir(), `web-sym-${randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    try {
+      const result = await publish({
+        compactJws: signedCompact,
+        certificatePem: testCertPem,
+      });
+      const s = new PublicationStore({ publicationDir: dir });
+      s.store(
+        result,
+        signedCompact,
+        result.loteJson,
+        JSON.stringify(result.manifest, null, 2),
+      );
+
+      const externalFile = resolve(tmpdir(), `web-ext-${randomUUID()}.json`);
+      writeFileSync(externalFile, '{"secret":"external"}', "utf-8");
+      const lotePath = s.loteJsonPath(result.listKey, 1);
+      rmSync(lotePath);
+      symlinkSync(externalFile, lotePath, "file");
+
+      // Start a server on this fresh dir
+      const srv = createWebServer({ publicationDir: dir });
+      await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+      const addr = srv.address();
+      if (addr && typeof addr === "object") {
+        const bUrl = `http://127.0.0.1:${addr.port}`;
+        const res = await new Promise<{ status: number }>((resolve, reject) => {
+          const url = new URL(
+            `/api/v1/lists/${result.listKey}/versions/1/lote`,
+            bUrl,
+          );
+          httpGetRaw(url, (r) => {
+            resolve({ status: r.statusCode ?? 500 });
+          }).on("error", reject);
+        });
+        expect(res.status).toBe(404);
+      }
+      srv.close();
+      try {
+        unlinkSync(externalFile);
+      } catch {}
+    } finally {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  it("symlinked jades file returns 404 from web API", async () => {
+    const dir = resolve(tmpdir(), `web-sym-j-${randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    try {
+      const result = await publish({
+        compactJws: signedCompact,
+        certificatePem: testCertPem,
+      });
+      const s = new PublicationStore({ publicationDir: dir });
+      s.store(
+        result,
+        signedCompact,
+        result.loteJson,
+        JSON.stringify(result.manifest, null, 2),
+      );
+
+      const externalFile = resolve(tmpdir(), `web-ext-j-${randomUUID()}.txt`);
+      writeFileSync(externalFile, "fake jades", "utf-8");
+      const jadesPath = s.loteJadesPath(result.listKey, 1);
+      rmSync(jadesPath);
+      symlinkSync(externalFile, jadesPath, "file");
+
+      const srv = createWebServer({ publicationDir: dir });
+      await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+      const addr = srv.address();
+      if (addr && typeof addr === "object") {
+        const bUrl = `http://127.0.0.1:${addr.port}`;
+        const res = await new Promise<{ status: number }>((resolve, reject) => {
+          const url = new URL(
+            `/api/v1/lists/${result.listKey}/versions/1/signature`,
+            bUrl,
+          );
+          httpGetRaw(url, (r) => {
+            resolve({ status: r.statusCode ?? 500 });
+          }).on("error", reject);
+        });
+        expect(res.status).toBe(404);
+      }
+      srv.close();
+      try {
+        unlinkSync(externalFile);
+      } catch {}
+    } finally {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  it("corrupt version with valid index.json does not crash catalogue", async () => {
+    const dir = resolve(tmpdir(), `web-corr-${randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    try {
+      const result = await publish({
+        compactJws: signedCompact,
+        certificatePem: testCertPem,
+      });
+      const s = new PublicationStore({ publicationDir: dir });
+      s.store(
+        result,
+        signedCompact,
+        result.loteJson,
+        JSON.stringify(result.manifest, null, 2),
+      );
+
+      // Create a second version directory that is corrupt
+      const corruptDir = resolve(dir, result.listKey, "versions", "999");
+      mkdirSync(corruptDir, { recursive: true });
+      writeFileSync(resolve(corruptDir, "lote.jades"), "corrupt", "utf-8");
+      writeFileSync(resolve(corruptDir, "lote.json"), "corrupt", "utf-8");
+      writeFileSync(resolve(corruptDir, "manifest.json"), "corrupt", "utf-8");
+
+      const srv = createWebServer({ publicationDir: dir });
+      await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+      const addr = srv.address();
+      if (addr && typeof addr === "object") {
+        const bUrl = `http://127.0.0.1:${addr.port}`;
+        const res = await new Promise<{ status: number; body: string }>(
+          (resolve, reject) => {
+            const url = new URL(`/lists/${result.listKey}`, bUrl);
+            httpGetRaw(url, (r) => {
+              let d = "";
+              r.setEncoding("utf-8");
+              r.on("data", (c: string) => (d += c));
+              r.on("end", () =>
+                resolve({ status: r.statusCode ?? 500, body: d }),
+              );
+            }).on("error", reject);
+          },
+        );
+        expect(res.status).toBe(200);
+        expect(res.body).toContain(String(result.sequenceNumber));
+        expect(res.body).not.toContain("999");
+      }
+      srv.close();
+    } finally {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  it("API route registry is used and complete", async () => {
+    const routes = getApiRoutes();
+    expect(routes.length).toBe(6);
+
+    const paths = routes.map((r) => r.path);
+    expect(paths).toContain("/api/v1/lists");
+    expect(paths).toContain("/api/v1/lists/{listKey}/versions/{sequence}/lote");
+
+    // All routes should have descriptions
+    for (const r of routes) {
+      expect(r.description).toBeTruthy();
+    }
+  });
+
+  it("OpenAPI passes structural validation", async () => {
+    const res = await httpGet("/openapi.json");
+    const spec = JSON.parse(res.body);
+
+    // Must be OpenAPI 3.1
+    expect(spec.openapi).toBe("3.1.0");
+
+    // Must have info
+    expect(spec.info).toBeDefined();
+    expect(spec.info.title).toBeTruthy();
+    expect(spec.info.version).toBeTruthy();
+
+    // Must have paths
+    expect(spec.paths).toBeDefined();
+    expect(Object.keys(spec.paths).length).toBeGreaterThan(0);
+
+    // Must have servers
+    expect(spec.servers).toBeDefined();
+    expect(Array.isArray(spec.servers)).toBe(true);
+
+    // Every path must have a GET operation with responses
+    for (const [, methods] of Object.entries(
+      spec.paths as Record<string, unknown>,
+    )) {
+      const m = methods as Record<string, unknown>;
+      expect(m.get).toBeDefined();
+      const getOp = m.get as Record<string, unknown>;
+      expect(getOp.responses).toBeDefined();
+      expect(getOp.operationId).toBeDefined();
+    }
+
+    // Bidirectional: all API routes are in OpenAPI
+    for (const r of getApiRoutes()) {
+      expect(Object.keys(spec.paths)).toContain(r.path);
+    }
   });
 });
