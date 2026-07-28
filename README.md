@@ -1,25 +1,51 @@
-# Credimi Extras mini-app Template
+# EUDI Trusted List Publisher
 
-This GitHub template starts a new Credimi Extras mini-app with its governance,
-standards-neutral documentation, and authoritative Credimi design assets.
+A TS 119 602 JSON List of Trusted Entities (LoTE) publisher for the Wallet
+Provider profile (Annex E). Signing keys are supplied through local files or
+CI secrets and are never uploaded through a public web interface.
 
-It deliberately contains no application implementation. A derived project may
-use exactly one backend stack: Go or Node.js with TypeScript. Stack selection
-happens in the derived project, based on its actual requirements; this template
-does not select, scaffold, or implement either stack.
+This first vertical slice implements compilation, schema validation,
+JAdES Compact Baseline B signing, and verification for single LoTE
+artifacts. It does not yet implement TS 119 612 Trusted Lists, LoTL
+aggregation, XML/XAdES, or the EC TS02 notification API.
 
-Complete [SPECS.md](SPECS.md) before implementation. It records the selected
-backend, architecture, dependencies, commands, and runtime asset locations.
-Populate [STANDARDS.md](STANDARDS.md) only with standards, versions, and
-profiles confirmed to apply to the derived project.
+## Technical specs
 
-The authoritative design assets are in [HITL/](HITL/):
+- **Runtime**: Node.js 24 LTS
+- **Language**: TypeScript 5.8
+- **Module system**: ESM (`"type": "module"`)
+- **Libraries**:
+  - `jose` (JOSE/JWS)
+  - `ajv` + `ajv-formats` (JSON Schema validation)
+  - `commander` (CLI argument parsing)
 
-- `HITL/style.css`
-- `HITL/credimi_logo.svg`
-- `HITL/credimi_logo_negative.svg`
+## How to run
 
-Follow [docs/CREATE_PROJECT.md](docs/CREATE_PROJECT.md) when creating a
-project from this template. Design and branding rules are in
-[DESIGN.md](DESIGN.md); governance instructions are in [AGENTS.md](AGENTS.md)
-and [directives/](directives/).
+```bash
+npm install
+npm run build
+node dist/src/cli/main.js --help
+```
+
+Or during development:
+
+```bash
+npx tsx src/cli/main.ts --help
+```
+
+## CLI Examples
+
+| Command | Example |
+|---------|---------|
+| `compile` | `trusted-list-publisher compile -i scheme.json -o lote.json` |
+| `validate` | `trusted-list-publisher validate -i lote.json --etsi` |
+| `sign` | `trusted-list-publisher sign -i lote.json -k key.pem -c cert.pem -o signed.txt` |
+| `verify` | `trusted-list-publisher verify -i signed.txt -c cert.pem` |
+
+**Exit codes**:
+- 0: success
+- 1: general error (invalid JSON, file not found)
+- 2: authoring schema validation failure
+- 3: ETSI schema validation failure
+- 4: missing key or certificate
+- 5: signature verification failure

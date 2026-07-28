@@ -1,0 +1,38 @@
+{
+  "name": "@forkbombeu/eudi-trusted-list-publisher",
+  "version": "0.1.0",
+  "description": "TS 119 602 JSON List of Trusted Entities (LoTE) publisher for the Wallet Provider profile",
+  "type": "module",
+  "main": "dist/src/core/index.js",
+  "types": "dist/src/core/index.d.ts",
+  "bin": {
+    "trusted-list-publisher": "dist/src/cli/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "format": "prettier --write 'src/**/*.ts' 'test/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts' 'test/**/*.ts'",
+    "lint": "tsc -p tsconfig.json --noEmit && npm run lint:design",
+    "lint:design": "npx --yes @google/design.md lint DESIGN.md",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": ["etsi", "trusted-list", "lote", "jades", "eudi", "wallet-provider"],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "commander": "^13.1.0",
+    "jose": "^5.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "prettier": "^3.5.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
+  }
+}

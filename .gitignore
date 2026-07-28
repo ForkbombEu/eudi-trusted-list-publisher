@@ -1,8 +1,9 @@
 # Environment and secrets
 .env
 .env.*
-!.env.example
+!test/fixtures/*.env
 *.pem
+!test/fixtures/test-*.pem
 *.key
 *.crt
 *.p12

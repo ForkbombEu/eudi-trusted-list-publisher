@@ -1,0 +1,26 @@
+version: "3"
+
+tasks:
+  build:
+    cmds:
+      - npm run build
+
+  test:
+    cmds:
+      - npm run test
+
+  lint:
+    cmds:
+      - npm run lint
+
+  lint:design:
+    cmds:
+      - npm run lint:design
+
+  format:
+    cmds:
+      - npm run format
+
+  run:
+    cmds:
+      - tsx src/cli/main.ts

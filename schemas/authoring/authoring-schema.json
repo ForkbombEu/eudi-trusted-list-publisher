@@ -1,0 +1,277 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "schemeOperator",
+    "scheme",
+    "listIssueDateTime",
+    "nextUpdate",
+    "loTESequenceNumber",
+    "entities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemeOperator": {
+      "type": "object",
+      "required": ["name", "postalAddress", "electronicAddress"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["lang", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "lang": { "type": "string", "minLength": 2 },
+              "value": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "postalAddress": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["lang", "StreetAddress", "Country"],
+            "additionalProperties": false,
+            "properties": {
+              "lang": { "type": "string", "minLength": 2 },
+              "StreetAddress": { "type": "string", "minLength": 1 },
+              "Locality": { "type": "string" },
+              "PostalCode": { "type": "string" },
+              "Country": { "type": "string", "minLength": 2, "maxLength": 2 }
+            }
+          }
+        },
+        "electronicAddress": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["lang", "uriValue"],
+            "additionalProperties": false,
+            "properties": {
+              "lang": { "type": "string", "minLength": 2 },
+              "uriValue": { "type": "string", "format": "uri", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "scheme": {
+      "type": "object",
+      "required": ["schemeName", "schemeTerritory", "distributionPoints"],
+      "additionalProperties": false,
+      "properties": {
+        "schemeName": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["lang", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "lang": { "type": "string", "minLength": 2 },
+              "value": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "schemeInformationURI": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["lang", "uriValue"],
+            "additionalProperties": false,
+            "properties": {
+              "lang": { "type": "string", "minLength": 2 },
+              "uriValue": { "type": "string", "format": "uri", "minLength": 1 }
+            }
+          }
+        },
+        "schemeTerritory": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 2
+        },
+        "distributionPoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "format": "uri",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "listIssueDateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nextUpdate": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "loTESequenceNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "entities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "teName",
+          "tePostalAddress",
+          "teElectronicAddress",
+          "teInformationURI",
+          "services"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "teName": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["lang", "value"],
+              "additionalProperties": false,
+              "properties": {
+                "lang": { "type": "string", "minLength": 2 },
+                "value": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "teTradeName": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["lang", "value"],
+              "additionalProperties": false,
+              "properties": {
+                "lang": { "type": "string", "minLength": 2 },
+                "value": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "tePostalAddress": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["lang", "StreetAddress", "Country"],
+              "additionalProperties": false,
+              "properties": {
+                "lang": { "type": "string", "minLength": 2 },
+                "StreetAddress": { "type": "string", "minLength": 1 },
+                "Locality": { "type": "string" },
+                "PostalCode": { "type": "string" },
+                "Country": { "type": "string", "minLength": 2, "maxLength": 2 }
+              }
+            }
+          },
+          "teElectronicAddress": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["lang", "uriValue"],
+              "additionalProperties": false,
+              "properties": {
+                "lang": { "type": "string", "minLength": 2 },
+                "uriValue": { "type": "string", "format": "uri", "minLength": 1 }
+              }
+            }
+          },
+          "teInformationURI": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["lang", "uriValue"],
+              "additionalProperties": false,
+              "properties": {
+                "lang": { "type": "string", "minLength": 2 },
+                "uriValue": { "type": "string", "format": "uri", "minLength": 1 }
+              }
+            }
+          },
+          "services": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "serviceTypeIdentifier",
+                "serviceName",
+                "serviceDigitalIdentity",
+                "serviceUniqueIdentifier"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "serviceTypeIdentifier": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "serviceName": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["lang", "value"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "lang": { "type": "string", "minLength": 2 },
+                      "value": { "type": "string", "minLength": 1 }
+                    }
+                  }
+                },
+                "serviceDigitalIdentity": {
+                  "type": "object",
+                  "required": ["x509Certificates"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "x509Certificates": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                },
+                "serviceUniqueIdentifier": {
+                  "type": "string",
+                  "format": "uri",
+                  "minLength": 1
+                },
+                "serviceSupplyPoints": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["uriValue"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "uriValue": {
+                        "type": "string",
+                        "format": "uri",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

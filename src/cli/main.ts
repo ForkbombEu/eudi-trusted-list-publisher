@@ -1,0 +1,292 @@
+#!/usr/bin/env node
+import { Command } from "commander";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import * as crypto from "node:crypto";
+import {
+  compile,
+  validateAuthoring,
+  validateEtsiStruct,
+  sign,
+  serializeCompactJAdES,
+  serializeSignedLoTE,
+  verify,
+} from "../core/index.js";
+import type { AuthoringInput, LoTEDocument } from "../core/index.js";
+
+const ASCII_ART = `
+╔══════════════════════════════════════════╗
+║     EUDI Trusted List Publisher          ║
+║     TS 119 602 LoTE — Wallet Provider    ║
+╚══════════════════════════════════════════╝
+`;
+
+const program = new Command();
+
+program
+  .name("trusted-list-publisher")
+  .description("TS 119 602 JSON LoTE publisher for the Wallet Provider profile")
+  .version("0.1.0")
+  .addHelpText("before", ASCII_ART);
+
+function readJsonFile(path: string): unknown {
+  const content = readFileSync(path, "utf-8");
+  return JSON.parse(content);
+}
+
+function writeOutput(
+  data: string,
+  outputPath: string | undefined,
+  stdout: NodeJS.WriteStream,
+): void {
+  if (outputPath) {
+    const absPath = resolve(outputPath);
+    // Ensure parent directory exists
+    const parent = dirname(absPath);
+    if (!existsSync(parent)) {
+      process.stderr.write(
+        JSON.stringify({
+          status: "error",
+          message: `Output directory does not exist: ${parent}`,
+        }) + "\n",
+      );
+      process.exit(1);
+    }
+    writeFileSync(absPath, data, "utf-8");
+  } else {
+    stdout.write(data);
+    if (!data.endsWith("\n")) stdout.write("\n");
+  }
+}
+
+function exitWithDiagnostic(
+  code: number,
+  diagnostic: Record<string, unknown>,
+): never {
+  process.stderr.write(JSON.stringify(diagnostic) + "\n");
+  process.exit(code);
+}
+
+async function importSigningKey(keyPem: string): Promise<globalThis.CryptoKey> {
+  if (keyPem.includes("-----BEGIN")) {
+    const privateKey = crypto.createPrivateKey(keyPem);
+    const jwk = privateKey.export({ format: "jwk" });
+    return crypto.subtle.importKey(
+      "jwk",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      jwk as any,
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["sign"],
+    ) as Promise<globalThis.CryptoKey>;
+  }
+  const jwk = JSON.parse(keyPem);
+  return crypto.subtle.importKey(
+    "jwk",
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    jwk as any,
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["sign"],
+  ) as Promise<globalThis.CryptoKey>;
+}
+
+program
+  .command("compile")
+  .description("Compile authoring input into an unsigned deterministic LoTE")
+  .requiredOption("-i, --input <path>", "Authoring input JSON file")
+  .option("-o, --output <path>", "Output file (default: stdout)")
+  .action(async (options) => {
+    try {
+      const input = readJsonFile(options.input) as AuthoringInput;
+      const authoringResult = await validateAuthoring(input);
+      if (!authoringResult.valid) {
+        exitWithDiagnostic(2, {
+          status: "error",
+          phase: "authoring-validation",
+          findings: authoringResult.findings,
+        });
+      }
+
+      const result = compile(input);
+      const etsiResult = await validateEtsiStruct(result.document);
+      if (!etsiResult.valid) {
+        exitWithDiagnostic(3, {
+          status: "error",
+          phase: "etsi-validation",
+          findings: etsiResult.findings,
+        });
+      }
+
+      const output = JSON.stringify(result.document, null, 2);
+      writeOutput(output, options.output, process.stdout);
+    } catch (e) {
+      exitWithDiagnostic(1, {
+        status: "error",
+        message: e instanceof Error ? e.message : "Unknown error",
+      });
+    }
+  });
+
+program
+  .command("validate")
+  .description("Validate authoring input or ETSI LoTE structure")
+  .requiredOption("-i, --input <path>", "Input JSON file to validate")
+  .option("--authoring", "Validate as authoring input (default)")
+  .option("--etsi", "Validate as ETSI LoTE structure")
+  .action(async (options) => {
+    try {
+      const data = readJsonFile(options.input);
+
+      if (options.etsi) {
+        const result = await validateEtsiStruct(data);
+        const diag = {
+          status: result.valid ? "ok" : "error",
+          phase: "etsi-validation",
+          findings: result.findings,
+        };
+        process.stderr.write(JSON.stringify(diag) + "\n");
+        if (!result.valid) process.exit(3);
+        process.stdout.write(JSON.stringify({ valid: true }) + "\n");
+      } else {
+        const result = await validateAuthoring(data);
+        const diag = {
+          status: result.valid ? "ok" : "error",
+          phase: "authoring-validation",
+          findings: result.findings,
+        };
+        process.stderr.write(JSON.stringify(diag) + "\n");
+        if (!result.valid) process.exit(2);
+        process.stdout.write(JSON.stringify({ valid: true }) + "\n");
+      }
+    } catch (e) {
+      exitWithDiagnostic(1, {
+        status: "error",
+        message: e instanceof Error ? e.message : "Unknown error",
+      });
+    }
+  });
+
+program
+  .command("sign")
+  .description("Sign a compiled LoTE with JAdES Compact Baseline B")
+  .requiredOption("-i, --input <path>", "Compiled LoTE JSON file")
+  .option("-k, --key-file <path>", "Private key file (PEM JWK or PKCS#8)")
+  .option("-c, --cert-file <path>", "Signing certificate PEM file")
+  .option("-o, --output <path>", "Output file (default: stdout)")
+  .option(
+    "--format <format>",
+    "Output format: compact (default) or detached",
+    "compact",
+  )
+  .action(async (options) => {
+    try {
+      const document = readJsonFile(options.input) as LoTEDocument;
+
+      let keyPem: string;
+      if (options.keyFile) {
+        keyPem = readFileSync(options.keyFile, "utf-8");
+      } else if (process.env["TLP_SIGNING_KEY"]) {
+        keyPem = process.env["TLP_SIGNING_KEY"];
+      } else {
+        exitWithDiagnostic(4, {
+          status: "error",
+          message:
+            "No signing key provided. Use --key-file or TLP_SIGNING_KEY env var.",
+        });
+      }
+
+      let certPem: string;
+      if (options.certFile) {
+        certPem = readFileSync(options.certFile, "utf-8");
+      } else if (process.env["TLP_SIGNING_CERT"]) {
+        certPem = process.env["TLP_SIGNING_CERT"];
+      } else {
+        exitWithDiagnostic(4, {
+          status: "error",
+          message:
+            "No certificate provided. Use --cert-file or TLP_SIGNING_CERT env var.",
+        });
+      }
+
+      const key = await importSigningKey(keyPem);
+      const signed = await sign({ document, key, certificatePem: certPem });
+
+      let output: string;
+      if (options.format === "detached") {
+        output = await serializeSignedLoTE(signed);
+      } else {
+        output = serializeCompactJAdES(signed);
+      }
+
+      writeOutput(output, options.output, process.stdout);
+    } catch (e) {
+      exitWithDiagnostic(1, {
+        status: "error",
+        message: e instanceof Error ? e.message : "Unknown error",
+      });
+    }
+  });
+
+program
+  .command("verify")
+  .description("Verify a signed LoTE")
+  .requiredOption(
+    "-i, --input <path>",
+    "Signed LoTE file (compact JWS or detached format)",
+  )
+  .option("-c, --cert-file <path>", "Trusted certificate PEM file")
+  .action(async (options) => {
+    try {
+      const content = readFileSync(options.input, "utf-8").trim();
+      let compactJws: string;
+
+      if (content.startsWith("{")) {
+        const obj = JSON.parse(content);
+        if (obj.signature?.protected && obj.signature?.signature) {
+          const payloadB64 = Buffer.from(
+            JSON.stringify({ LoTE: obj.LoTE }),
+          ).toString("base64url");
+          compactJws = `${obj.signature.protected}.${payloadB64}.${obj.signature.signature}`;
+        } else {
+          exitWithDiagnostic(1, {
+            status: "error",
+            message: "Unrecognized JSON format for signed LoTE",
+          });
+        }
+      } else {
+        compactJws = content;
+      }
+
+      let certPem: string | undefined;
+      if (options.certFile) {
+        certPem = readFileSync(options.certFile, "utf-8");
+      } else if (process.env["TLP_SIGNING_CERT"]) {
+        certPem = process.env["TLP_SIGNING_CERT"];
+      }
+
+      const result = await verify({ compactJws, certificatePem: certPem });
+
+      process.stderr.write(
+        JSON.stringify({
+          status: result.valid ? "ok" : "error",
+          findings: result.findings,
+        }) + "\n",
+      );
+
+      const output = {
+        valid: result.valid,
+        findings: result.findings,
+      };
+      process.stdout.write(JSON.stringify(output, null, 2) + "\n");
+
+      if (!result.valid) process.exit(5);
+    } catch (e) {
+      exitWithDiagnostic(1, {
+        status: "error",
+        message: e instanceof Error ? e.message : "Unknown error",
+      });
+    }
+  });
+
+program.parse();

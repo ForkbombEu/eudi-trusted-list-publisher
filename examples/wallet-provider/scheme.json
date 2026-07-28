@@ -1,0 +1,72 @@
+{
+  "schemeOperator": {
+    "name": [{ "lang": "en", "value": "Example Trust Authority" }],
+    "postalAddress": [
+      {
+        "lang": "en",
+        "StreetAddress": "123 Trust Street",
+        "Locality": "Brussels",
+        "PostalCode": "1000",
+        "Country": "BE"
+      }
+    ],
+    "electronicAddress": [
+      { "lang": "en", "uriValue": "mailto:trust@example.org" },
+      { "lang": "en", "uriValue": "https://example.org" }
+    ]
+  },
+  "scheme": {
+    "schemeName": [{ "lang": "en", "value": "Example Wallet Providers List" }],
+    "schemeInformationURI": [
+      { "lang": "en", "uriValue": "https://example.org/wallet-providers" }
+    ],
+    "schemeTerritory": "EU",
+    "distributionPoints": [
+      "https://example.org/wallet-providers-lote.json"
+    ]
+  },
+  "listIssueDateTime": "2026-01-01T00:00:00Z",
+  "nextUpdate": "2026-07-01T00:00:00Z",
+  "loTESequenceNumber": 1,
+  "entities": [
+    {
+      "teName": [{ "lang": "en", "value": "Example Wallet Provider Ltd." }],
+      "teTradeName": [{ "lang": "en", "value": "EXAMPLE-WALLET" }],
+      "tePostalAddress": [
+        {
+          "lang": "en",
+          "StreetAddress": "456 Wallet Square",
+          "Locality": "Amsterdam",
+          "PostalCode": "1000AA",
+          "Country": "NL"
+        }
+      ],
+      "teElectronicAddress": [
+        { "lang": "en", "uriValue": "mailto:info@example-wallet.nl" },
+        { "lang": "en", "uriValue": "https://example-wallet.nl" }
+      ],
+      "teInformationURI": [
+        {
+          "lang": "en",
+          "uriValue": "https://example-wallet.nl/policies"
+        },
+        {
+          "lang": "en",
+          "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/WalletProvider/NL"
+        }
+      ],
+      "services": [
+        {
+          "serviceTypeIdentifier": "http://uri.etsi.org/19602/SvcType/WalletSolution/Issuance",
+          "serviceName": [
+            { "lang": "en", "value": "Wallet Instance Issuance Service" }
+          ],
+          "serviceDigitalIdentity": {
+            "x509Certificates": ["MIIBszCCAVmgAwIBAgIUTESTCERTEXAMPLE1234567890wCgYIKoZIzj0EAwIwMDELMAkGA1UEBhMCRVUxITAfBgNVBAoMGFdQNCBUcnVzdCBSZWdpc3RyeSBHcm91cDAeFw0yNjAxMDEwMDAwMDBaFw0yNzAxMDEwMDAwMDBaMDsxCzAJBgNVBAYTAkVVMRAwDgYDVQQKDAdFeGFtcGxlMRowGAYDVQQDDBFXYWxsZXQgUHJvdmlkZXIgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARnN8LpGqBm4HxK9Z3N8Ld5qBj2VxHzA9WXcFbM6JkYpQfRm4TtH8vK2wB6xN1Dm3Lp5Q7r8sS9tTuVwXyZaAoGCAQEAo0IwQDAOBgNVHQ8BAf8EBAMCB4AwEgYDVR0lBAswCQYHKIGMXQUBBjAMBgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQCMz4P3E2fB6x9Y3dZtW2w4R5p8Qa3sTnZmV1hYkL2J4N6m8KqR6wU1x3XzB5D7F9G1HmI5K8LmN3O4pQ6r7sS8tTuVwXyZaA0b1C8dE9fG2H4iK6lM7nO8pQa2r3sT4uV5wX6yZ7aA9b0BcDeE1F2gH3I5JkLmN"]
+          },
+          "serviceUniqueIdentifier": "http://example-wallet.nl/service/wallet-issuance/unique-id-001"
+        }
+      ]
+    }
+  ]
+}
