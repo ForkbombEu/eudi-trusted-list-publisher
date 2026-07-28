@@ -39,4 +39,14 @@ export {
   ApplicationService,
   type ServiceResult,
   type PublishResult,
+  type PreviewResult,
 } from "./application-service.js";
+export {
+  loadLatestPublication,
+  convertLoTEToAuthoringEntities,
+  checkServiceIdentifierUniqueness,
+  assembleNextList,
+  type LatestPublication,
+  type NoPublication,
+  type LatestResult,
+} from "./list-assembler.js";

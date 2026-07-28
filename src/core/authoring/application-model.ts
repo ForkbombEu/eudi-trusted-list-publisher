@@ -1,4 +1,4 @@
-import type { AuthoringInput } from "../model/authoring.js";
+import type { AuthoringInput, AuthoringEntity } from "../model/authoring.js";
 import {
   SERVICE_TYPE_ISSUANCE,
   SERVICE_TYPE_REVOCATION,
@@ -78,6 +78,7 @@ export function normalizeToAuthoringInput(
   listIssueDateTime: string,
   nextUpdate: string,
   loTESequenceNumber: number,
+  existingEntities?: AuthoringEntity[],
 ): AuthoringInput {
   const data = app.applicantData;
 
@@ -101,45 +102,53 @@ export function normalizeToAuthoringInput(
     listIssueDateTime,
     nextUpdate,
     loTESequenceNumber,
-    entities: [
-      {
-        teName: [{ lang: "en", value: data.entityName }],
-        teTradeName: data.entityTradeName
-          ? [{ lang: "en", value: data.entityTradeName }]
-          : undefined,
-        tePostalAddress: [
-          {
-            lang: "en",
-            StreetAddress: data.entityStreetAddress,
-            Locality: data.entityLocality,
-            PostalCode: data.entityPostalCode,
-            Country: data.entityCountry,
-          },
-        ],
-        teElectronicAddress: [
-          { lang: "en", uriValue: data.entityInformationURI },
-        ],
-        teInformationURI: [{ lang: "en", uriValue: data.entityInformationURI }],
-        services: data.services.map((svc) => {
-          const typeIdentifier =
-            svc.serviceType === "issuance"
-              ? SERVICE_TYPE_ISSUANCE
-              : SERVICE_TYPE_REVOCATION;
-
-          return {
-            serviceTypeIdentifier: typeIdentifier,
-            serviceName: [{ lang: "en", value: svc.serviceName }],
-            serviceDigitalIdentity: {
-              x509Certificates: [svc.certificatePem],
-            },
-            serviceUniqueIdentifier: svc.serviceUniqueIdentifier,
-          };
-        }),
-      },
-    ],
+    entities: [] as AuthoringEntity[],
   };
 
+  if (existingEntities) {
+    input.entities = existingEntities;
+  } else {
+    input.entities = [buildAuthoringEntity(data)];
+  }
+
   return input;
+}
+
+function buildAuthoringEntity(
+  data: WalletProviderApplicantData,
+): AuthoringEntity {
+  return {
+    teName: [{ lang: "en", value: data.entityName }],
+    teTradeName: data.entityTradeName
+      ? [{ lang: "en", value: data.entityTradeName }]
+      : undefined,
+    tePostalAddress: [
+      {
+        lang: "en",
+        StreetAddress: data.entityStreetAddress,
+        Locality: data.entityLocality,
+        PostalCode: data.entityPostalCode,
+        Country: data.entityCountry,
+      },
+    ],
+    teElectronicAddress: [{ lang: "en", uriValue: data.entityInformationURI }],
+    teInformationURI: [{ lang: "en", uriValue: data.entityInformationURI }],
+    services: data.services.map((svc) => {
+      const typeIdentifier =
+        svc.serviceType === "issuance"
+          ? SERVICE_TYPE_ISSUANCE
+          : SERVICE_TYPE_REVOCATION;
+
+      return {
+        serviceTypeIdentifier: typeIdentifier,
+        serviceName: [{ lang: "en", value: svc.serviceName }],
+        serviceDigitalIdentity: {
+          x509Certificates: [svc.certificatePem],
+        },
+        serviceUniqueIdentifier: svc.serviceUniqueIdentifier,
+      };
+    }),
+  };
 }
 
 export const REQUIRED_DOCUMENTS: Record<string, string> = {

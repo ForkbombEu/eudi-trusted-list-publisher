@@ -24,6 +24,11 @@ import {
 } from "./submission-parser.js";
 import type { AuthoringInput } from "../model/authoring.js";
 import type { ValidationFinding } from "../validate/validate.js";
+import {
+  loadLatestPublication,
+  checkServiceIdentifierUniqueness,
+  assembleNextList,
+} from "./list-assembler.js";
 
 export type ServiceResult<T> =
   | { success: true; data: T; message?: string; warning?: string }
@@ -38,7 +43,21 @@ export interface PublishResult {
   warning?: string;
 }
 
+export interface PreviewResult {
+  compilerInput: AuthoringInput | null;
+  compilerInputJson: string | null;
+  etsiValid: boolean | null;
+  etsiFindings: ValidationFinding[];
+  error?: string;
+  existingEntityCount: number;
+  resultingEntityCount: number;
+  currentSequence: number | null;
+  proposedSequence: number | null;
+}
+
 export class ApplicationService {
+  private listLocks: Map<string, Promise<void>> = new Map();
+
   constructor(
     private authoringStore: AuthoringStore,
     private publicationStore: PublicationStore,
@@ -96,10 +115,7 @@ export class ApplicationService {
     }
     const trimmed = note.trim();
     if (!trimmed) {
-      return {
-        success: false,
-        error: "Rejection note is required.",
-      };
+      return { success: false, error: "Rejection note is required." };
     }
     app.state = "rejected";
     app.rejectedAt = new Date().toISOString();
@@ -150,27 +166,20 @@ export class ApplicationService {
       now.getTime() + 180 * 24 * 60 * 60 * 1000,
     ).toISOString();
 
-    let nextSeq = 1;
-    const existingIndex = await this.publicationStore.loadIndex(
+    const latest = await loadLatestPublication(
+      this.publicationStore,
       app.targetListKey,
     );
-    if (existingIndex && existingIndex.versions.length > 0) {
-      nextSeq =
-        existingIndex.versions[existingIndex.versions.length - 1]!
-          .sequenceNumber + 1;
-    }
+    const existingEntities = latest.exists ? latest.entities : [];
+    const nextSeq = latest.exists ? latest.sequenceNumber + 1 : 1;
 
-    const input = normalizeToAuthoringInput(
+    const candidateEntity = buildCandidateEntity(app);
+
+    const input = assembleNextList(
+      existingEntities,
+      candidateEntity,
       app,
-      entry.schemeOperatorName,
-      entry.schemeName,
-      entry.schemeTerritory,
-      {
-        streetAddress: entry.schemeOperatorStreet,
-        country: entry.schemeOperatorCountry,
-      },
-      entry.schemeOperatorContactUri,
-      entry.distributionPointUri,
+      entry,
       listIssueDateTime,
       nextUpdate,
       nextSeq,
@@ -199,6 +208,15 @@ export class ApplicationService {
       };
     }
 
+    return this.withListLock(app.targetListKey, async () => {
+      return this.doPublish(app, clock);
+    });
+  }
+
+  private async doPublish(
+    app: WalletProviderApplication,
+    clock?: Date,
+  ): Promise<ServiceResult<WalletProviderApplication>> {
     const listEntry = this.resolveListConfig(app);
     if (!listEntry) {
       return {
@@ -211,6 +229,26 @@ export class ApplicationService {
       return {
         success: false,
         error: `Signing configuration for '${app.targetListKey}' is missing key or certificate paths.`,
+      };
+    }
+
+    // Load latest and build candidate for duplicate check
+    const latest = await loadLatestPublication(
+      this.publicationStore,
+      app.targetListKey,
+    );
+    const existingEntities = latest.exists ? latest.entities : [];
+
+    const candidateEntity = buildCandidateEntity(app);
+
+    const dupCheck = checkServiceIdentifierUniqueness(
+      existingEntities,
+      candidateEntity,
+    );
+    if (!dupCheck.ok) {
+      return {
+        success: false,
+        error: `Duplicate service identifier: ${dupCheck.duplicate} already exists in the current list.`,
       };
     }
 
@@ -227,10 +265,7 @@ export class ApplicationService {
         const reasons = etsiResult.findings
           .map((f) => `${f.path}: ${f.message}`)
           .join("; ");
-        return {
-          success: false,
-          error: `ETSI validation failed: ${reasons}`,
-        };
+        return { success: false, error: `ETSI validation failed: ${reasons}` };
       }
 
       const keyPem = readFileString(listEntry.keyFile);
@@ -257,10 +292,7 @@ export class ApplicationService {
         certificatePem: certPem,
       });
       if (!verifyResult.valid) {
-        return {
-          success: false,
-          error: "Post-sign verification failed.",
-        };
+        return { success: false, error: "Post-sign verification failed." };
       }
 
       const pubResult = await publish({
@@ -296,7 +328,17 @@ export class ApplicationService {
         compactJadesSha256: pubResult.manifest.compactJadesSha256,
         publicationTimestamp: pubResult.manifest.publicationTimestamp,
       };
-      this.authoringStore.save(app);
+
+      try {
+        this.authoringStore.save(app);
+      } catch {
+        return {
+          success: true,
+          data: app,
+          message: `Publication succeeded but application record update failed. Reconciliation required for list key "${pubResult.listKey}" sequence ${pubResult.sequenceNumber}.`,
+          warning: "APPLICATION_RECORD_STALE",
+        };
+      }
 
       let msg = "Application published successfully.";
       let warning: string | undefined;
@@ -316,16 +358,92 @@ export class ApplicationService {
     }
   }
 
+  async reconcileApplication(
+    id: string,
+  ): Promise<ServiceResult<WalletProviderApplication>> {
+    const app = this.getApplication(id);
+    if (!app) return { success: false, error: "Application not found." };
+
+    const latest = await loadLatestPublication(
+      this.publicationStore,
+      app.targetListKey,
+    );
+    if (!latest.exists) {
+      return { success: false, error: "No publications exist for this list." };
+    }
+
+    // Check if the applicant's service identifiers appear in the latest LoTE
+    const data = app.applicantData;
+    const svcIds = new Set(data.services.map((s) => s.serviceUniqueIdentifier));
+
+    let found = false;
+    for (const entity of latest.entities) {
+      for (const svc of entity.services) {
+        if (svcIds.has(svc.serviceUniqueIdentifier)) {
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+
+    if (!found) {
+      return {
+        success: false,
+        error:
+          "Applicant's services are not present in the current published list.",
+      };
+    }
+
+    // Load the latest manifest
+    const manifest = await this.publicationStore.loadManifest(
+      app.targetListKey,
+      latest.sequenceNumber,
+    );
+    if (!manifest) {
+      return {
+        success: false,
+        error: "Cannot load latest publication manifest.",
+      };
+    }
+
+    const manifestBytes = await this.publicationStore.loadVersionBytes(
+      app.targetListKey,
+      latest.sequenceNumber,
+      "manifest",
+    );
+    const manifestHash = manifestBytes
+      ? createHash("sha256").update(manifestBytes).digest("hex")
+      : "";
+
+    app.state = "published";
+    app.publication = {
+      listKey: manifest.listKey,
+      sequenceNumber: manifest.sequenceNumber,
+      manifestSha256: manifestHash,
+      compactJadesSha256: manifest.compactJadesSha256,
+      publicationTimestamp: manifest.publicationTimestamp,
+    };
+
+    try {
+      this.authoringStore.save(app);
+      return {
+        success: true,
+        data: app,
+        message: "Reconciliation successful.",
+      };
+    } catch (e) {
+      return {
+        success: false,
+        error: `Reconciliation failed to save: ${e instanceof Error ? e.message : "unknown"}`,
+      };
+    }
+  }
+
   async preview(
     app: WalletProviderApplication,
     clock?: Date,
-  ): Promise<{
-    compilerInput: AuthoringInput | null;
-    compilerInputJson: string | null;
-    etsiValid: boolean | null;
-    etsiFindings: ValidationFinding[];
-    error?: string;
-  }> {
+  ): Promise<PreviewResult> {
     const prepare = await this.preparePublishInput(app, clock);
     if (!prepare.success) {
       return {
@@ -333,6 +451,10 @@ export class ApplicationService {
         compilerInputJson: null,
         etsiValid: null,
         etsiFindings: [],
+        existingEntityCount: 0,
+        resultingEntityCount: 0,
+        currentSequence: null,
+        proposedSequence: null,
         error: prepare.error,
       };
     }
@@ -341,11 +463,18 @@ export class ApplicationService {
       const compilerInputJson = JSON.stringify(prepare.data, null, 2);
       const { document } = compile(prepare.data);
       const etsiResult = await validateEtsiStruct(document);
+
+      const existingCount = prepare.data.entities.length - 1;
+
       return {
         compilerInput: prepare.data,
         compilerInputJson,
         etsiValid: etsiResult.valid,
         etsiFindings: etsiResult.findings,
+        existingEntityCount: Math.max(0, existingCount),
+        resultingEntityCount: prepare.data.entities.length,
+        currentSequence: prepare.sequenceNumber - 1 || null,
+        proposedSequence: prepare.sequenceNumber,
       };
     } catch (e) {
       return {
@@ -353,6 +482,10 @@ export class ApplicationService {
         compilerInputJson: null,
         etsiValid: null,
         etsiFindings: [],
+        existingEntityCount: 0,
+        resultingEntityCount: 0,
+        currentSequence: null,
+        proposedSequence: null,
         error: e instanceof Error ? e.message : "Preview failed",
       };
     }
@@ -365,9 +498,53 @@ export class ApplicationService {
     return findSigningConfig(this.signingConfig, app.targetListKey);
   }
 
+  private async withListLock<T>(
+    listKey: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.listLocks.get(listKey) ?? Promise.resolve();
+    let release: () => void = () => {};
+    const lock = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const chained = previous
+      .then(() => {})
+      .then(() => {
+        return fn().finally(() => release());
+      });
+
+    // Clean up after completion
+    chained.finally(() => {
+      if (this.listLocks.get(listKey) === lock) {
+        this.listLocks.delete(listKey);
+      }
+    });
+
+    this.listLocks.set(listKey, lock);
+
+    return chained;
+  }
+
   getSigningConfig(): SigningConfig | null {
     return this.signingConfig;
   }
+}
+
+function buildCandidateEntity(app: WalletProviderApplication) {
+  const input = normalizeToAuthoringInput(
+    app,
+    "",
+    "",
+    "",
+    { streetAddress: "", country: "" },
+    "",
+    "",
+    "",
+    "",
+    1,
+  );
+  return input.entities[0]!;
 }
 
 import { readFileSync } from "node:fs";
