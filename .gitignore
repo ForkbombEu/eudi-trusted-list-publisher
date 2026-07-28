@@ -2,6 +2,7 @@
 .env
 .env.*
 !test/fixtures/*.env
+!.env.example
 *.pem
 !test/fixtures/test-*.pem
 *.key
@@ -23,6 +24,14 @@ handoffs/
 
 # Generated publications
 /publications/
+
+# Authoring store (mutable application records)
+/authoring/
+
+# Signing configuration (contains local key paths)
+/signing-config.json
+/signing-config.yaml
+/signing-config.yml
 
 # Logs and local data
 *.log

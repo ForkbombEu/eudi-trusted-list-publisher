@@ -36,3 +36,17 @@ Runtime copies installed under `src/web/assets/`:
 All three files are byte-for-byte identical to their HITL sources (verified by test).
 Application CSS (`src/web/assets/app.css`) loads after `style.css` and provides
 page-specific layout only; it does not redefine shared design foundation.
+
+## Phase 3 GUI design
+
+The data-collection and administration GUI follows the same Credimi visual style.
+All onboarding and admin pages use the `htmlPage()` layout with the Credimi
+topbar, main content area, and dark footer. GUI-specific pages add navigation
+links ("Onboarding", "Admin") to the topbar.
+
+The mutable authoring store is separate from the immutable publication store.
+Core services (compile, validate, sign, verify, publish, store) are reused
+directly — the GUI does not duplicate or reimplement Phase 1/2 logic.
+
+Testing-tool notices ("This is a test/debug fixture publisher") are displayed
+on all onboarding and administration pages.

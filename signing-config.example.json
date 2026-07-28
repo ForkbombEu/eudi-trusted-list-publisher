@@ -1,0 +1,10 @@
+{
+  "lists": [
+    {
+      "listKey": "eu_credimi",
+      "family": "wallet-providers",
+      "keyFile": "/path/to/signing-key.pem",
+      "certFile": "/path/to/signing-cert.pem"
+    }
+  ]
+}

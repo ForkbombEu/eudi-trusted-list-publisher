@@ -9,6 +9,10 @@ Includes an immutable filesystem publication store and a read-only Credimi-brand
 web UI for browsing published LoTEs. Does not implement TS 119 612 Trusted Lists,
 LoTL aggregation, XML/XAdES, or the EC TS02 notification API.
 
+**Phase 3** adds an opt-in data-collection and administration GUI for authoring
+and publishing Wallet Provider LoTEs. When enabled, it provides applicant
+onboarding and an administration backoffice.
+
 ## Important: signature valid vs signer trusted
 
 This tool **cryptographically verifies** signatures but does **not evaluate signer trust**.
@@ -31,11 +35,50 @@ npm run build
 node dist/src/cli/main.js --help
 ```
 
-Or during development:
+### GUI mode (Phase 3)
+
+Enable with `DATA_COLLECTION_GUI=true`:
 
 ```bash
-npx tsx src/cli/main.ts --help
+cp .env.example .env
+# Edit .env: set DATA_COLLECTION_GUI=true, configure signing config path
+
+# Create signing configuration
+cp signing-config.example.json signing-config.json
+# Edit signing-config.json with paths to your actual signing key/cert
+
+npm run build
+node dist/src/cli/main.js serve --data-collection-gui
 ```
+
+When enabled:
+- `/onboarding` — applicant onboarding and list-family catalogue
+- `/onboarding/wallet-provider` — Wallet Provider application form
+- `/admin` — administration backoffice (requires `TLP_ADMIN_TOKEN`)
+- `/admin/applications` — manage submitted applications
+- `/admin/signing` — view signing configuration status
+
+When `DATA_COLLECTION_GUI` is `false` or unset, the server operates in read-only
+mode exactly as before — no onboarding, no admin routes, no authoring state.
+
+**Example signing configuration** (`signing-config.json`):
+
+```json
+{
+  "lists": [
+    {
+      "listKey": "eu_credimi",
+      "family": "wallet-providers",
+      "keyFile": "./keys/signing-key.pem",
+      "certFile": "./keys/signing-cert.pem"
+    }
+  ]
+}
+```
+
+**Testing-tool limitation**: This is a test/debug fixture publisher, not an
+official or production Trusted List Provider. Document uploads are not
+implemented; required documents use placeholder `{FILENAME}.md` references.
 
 ## CLI Examples
 
@@ -47,6 +90,7 @@ npx tsx src/cli/main.ts --help
 | `verify` | `trusted-list-publisher verify -i signed.jades -c cert.pem` |
 | `publish` | `trusted-list-publisher publish -i signed.jades -c cert.pem --publication-dir ./publications` |
 | `serve` | `trusted-list-publisher serve --publication-dir ./publications --port 8080` |
+| `serve (GUI)` | `DATA_COLLECTION_GUI=true trusted-list-publisher serve --data-collection-gui` |
 
 **Exit codes**:
 - 0: success
@@ -57,38 +101,19 @@ npx tsx src/cli/main.ts --help
 - 5: signature verification failure
 - 6: publication error (invalid signature, expired cert, ETSI schema failure)
 
-## Quick Web UI Guide
+## Authoring workflow (Phase 3)
 
-Start the server:
+1. Applicant navigates to `/onboarding` and selects Wallet Providers
+2. Applicant submits entity details, addresses, and X.509 certificate(s)
+3. Applicant receives a confirmed application ID
+4. Administrator reviews at `/admin/applications`
+5. Administrator approves, then publishes
+6. Published LoTE appears in the public catalogue at `/`
 
-```bash
-trusted-list-publisher publish -i signed.jades -c cert.pem
-trusted-list-publisher serve
-```
-
-Open `http://localhost:8080`. The catalogue page lists all published Wallet
-Provider LoTEs with their sequence numbers, issue dates, signature status,
-and trust status. Click any list key to browse its version history. Click
-any version to see full details including signer certificate metadata and
-download links for the Compact JAdES artifact, decoded LoTE JSON, and
-publication manifest.
-
-**Every page displays**: "Signer trust: not evaluated."
-
-## API Examples
-
-| Endpoint | curl example |
-|----------|-------------|
-| List catalogue | `curl http://localhost:8080/api/v1/lists` |
-| List index | `curl http://localhost:8080/api/v1/lists/eu_test_authority` |
-| Version manifest | `curl http://localhost:8080/api/v1/lists/eu_test_authority/versions/1` |
-| LoTE JSON download | `curl http://localhost:8080/api/v1/lists/eu_test_authority/versions/1/lote` |
-| JAdES signature download | `curl http://localhost:8080/api/v1/lists/eu_test_authority/versions/1/signature` |
-| Manifest download | `curl http://localhost:8080/api/v1/lists/eu_test_authority/versions/1/manifest` |
-| OpenAPI spec | `curl http://localhost:8080/openapi.yaml` |
-| Health check | `curl http://localhost:8080/healthz` |
-
-API documentation available at `http://localhost:8080/docs` (Stoplight Elements).
+The mutable application/draft layer (`AUTHORING_DIR`) is separate from the
+immutable publication store (`PUBLICATION_DIR`). Applications track their
+lifecycle state (`submitted` → `approved` → `published`) and record the
+resulting publication metadata.
 
 ## Environment variables
 
@@ -99,3 +124,10 @@ API documentation available at `http://localhost:8080/docs` (Stoplight Elements)
 | `TLP_PUBLICATION_DIR` | `publish`, `serve` | `./publications` |
 | `TLP_HOST` | `serve` | `127.0.0.1` |
 | `TLP_PORT` | `serve` | `8080` |
+| `DATA_COLLECTION_GUI` | `serve` (Phase 3) | `false` |
+| `AUTHORING_DIR` | `serve` (Phase 3) | `./authoring` |
+| `TLP_ADMIN_TOKEN` | `serve` (Phase 3) | — |
+| `TLP_SIGNING_CONFIG` | `serve` (Phase 3) | — |
+| `TLP_SCHEME_OPERATOR_NAME` | `serve` (Phase 3) | `Credimi` |
+| `TLP_SCHEME_NAME` | `serve` (Phase 3) | `EU Wallet Providers List` |
+| `TLP_SCHEME_TERRITORY` | `serve` (Phase 3) | `EU` |

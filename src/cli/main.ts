@@ -396,6 +396,26 @@ program
     process.env["TLP_HOST"] ?? "127.0.0.1",
   )
   .option("--port <port>", "Bind port", process.env["TLP_PORT"] ?? "8080")
+  .option(
+    "--data-collection-gui",
+    "Enable the data-collection/administration GUI",
+    process.env["DATA_COLLECTION_GUI"] === "true",
+  )
+  .option(
+    "--authoring-dir <path>",
+    "Authoring store directory",
+    process.env["AUTHORING_DIR"] ?? "./authoring",
+  )
+  .option(
+    "--admin-token <token>",
+    "Administrator access token",
+    process.env["TLP_ADMIN_TOKEN"] ?? "",
+  )
+  .option(
+    "--signing-config <path>",
+    "Signing configuration file",
+    process.env["TLP_SIGNING_CONFIG"] ?? "",
+  )
   .action(async (options) => {
     const { createWebServer } = await import("../web/server.js");
 
@@ -415,10 +435,23 @@ program
       });
     }
 
+    const guiEnabled = options.dataCollectionGui === true;
+
     const server = createWebServer({
       publicationDir: options.publicationDir,
       host,
       port,
+      dataCollectionGui: guiEnabled,
+      authoringDir: guiEnabled ? options.authoringDir : undefined,
+      adminToken: guiEnabled ? options.adminToken : undefined,
+      signingConfigPath: guiEnabled ? options.signingConfig : undefined,
+      schemeOperatorName: process.env["TLP_SCHEME_OPERATOR_NAME"],
+      schemeName: process.env["TLP_SCHEME_NAME"],
+      schemeTerritory: process.env["TLP_SCHEME_TERRITORY"],
+      schemeOperatorStreet: process.env["TLP_SCHEME_OPERATOR_STREET"],
+      schemeOperatorCountry: process.env["TLP_SCHEME_OPERATOR_COUNTRY"],
+      schemeOperatorContactUri: process.env["TLP_SCHEME_OPERATOR_CONTACT_URI"],
+      distributionPointUri: process.env["TLP_DISTRIBUTION_POINT_URI"],
     });
 
     server.listen(port, host, () => {

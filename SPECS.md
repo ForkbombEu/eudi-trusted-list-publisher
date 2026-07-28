@@ -260,4 +260,119 @@ src/web/assets/credimi_logo.svg       — byte-for-byte copy of HITL/credimi_log
 src/web/assets/credimi_logo_negative.svg — byte-for-byte copy of HITL/credimi_logo_negative.svg
 src/web/assets/app.css                — application-specific layout
 src/web/assets/openapi.yaml           — OpenAPI 3.1 specification
+
+## Phase 3: Data collection and administration GUI
+
+### Feature flag
+
+The `DATA_COLLECTION_GUI` environment variable (defaults to `false`) controls
+whether the authoring and administration UI is enabled. The flag is parsed once
+through the `serve` CLI command as `--data-collection-gui`.
+
+When `false` or unset: the server operates in read-only mode exactly as in
+Phase 2. No authoring directories or mutable state are created.
+
+When `true`: onboarding, administration, and POST routes are enabled. All
+existing public catalogue and download functionality is retained.
+
+### List-family catalogue
+
+One authoritative catalogue at `src/core/authoring/list-family-catalogue.ts`
+defines the seven intended families:
+
+- PID Providers
+- Non-qualified EAA Providers
+- QEAA Providers
+- Wallet Providers (enabled in Phase 3)
+- WRPAC / Access CA Providers
+- WRPRC Providers
+- Registrars
+
+Only Wallet Providers is enabled. Other six are displayed with "Not implemented yet".
+
+### Application model
+
+Defined in `src/core/authoring/application-model.ts`:
+
+```
+ApplicationState = "submitted" | "approved" | "rejected" | "published"
+WalletProviderApplication { id, schemaVersion, family, state, submittedAt,
+  applicantData { entityName, entityTradeName?, entityStreetAddress,
+    entityLocality?, entityPostalCode?, entityCountry, entityInformationURI,
+    services[{ serviceType, serviceName, certificatePem, serviceUniqueIdentifier }] },
+  adminNote?, approvedAt?, rejectedAt?, publication? }
+```
+
+Lifecycle transitions:
+- submitted → approved, rejected
+- approved → published, rejected
+- rejected → (terminal)
+- published → (terminal)
+
+Normalization: `normalizeToAuthoringInput()` maps an application to the existing
+`AuthoringInput` type. Scheme operator and scheme metadata come from trusted
+server configuration (not applicant input).
+
+Document placeholders use `{FILENAME}.md` format.
+
+### Authoring store
+
+Mutable filesystem-backed store at `src/core/authoring/authoring-store.ts`.
+One JSON file per application in a configurable directory (`AUTHORING_DIR`,
+default `./authoring`). Stable opaque UUID application IDs. Atomic record
+replacement via tmp+rename. No database or external service.
+
+Separate from the immutable publication store (`publications/`).
+
+### Signing configuration
+
+Defined in `src/core/authoring/signing-config.ts`. A JSON or YAML file maps
+list keys to signing key/cert paths. Certificate metadata (subject,
+fingerprint) is extractable for display. Private key contents are never
+displayed or returned through the API.
+
+### GUI routes (when DATA_COLLECTION_GUI=true)
+
+Onboarding (public):
+- `GET /onboarding` — list-family catalogue
+- `GET /onboarding/wallet-provider` — Wallet Provider application form
+- `POST /onboarding/wallet-provider` — submit application
+- `GET /onboarding/submitted/{id}` — submission confirmation
+
+Administration (requires admin token via `?token=` query parameter):
+- `GET /admin` — dashboard
+- `GET /admin/applications` — application list with state filtering
+- `GET /admin/applications/{id}` — application detail
+- `POST /admin/applications/{id}/approve` — approve application
+- `POST /admin/applications/{id}/reject` — reject with note
+- `POST /admin/applications/{id}/publish` — compile, sign, verify, store
+- `POST /admin/applications/{id}/delete` — delete (unpublished only)
+- `GET /admin/signing` — signing configuration status
+
+HTML form routes are not added to OpenAPI.
+
+### Filesystem layout
+
+```
+publications/                  — immutable publication store (Phase 2)
+  <list-key>/
+    index.json
+    versions/<seq>/{lote.json, lote.jades, manifest.json}
+authoring/                     — mutable application records (Phase 3)
+  <uuid>.json
+signing-config.json            — signing key/cert mappings (not committed)
+```
+
+### Application-to-publisher mapping
+
+The publishing integration calls the existing Phase 1/2 core functions directly:
+1. `normalizeToAuthoringInput()` — map application → AuthoringInput
+2. `compile()` — produce `LoTEDocument`
+3. `validateEtsiStruct()` — validate against ETSI schema
+4. Sign with configured key/cert via `sign()`
+5. `verify()` — post-sign verification
+6. `publish()` — produce `PublicationResult` with manifest
+7. `PublicationStore.store()` — immutable store
+
+No CLI subprocess spawning. No duplicate compiler/signer/storage logic.
 ```
