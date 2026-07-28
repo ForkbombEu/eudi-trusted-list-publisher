@@ -2341,4 +2341,147 @@ describe("Shipped OpenAPI document parity", () => {
     const errors = checkApiRouteParity(routes, spec);
     expect(errors).toEqual([]);
   });
+
+  it("OpenAPI passes swagger-parser validation", async () => {
+    const swaggerParser = (await import("@apidevtools/swagger-parser")).default;
+    const { parse: parseYaml } = await import("yaml");
+    const yamlContent = readFileSync(
+      resolve(__dirname, "..", "src", "web", "assets", "openapi.yaml"),
+      "utf-8",
+    );
+    const spec = parseYaml(yamlContent) as any;
+    await swaggerParser.validate(spec);
+  });
+});
+
+// ============================================================
+// 22. ApplicationService transition test
+// ============================================================
+describe("ApplicationService transition tests", () => {
+  it("approve then reject clears approvedAt", async () => {
+    const pubDir = tmpDir();
+    const authDir = tmpDir();
+    const configPath = join(tmpdir(), "sc.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        lists: [
+          {
+            listKey: "eu_test_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Test Authority",
+            schemeOperatorStreet: "1 Test St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Test Wallet Providers",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:test@test.org",
+            distributionPointUri: "https://test.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+        ],
+      }),
+    );
+    try {
+      const signingConfig = (
+        await import("../src/core/authoring/signing-config.js")
+      ).loadSigningConfig(configPath);
+      const pubStore = new PublicationStore({ publicationDir: pubDir });
+      const authoringStore = new AuthoringStore({ authoringDir: authDir });
+      const service = new ApplicationService(
+        authoringStore,
+        pubStore,
+        signingConfig,
+      );
+
+      const applicantData = {
+        entityName: "Transition Corp",
+        entityStreetAddress: "1 St",
+        entityCountry: "IT",
+        entityInformationURI: "https://t.example",
+        services: [
+          {
+            serviceType: "issuance" as const,
+            serviceName: "Svc",
+            certificatePem: testCertPem,
+            serviceUniqueIdentifier: "https://svc.example",
+          },
+        ],
+      };
+      const app = service.createApp("eu_test_authority", applicantData);
+      expect(app.state).toBe("submitted");
+
+      const approveResult = service.approve(app.id);
+      expect(approveResult.success).toBe(true);
+      expect(
+        approveResult.success && approveResult.data.approvedAt,
+      ).toBeTruthy();
+      expect(approveResult.success && approveResult.data.state).toBe(
+        "approved",
+      );
+
+      const rejectResult = service.reject(app.id, "not ready");
+      expect(rejectResult.success).toBe(true);
+      if (rejectResult.success) {
+        expect(rejectResult.data.state).toBe("rejected");
+        expect(rejectResult.data.approvedAt).toBeUndefined();
+        expect(rejectResult.data.rejectedAt).toBeTruthy();
+        expect(rejectResult.data.adminNote).toBe("not ready");
+      }
+
+      // Verify store persistence: load after transition
+      const reloaded = authoringStore.load(app.id);
+      expect(reloaded).not.toBeNull();
+      expect(reloaded!.state).toBe("rejected");
+      expect(reloaded!.approvedAt).toBeUndefined();
+    } finally {
+      try {
+        rmSync(pubDir, { recursive: true, force: true });
+      } catch {}
+      try {
+        rmSync(authDir, { recursive: true, force: true });
+      } catch {}
+      try {
+        unlinkSync(configPath);
+      } catch {}
+    }
+  });
+});
+
+// ============================================================
+// 23. Multi-service no duplicate field names
+// ============================================================
+describe("Multi-service no duplicate field names", () => {
+  it("empty form has exactly one service block with no duplicate names", async () => {
+    const { walletProviderFormHtml } =
+      await import("../src/web/views/onboarding.js");
+    const html = walletProviderFormHtml({}, {}, []);
+    // Should have exactly one service[0] block
+    const matches0 = html.match(/service\[0\]/g) ?? [];
+    expect(matches0.length).toBeGreaterThan(0);
+    // Should not have service[1]
+    expect(html).not.toContain("service[1]");
+  });
+
+  it("two submitted services have no duplicate field names", async () => {
+    const { walletProviderFormHtml } =
+      await import("../src/web/views/onboarding.js");
+    const v: Record<string, string> = {
+      "service[0].serviceType": "issuance",
+      "service[0].serviceName": "S0",
+      "service[0].certificatePem": testCertPem,
+      "service[0].serviceUniqueIdentifier": "https://a.example",
+      "service[1].serviceType": "revocation",
+      "service[1].serviceName": "S1",
+      "service[1].certificatePem": testCertPem,
+      "service[1].serviceUniqueIdentifier": "https://b.example",
+    };
+    const html = walletProviderFormHtml(v, {}, []);
+    // Each index appears exactly 4 times (type, name, cert, identifier input names)
+    const idx0 = (html.match(/service\[0\]/g) ?? []).length;
+    const idx1 = (html.match(/service\[1\]/g) ?? []).length;
+    expect(idx0).toBe(4);
+    expect(idx1).toBe(4);
+    expect(html).not.toContain("service[2]");
+  });
 });
