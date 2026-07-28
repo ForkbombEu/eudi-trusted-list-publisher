@@ -121,19 +121,44 @@ export class ApplicationService {
     return { success: true, data: undefined };
   }
 
-  prepareCompilerInput(
+  async preparePublishInput(
     app: WalletProviderApplication,
-    listIssueDateTime: string,
-    nextUpdate: string,
-    sequenceNumber: number,
-  ) {
+    clock?: Date,
+  ): Promise<
+    | {
+        success: true;
+        data: AuthoringInput;
+        sequenceNumber: number;
+        listIssueDateTime: string;
+        nextUpdate: string;
+        entry: SigningConfigEntry;
+      }
+    | { success: false; error: string }
+  > {
     const entry = this.resolveListConfig(app);
     if (!entry) {
       return {
-        success: false as const,
+        success: false,
         error: `No signing configuration found for list key '${app.targetListKey}'.`,
       };
     }
+
+    const now = clock ?? new Date();
+    const listIssueDateTime = now.toISOString();
+    const nextUpdate = new Date(
+      now.getTime() + 180 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    let nextSeq = 1;
+    const existingIndex = await this.publicationStore.loadIndex(
+      app.targetListKey,
+    );
+    if (existingIndex && existingIndex.versions.length > 0) {
+      nextSeq =
+        existingIndex.versions[existingIndex.versions.length - 1]!
+          .sequenceNumber + 1;
+    }
+
     const input = normalizeToAuthoringInput(
       app,
       entry.schemeOperatorName,
@@ -147,9 +172,17 @@ export class ApplicationService {
       entry.distributionPointUri,
       listIssueDateTime,
       nextUpdate,
-      sequenceNumber,
+      nextSeq,
     );
-    return { success: true as const, data: input, entry };
+
+    return {
+      success: true,
+      data: input,
+      sequenceNumber: nextSeq,
+      listIssueDateTime,
+      nextUpdate,
+      entry,
+    };
   }
 
   async publishApplication(
@@ -179,32 +212,7 @@ export class ApplicationService {
       };
     }
 
-    const now = new Date();
-    const listIssueDateTime = now.toISOString();
-    const nextUpdate = new Date(
-      now.getTime() + 180 * 24 * 60 * 60 * 1000,
-    ).toISOString();
-
-    let nextSeq = 1;
-    try {
-      const existingIndex = await this.publicationStore.loadIndex(
-        app.targetListKey,
-      );
-      if (existingIndex && existingIndex.versions.length > 0) {
-        nextSeq =
-          existingIndex.versions[existingIndex.versions.length - 1]!
-            .sequenceNumber + 1;
-      }
-    } catch {
-      /* use default 1 */
-    }
-
-    const prepare = this.prepareCompilerInput(
-      app,
-      listIssueDateTime,
-      nextUpdate,
-      nextSeq,
-    );
+    const prepare = await this.preparePublishInput(app);
     if (!prepare.success) {
       return { success: false, error: prepare.error };
     }
@@ -313,49 +321,23 @@ export class ApplicationService {
     etsiFindings: ValidationFinding[];
     error?: string;
   }> {
-    const listEntry = this.resolveListConfig(app);
-    if (!listEntry) {
+    const prepare = await this.preparePublishInput(app);
+    if (!prepare.success) {
       return {
         compilerInput: null,
         compilerInputJson: null,
         etsiValid: null,
         etsiFindings: [],
-        error: `No signing configuration found for list key '${app.targetListKey}'.`,
+        error: prepare.error,
       };
     }
 
     try {
-      const now = new Date();
-      let nextSeq = 1;
-      const existingIndex = await this.publicationStore.loadIndex(
-        app.targetListKey,
-      );
-      if (existingIndex && existingIndex.versions.length > 0) {
-        nextSeq =
-          existingIndex.versions[existingIndex.versions.length - 1]!
-            .sequenceNumber + 1;
-      }
-
-      const input = normalizeToAuthoringInput(
-        app,
-        listEntry.schemeOperatorName,
-        listEntry.schemeName,
-        listEntry.schemeTerritory,
-        {
-          streetAddress: listEntry.schemeOperatorStreet,
-          country: listEntry.schemeOperatorCountry,
-        },
-        listEntry.schemeOperatorContactUri,
-        listEntry.distributionPointUri,
-        now.toISOString(),
-        new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString(),
-        nextSeq,
-      );
-      const compilerInputJson = JSON.stringify(input, null, 2);
-      const { document } = compile(input);
+      const compilerInputJson = JSON.stringify(prepare.data, null, 2);
+      const { document } = compile(prepare.data);
       const etsiResult = await validateEtsiStruct(document);
       return {
-        compilerInput: input,
+        compilerInput: prepare.data,
         compilerInputJson,
         etsiValid: etsiResult.valid,
         etsiFindings: etsiResult.findings,

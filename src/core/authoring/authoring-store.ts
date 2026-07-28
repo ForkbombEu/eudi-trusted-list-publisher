@@ -85,9 +85,10 @@ export class AuthoringStore {
     if (lstatSync(path).isSymbolicLink()) return null;
     try {
       const raw = readFileSync(path, "utf-8");
-      const parsed = JSON.parse(raw);
-      if (!isApplication(parsed)) return null;
-      return parsed;
+      const parsed = JSON.parse(raw) as unknown;
+      const ver = validateApplication(parsed, id);
+      if (!ver.valid) return null;
+      return parsed as WalletProviderApplication;
     } catch {
       return null;
     }
@@ -129,32 +130,117 @@ export class AuthoringStore {
   }
 }
 
-function isApplication(obj: unknown): obj is WalletProviderApplication {
-  if (typeof obj !== "object" || obj === null) return false;
-  const a = obj as Record<string, unknown>;
-  if (typeof a.id !== "string" || !SAFE_ID_RE.test(a.id)) return false;
-  if (a.schemaVersion !== APPLICATION_SCHEMA_VERSION) return false;
-  if (a.family !== "wallet-providers") return false;
-  if (typeof a.targetListKey !== "string" || a.targetListKey.length === 0)
-    return false;
-  const allowedStates = ["submitted", "approved", "rejected", "published"];
-  if (typeof a.state !== "string" || !allowedStates.includes(a.state))
-    return false;
-  if (typeof a.submittedAt !== "string" || isNaN(Date.parse(a.submittedAt)))
-    return false;
-  if (!isValidApplicantData(a.applicantData)) return false;
-  if (a.state === "published" && a.publication !== undefined) {
-    if (typeof a.publication !== "object" || a.publication === null)
-      return false;
-    const p = a.publication as Record<string, unknown>;
-    if (
-      typeof p.listKey !== "string" ||
-      typeof p.sequenceNumber !== "number" ||
-      typeof p.compactJadesSha256 !== "string" ||
-      typeof p.publicationTimestamp !== "string"
-    )
-      return false;
+const SAFE_KEY_RE_STRICT = /^[a-z0-9][a-z0-9_]{0,99}$/;
+
+function validateApplication(
+  obj: unknown,
+  expectedId: string,
+): { valid: boolean; reason?: string } {
+  if (typeof obj !== "object" || obj === null) {
+    return { valid: false, reason: "not an object" };
   }
+  const app = obj as Record<string, unknown>;
+
+  if (typeof app.id !== "string" || app.id !== expectedId) {
+    return { valid: false, reason: "id mismatch or missing" };
+  }
+  if (!SAFE_ID_RE.test(app.id)) {
+    return { valid: false, reason: "unsafe id" };
+  }
+  if (app.schemaVersion !== APPLICATION_SCHEMA_VERSION) {
+    return { valid: false, reason: "unsupported schemaVersion" };
+  }
+  if (app.family !== "wallet-providers") {
+    return { valid: false, reason: "unsupported family" };
+  }
+  if (
+    typeof app.targetListKey !== "string" ||
+    !SAFE_KEY_RE_STRICT.test(app.targetListKey)
+  ) {
+    return { valid: false, reason: "unsafe or missing targetListKey" };
+  }
+
+  const state = app.state;
+  const allowedStates = ["submitted", "approved", "rejected", "published"];
+  if (typeof state !== "string" || !allowedStates.includes(state)) {
+    return { valid: false, reason: `invalid state: ${String(state)}` };
+  }
+
+  if (typeof app.submittedAt !== "string" || !isIsoString(app.submittedAt)) {
+    return { valid: false, reason: "invalid submittedAt" };
+  }
+
+  if (!isValidApplicantData(app.applicantData))
+    return { valid: false, reason: "invalid applicantData" };
+
+  // Lifecycle consistency checks
+  if (state === "submitted") {
+    if (app.approvedAt !== undefined)
+      return { valid: false, reason: "submitted with approvedAt" };
+    if (app.rejectedAt !== undefined)
+      return { valid: false, reason: "submitted with rejectedAt" };
+    if (app.adminNote !== undefined)
+      return { valid: false, reason: "submitted with adminNote" };
+    if (app.publication !== undefined)
+      return { valid: false, reason: "submitted with publication" };
+  }
+  if (state === "approved") {
+    if (!isIsoString(app.approvedAt as string))
+      return { valid: false, reason: "approved without valid approvedAt" };
+    if (app.rejectedAt !== undefined)
+      return { valid: false, reason: "approved with rejectedAt" };
+    if (app.adminNote !== undefined)
+      return { valid: false, reason: "approved with adminNote" };
+    if (app.publication !== undefined)
+      return { valid: false, reason: "approved with publication" };
+  }
+  if (state === "rejected") {
+    if (!isIsoString(app.rejectedAt as string))
+      return { valid: false, reason: "rejected without valid rejectedAt" };
+    if (typeof app.adminNote !== "string" || !app.adminNote.trim())
+      return { valid: false, reason: "rejected without non-empty adminNote" };
+    if (app.publication !== undefined)
+      return { valid: false, reason: "rejected with publication" };
+  }
+  if (state === "published") {
+    if (!isIsoString(app.approvedAt as string))
+      return { valid: false, reason: "published without valid approvedAt" };
+    if (!isValidPublication(app.publication))
+      return {
+        valid: false,
+        reason: "published without complete publication metadata",
+      };
+  }
+
+  return { valid: true };
+}
+
+function isIsoString(s: unknown): boolean {
+  if (typeof s !== "string") return false;
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(s);
+}
+
+function isValidPublication(pub: unknown): boolean {
+  if (typeof pub !== "object" || pub === null) return false;
+  const p = pub as Record<string, unknown>;
+  if (typeof p.listKey !== "string" || !p.listKey.trim()) return false;
+  if (typeof p.sequenceNumber !== "number" || p.sequenceNumber < 1)
+    return false;
+  if (
+    typeof p.manifestSha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(p.manifestSha256)
+  )
+    return false;
+  if (
+    typeof p.compactJadesSha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(p.compactJadesSha256)
+  )
+    return false;
+  if (
+    typeof p.publicationTimestamp !== "string" ||
+    !isIsoString(p.publicationTimestamp)
+  )
+    return false;
   return true;
 }
 

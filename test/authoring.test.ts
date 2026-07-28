@@ -519,6 +519,7 @@ describe("End-to-end publication workflow", () => {
       .digest("hex");
 
     app.state = "published";
+    app.approvedAt = new Date().toISOString();
     app.publication = {
       listKey: pubResult.listKey,
       sequenceNumber: pubResult.sequenceNumber,

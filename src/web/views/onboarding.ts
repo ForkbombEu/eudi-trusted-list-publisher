@@ -178,7 +178,8 @@ export function walletProviderFormHtml(
 
 <script>
 (function() {
-  var nextIdx = 1;
+  var existing = document.querySelectorAll("#services-container .service-block").length;
+  var nextIdx = existing > 0 ? existing : 1;
   document.getElementById("add-service-btn").onclick = function() {
     var template = document.createElement("template");
     template.innerHTML = ${JSON.stringify(serviceBlockHtml(-1, {}, {}))};
