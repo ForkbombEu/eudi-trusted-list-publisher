@@ -52,6 +52,7 @@ export {
 } from "./profiles/wallet-provider/constants.js";
 export {
   publish,
+  PublicationError,
   type PublicationInput,
   type PublicationResult,
   type Manifest,

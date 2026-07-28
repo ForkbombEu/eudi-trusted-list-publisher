@@ -55,6 +55,7 @@ npx tsx src/cli/main.ts --help
 - 3: ETSI schema validation failure
 - 4: missing key or certificate
 - 5: signature verification failure
+- 6: publication error (invalid signature, expired cert, ETSI schema failure)
 
 ## Quick Web UI Guide
 
@@ -88,3 +89,13 @@ publication manifest.
 | Health check | `curl http://localhost:8080/healthz` |
 
 API documentation available at `http://localhost:8080/docs` (Stoplight Elements).
+
+## Environment variables
+
+| Variable | Used by | Default |
+|----------|---------|---------|
+| `TLP_SIGNING_KEY` | `sign` | — |
+| `TLP_SIGNING_CERT` | `sign`, `verify`, `publish` | — |
+| `TLP_PUBLICATION_DIR` | `publish`, `serve` | `./publications` |
+| `TLP_HOST` | `serve` | `127.0.0.1` |
+| `TLP_PORT` | `serve` | `8080` |

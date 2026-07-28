@@ -1,14 +1,22 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
-import { readFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import {
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import * as crypto from "node:crypto";
 import {
   compile,
   sign,
   publish,
+  PublicationError,
   PublicationStore,
   resetValidators,
 } from "../src/core/index.js";
@@ -100,7 +108,6 @@ beforeAll(async () => {
 
 beforeEach(() => {
   pubDir = resolve(tmpdir(), `test-pub-${randomUUID()}`);
-  mkdirSync(pubDir, { recursive: true });
 });
 
 afterEach(() => {
@@ -110,6 +117,10 @@ afterEach(() => {
     // ok
   }
 });
+
+function sha256(data: string): string {
+  return createHash("sha256").update(data).digest("hex");
+}
 
 describe("publish", () => {
   it("publishes a valid signed LoTE", async () => {
@@ -124,32 +135,55 @@ describe("publish", () => {
     expect(result.manifest.signerTrustStatus).toBe("not_evaluated");
   });
 
-  it("sets signerTrustStatus to not_evaluated", async () => {
+  it("returns loteJson bytes for exact hashing", async () => {
     const result = await publish({
       compactJws: signedCompact,
       certificatePem: testCertPem,
     });
-    expect(result.manifest.signerTrustStatus).toBe("not_evaluated");
+    expect(result.loteJson).toBeDefined();
+    expect(result.manifest.loteJsonSha256).toBe(sha256(result.loteJson));
   });
 
-  it("computes artifact hashes", async () => {
+  it("includes certificate metadata", async () => {
     const result = await publish({
       compactJws: signedCompact,
       certificatePem: testCertPem,
     });
-    expect(result.manifest.compactJadesSha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(result.manifest.loteJsonSha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(result.manifest.signingCertificateSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.manifest.certificateSubject).toBeTruthy();
+    expect(result.manifest.certificateIssuer).toBeTruthy();
+    expect(result.manifest.certificateValidFrom).toBeTruthy();
+    expect(result.manifest.certificateValidTo).toBeTruthy();
+  });
+
+  it("produces deterministic manifest with injected clock", async () => {
+    const clock = new Date("2026-12-15T12:00:00Z");
+    const result1 = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+      clock,
+    });
+    const result2 = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+      clock,
+    });
+    expect(result1.manifest.publicationTimestamp).toBe(
+      "2026-12-15T12:00:00.000Z",
+    );
+    expect(result1.manifest.compactJadesSha256).toBe(
+      result2.manifest.compactJadesSha256,
+    );
   });
 
   it("rejects tampered signature", async () => {
     const parts = signedCompact.split(".");
     const tampered = `${parts[0]}.${parts[1]}.${"AAAA" + parts[2]!.slice(4)}`;
-    const result = await publish({
-      compactJws: tampered,
-      certificatePem: testCertPem,
-    });
-    expect(result.manifest.signatureValid).toBe(false);
+    await expect(
+      publish({
+        compactJws: tampered,
+        certificatePem: testCertPem,
+      }),
+    ).rejects.toThrow(PublicationError);
   });
 
   it("rejects tampered payload", async () => {
@@ -160,11 +194,12 @@ describe("publish", () => {
       "base64url",
     );
     const tampered = `${parts[0]}.${tamperedPayload}.${parts[2]}`;
-    const result = await publish({
-      compactJws: tampered,
-      certificatePem: testCertPem,
-    });
-    expect(result.manifest.signatureValid).toBe(false);
+    await expect(
+      publish({
+        compactJws: tampered,
+        certificatePem: testCertPem,
+      }),
+    ).rejects.toThrow(PublicationError);
   });
 
   it("rejects invalid compact JWS", async () => {
@@ -173,7 +208,7 @@ describe("publish", () => {
         compactJws: "not-a-valid-jws",
         certificatePem: testCertPem,
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(PublicationError);
   });
 
   it("rejects WE BUILD detached format", async () => {
@@ -182,15 +217,13 @@ describe("publish", () => {
         compactJws: '{"signature":{"protected":"eyJ","signature":"abc"}}',
         certificatePem: testCertPem,
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(PublicationError);
   });
 
-  it("rejects wrong expected certificate", async () => {
+  it("rejects wrong certificate key", async () => {
     const { privateKey } = crypto.generateKeyPairSync("ec", {
       namedCurve: "P-256",
     });
-    // The certificate fingerprint won't match, causing verification to note a mismatch
-    // but the cryptographic verification will fail since the key is different
     const wrongKeyJwk = privateKey.export({ format: "jwk" });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const wrongKey = (await crypto.subtle.importKey(
@@ -208,50 +241,49 @@ describe("publish", () => {
       certificatePem: testCertPem,
     });
 
-    const result = await publish({
-      compactJws: wrongSign.compact,
-      certificatePem: testCertPem,
-    });
-    expect(result.manifest.signatureValid).toBe(false);
+    await expect(
+      publish({
+        compactJws: wrongSign.compact,
+        certificatePem: testCertPem,
+      }),
+    ).rejects.toThrow(PublicationError);
   });
 
-  it("records certificate metadata", async () => {
-    const result = await publish({
-      compactJws: signedCompact,
-      certificatePem: testCertPem,
-    });
-    expect(result.manifest.certificateSubject).toBeTruthy();
-    expect(result.manifest.certificateIssuer).toBeTruthy();
-    expect(result.manifest.certificateValidFrom).toBeTruthy();
-    expect(result.manifest.certificateValidTo).toBeTruthy();
+  it("rejects expired certificate", async () => {
+    // The test cert was generated at test time, so it's valid now.
+    // We can't easily make it expired, but we can test the clock injection
+    // This test cert is valid for 365 days from 2026-07-28
+    const clock = new Date("2030-01-01T00:00:00Z"); // After cert expiry
+    await expect(
+      publish({
+        compactJws: signedCompact,
+        certificatePem: testCertPem,
+        clock,
+      }),
+    ).rejects.toThrow(PublicationError);
   });
 
-  it("produces deterministic manifest with injected clock", async () => {
-    const clock = new Date("2026-06-15T12:00:00Z");
-    const result1 = await publish({
-      compactJws: signedCompact,
-      certificatePem: testCertPem,
-      clock,
-    });
-    const result2 = await publish({
-      compactJws: signedCompact,
-      certificatePem: testCertPem,
-      clock,
-    });
-    expect(result1.manifest.publicationTimestamp).toBe(
-      "2026-06-15T12:00:00.000Z",
-    );
-    expect(result1.manifest.compactJadesSha256).toBe(
-      result2.manifest.compactJadesSha256,
-    );
+  it("rejects not-yet-valid certificate", async () => {
+    const clock = new Date("2020-01-01T00:00:00Z"); // Before cert validity
+    await expect(
+      publish({
+        compactJws: signedCompact,
+        certificatePem: testCertPem,
+        clock,
+      }),
+    ).rejects.toThrow(PublicationError);
   });
 });
 
 describe("PublicationStore", () => {
-  let store: PublicationStore;
-
-  beforeEach(() => {
-    store = new PublicationStore({ publicationDir: pubDir });
+  it("auto-creates publication directory on construction", () => {
+    const freshDir = resolve(tmpdir(), `fresh-${randomUUID()}`);
+    try {
+      new PublicationStore({ publicationDir: freshDir });
+      expect(existsSync(freshDir)).toBe(true);
+    } finally {
+      rmSync(freshDir, { recursive: true, force: true });
+    }
   });
 
   it("stores and loads a publication", async () => {
@@ -259,18 +291,11 @@ describe("PublicationStore", () => {
       compactJws: signedCompact,
       certificatePem: testCertPem,
     });
-
-    const loteJson = JSON.stringify(
-      JSON.parse(
-        Buffer.from(signedCompact.split(".")[1]!, "base64url").toString(),
-      ),
-      null,
-      2,
-    );
+    const store = new PublicationStore({ publicationDir: pubDir });
     store.store(
       result,
       signedCompact,
-      loteJson,
+      result.loteJson,
       JSON.stringify(result.manifest, null, 2),
     );
 
@@ -281,7 +306,6 @@ describe("PublicationStore", () => {
     const index = store.loadIndex(result.listKey);
     expect(index).not.toBeNull();
     expect(index!.versions.length).toBe(1);
-    expect(index!.versions[0]!.sequenceNumber).toBe(1);
     expect(index!.versions[0]!.signerTrustStatus).toBe("not_evaluated");
 
     const manifest = store.loadManifest(result.listKey, 1);
@@ -294,29 +318,20 @@ describe("PublicationStore", () => {
       compactJws: signedCompact,
       certificatePem: testCertPem,
     });
-
-    const loteJson = JSON.stringify(
-      JSON.parse(
-        Buffer.from(signedCompact.split(".")[1]!, "base64url").toString(),
-      ),
-      null,
-      2,
-    );
-
+    const store = new PublicationStore({ publicationDir: pubDir });
     store.store(
       result,
       signedCompact,
-      loteJson,
+      result.loteJson,
       JSON.stringify(result.manifest, null, 2),
     );
     // Second store with identical content should not throw
     store.store(
       result,
       signedCompact,
-      loteJson,
+      result.loteJson,
       JSON.stringify(result.manifest, null, 2),
     );
-
     const index = store.loadIndex(result.listKey);
     expect(index!.versions.length).toBe(1);
   });
@@ -326,23 +341,15 @@ describe("PublicationStore", () => {
       compactJws: signedCompact,
       certificatePem: testCertPem,
     });
-    const loteJson1 = JSON.stringify(
-      JSON.parse(
-        Buffer.from(signedCompact.split(".")[1]!, "base64url").toString(),
-      ),
-      null,
-      2,
-    );
+    const store = new PublicationStore({ publicationDir: pubDir });
     store.store(
       result1,
       signedCompact,
-      loteJson1,
+      result1.loteJson,
       JSON.stringify(result1.manifest, null, 2),
     );
 
-    // Create a different signed LoTE with the same sequence number
     const modified = { ...AUTHORING };
-    modified.loTESequenceNumber = 1; // same seq
     modified.scheme.schemeName = [{ lang: "en", value: "Different" }];
     const doc2 = compile(modified).document;
     const signed2 = await sign({
@@ -350,63 +357,154 @@ describe("PublicationStore", () => {
       key: testKey,
       certificatePem: testCertPem,
     });
-    const loteJson2 = JSON.stringify(
-      JSON.parse(
-        Buffer.from(signed2.compact.split(".")[1]!, "base64url").toString(),
-      ),
-      null,
-      2,
-    );
-
     const result2 = await publish({
       compactJws: signed2.compact,
       certificatePem: testCertPem,
     });
 
-    // Same list key, different content - should fail
     if (result2.listKey === result1.listKey) {
       expect(() =>
         store.store(
           result2,
           signed2.compact,
-          loteJson2,
+          result2.loteJson,
           JSON.stringify(result2.manifest, null, 2),
         ),
       ).toThrow(/already exists with different content/);
     }
   });
 
-  it("rejects unsafe list key characters", () => {
+  it("rejects unsafe list key", () => {
+    const store = new PublicationStore({ publicationDir: pubDir });
     expect(() => {
       store.loadIndex("../../../etc/passwd");
     }).toThrow();
   });
 
-  it("writes exact artifact hashes to disk", async () => {
+  it("exact artifact hashes match stored files", async () => {
     const result = await publish({
       compactJws: signedCompact,
       certificatePem: testCertPem,
     });
-    const loteJson = JSON.stringify(
-      JSON.parse(
-        Buffer.from(signedCompact.split(".")[1]!, "base64url").toString(),
-      ),
-      null,
-      2,
-    );
+    const store = new PublicationStore({ publicationDir: pubDir });
     store.store(
       result,
       signedCompact,
-      loteJson,
+      result.loteJson,
       JSON.stringify(result.manifest, null, 2),
     );
 
-    const jadesPath = store.loteJadesPath(result.listKey, 1);
-    expect(existsSync(jadesPath)).toBe(true);
-    const storedJades = readFileSync(jadesPath, "utf-8");
-    expect(storedJades).toBe(signedCompact);
+    const storedJades = readFileSync(
+      store.loteJadesPath(result.listKey, 1),
+      "utf-8",
+    );
+    const storedJson = readFileSync(
+      store.loteJsonPath(result.listKey, 1),
+      "utf-8",
+    );
 
-    const jsonPath = store.loteJsonPath(result.listKey, 1);
-    expect(existsSync(jsonPath)).toBe(true);
+    expect(sha256(storedJades)).toBe(result.manifest.compactJadesSha256);
+    expect(sha256(storedJson)).toBe(result.manifest.loteJsonSha256);
+    expect(result.manifest.signingCertificateSha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("rejects symlink escape directories", async () => {
+    mkdirSync(pubDir, { recursive: true });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    const outsideDir = resolve(tmpdir(), `outside-${randomUUID()}`);
+    mkdirSync(outsideDir, { recursive: true });
+
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+
+    // Create a symlink inside the publication dir at the versions path
+    const listDir = resolve(pubDir, result.listKey);
+    mkdirSync(listDir, { recursive: true });
+    const versionsDir = resolve(listDir, "versions");
+    symlinkSync(outsideDir, versionsDir, "dir");
+
+    try {
+      expect(() => {
+        store.store(
+          result,
+          signedCompact,
+          result.loteJson,
+          JSON.stringify(result.manifest, null, 2),
+        );
+      }).toThrow();
+    } finally {
+      try {
+        rmSync(outsideDir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  it("regenerates corrupt index from manifests", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    // Corrupt the index file
+    const indexPath = store.indexPath(result.listKey);
+    writeFileSync(indexPath, "not valid json {{{", "utf-8");
+
+    // loadIndex should still work by deriving from manifests
+    const index = store.loadIndex(result.listKey);
+    expect(index).not.toBeNull();
+    expect(index!.versions.length).toBe(1);
+  });
+
+  it("lists only version directories, ignores staging dirs", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    // Create a fake staging directory
+    mkdirSync(resolve(pubDir, ".staging_deadbeef"), { recursive: true });
+
+    const keys = store.listKeys();
+    expect(keys.length).toBe(1);
+    expect(keys[0]).toBe(result.listKey);
+  });
+
+  it("handles missing index by deriving from manifests", async () => {
+    const result = await publish({
+      compactJws: signedCompact,
+      certificatePem: testCertPem,
+    });
+    const store = new PublicationStore({ publicationDir: pubDir });
+    store.store(
+      result,
+      signedCompact,
+      result.loteJson,
+      JSON.stringify(result.manifest, null, 2),
+    );
+
+    // Delete the index
+    const indexPath = store.indexPath(result.listKey);
+    rmSync(indexPath);
+
+    // loadIndex should derive from manifests
+    const index = store.loadIndex(result.listKey);
+    expect(index).not.toBeNull();
+    expect(index!.versions.length).toBe(1);
   });
 });

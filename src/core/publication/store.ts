@@ -7,9 +7,11 @@ import {
   renameSync,
   realpathSync,
   unlinkSync,
+  lstatSync,
+  rmdirSync,
 } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
 import { resolve, join, normalize, sep } from "node:path";
-import { randomBytes } from "node:crypto";
 import type { Manifest, PublicationResult } from "./manifest.js";
 
 export interface StoreConfig {
@@ -29,30 +31,46 @@ function assertSafeSegment(
   }
 }
 
-function assertInside(base: string, target: string): void {
+function rejectSymlinksInPath(base: string, target: string): void {
   const realBase = realpathSync(base);
-  try {
-    const realTarget = realpathSync(target);
-    if (!realTarget.startsWith(realBase + sep)) {
-      throw new Error(
-        `Path traversal detected: "${target}" is outside "${base}"`,
-      );
-    }
-  } catch {
-    // If target does not exist yet, check the normalized resolved path
-    const resolved = resolve(base, target);
-    const normTarget = normalize(target);
-    if (normTarget.startsWith("..") || normTarget.includes(`..${sep}`)) {
-      throw new Error(`Path traversal detected in "${target}"`);
-    }
-    const realParent = realpathSync(resolve(base));
-    const normResolved = normalize(resolved);
-    if (!normResolved.startsWith(normalize(realParent) + sep)) {
-      throw new Error(
-        `Path traversal: resolved "${resolved}" is outside "${base}"`,
-      );
+  const parts = normalize(resolve(base, target))
+    .slice(realBase.length)
+    .split(sep)
+    .filter(Boolean);
+  let current = realBase;
+  for (const part of parts) {
+    current = join(current, part);
+    if (existsSync(current)) {
+      try {
+        if (lstatSync(current).isSymbolicLink()) {
+          const linkTarget = realpathSync(current);
+          if (
+            !linkTarget.startsWith(realBase + sep) &&
+            linkTarget !== realBase
+          ) {
+            throw new Error(
+              `Symlink escape detected: "${current}" points outside publication root`,
+            );
+          }
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message.includes("Symlink escape")) throw e;
+      }
     }
   }
+}
+
+function removeDir(dir: string): void {
+  if (!existsSync(dir)) return;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      removeDir(p);
+    } else {
+      unlinkSync(p);
+    }
+  }
+  rmdirSync(dir);
 }
 
 export class PublicationStore {
@@ -60,6 +78,9 @@ export class PublicationStore {
 
   constructor(config: StoreConfig) {
     this.publicationDir = resolve(config.publicationDir);
+    if (!existsSync(this.publicationDir)) {
+      mkdirSync(this.publicationDir, { recursive: true });
+    }
   }
 
   versionDir(listKey: string, sequenceNumber: number): string {
@@ -86,32 +107,16 @@ export class PublicationStore {
     return join(this.versionDir(listKey, sequenceNumber), "manifest.json");
   }
 
-  writeAtomic(filePath: string, content: string): void {
-    const dir = resolve(filePath, "..");
-    mkdirSync(dir, { recursive: true });
-    const tmpPath = filePath + "." + randomBytes(8).toString("hex") + ".tmp";
-    try {
-      writeFileSync(tmpPath, content, { encoding: "utf-8", flag: "wx" });
-      renameSync(tmpPath, filePath);
-    } catch (e) {
-      try {
-        unlinkSync(tmpPath);
-      } catch {
-        // best effort
-      }
-      throw e;
-    }
-  }
-
   store(
     result: PublicationResult,
     compactJws: string,
     loteJson: string,
     manifestJson: string,
   ): void {
-    const dir = this.versionDir(result.listKey, result.sequenceNumber);
+    const finalDir = this.versionDir(result.listKey, result.sequenceNumber);
 
-    if (existsSync(dir)) {
+    // Check for existing version
+    if (existsSync(finalDir)) {
       const existingManifestPath = this.manifestPath(
         result.listKey,
         result.sequenceNumber,
@@ -124,94 +129,159 @@ export class PublicationStore {
           existing.compactJadesSha256 === result.manifest.compactJadesSha256 &&
           existing.loteJsonSha256 === result.manifest.loteJsonSha256
         ) {
-          // Idempotent: same content, skip
-          return;
+          return; // Idempotent
         }
       }
-      // Different content at same version — fail
       throw new Error(
         `Version ${result.sequenceNumber} for list "${result.listKey}" already exists with different content`,
       );
     }
 
-    assertInside(this.publicationDir, dir);
+    // Verify no symlink escapes in the target path
+    rejectSymlinksInPath(this.publicationDir, finalDir);
 
-    mkdirSync(dir, { recursive: true });
+    // Stage: create private temp directory under publication root
+    const stageDir = resolve(
+      this.publicationDir,
+      ".staging_" + randomBytes(8).toString("hex"),
+    );
+    mkdirSync(stageDir, { recursive: true });
 
-    const jadesPath = this.loteJadesPath(result.listKey, result.sequenceNumber);
-    const jsonPath = this.loteJsonPath(result.listKey, result.sequenceNumber);
-    const maniPath = this.manifestPath(result.listKey, result.sequenceNumber);
+    try {
+      const stageJades = join(stageDir, "lote.jades");
+      const stageJson = join(stageDir, "lote.json");
+      const stageMani = join(stageDir, "manifest.json");
 
-    assertInside(this.publicationDir, jadesPath);
-    assertInside(this.publicationDir, jsonPath);
-    assertInside(this.publicationDir, maniPath);
+      writeFileSync(stageJades, compactJws, { encoding: "utf-8" });
+      writeFileSync(stageJson, loteJson, { encoding: "utf-8" });
+      writeFileSync(stageMani, manifestJson, { encoding: "utf-8" });
 
-    this.writeAtomic(jadesPath, compactJws);
-    this.writeAtomic(jsonPath, loteJson);
-    this.writeAtomic(maniPath, manifestJson);
+      // Verify staged content matches manifesto
+      const writtenJades = readFileSync(stageJades, "utf-8");
+      const writtenJson = readFileSync(stageJson, "utf-8");
 
-    this.updateIndex(result);
+      const jadesHash = createHash("sha256").update(writtenJades).digest("hex");
+      const jsonHash = createHash("sha256").update(writtenJson).digest("hex");
+
+      if (jadesHash !== result.manifest.compactJadesSha256) {
+        throw new Error(
+          `Staged Compact JAdES hash mismatch: expected ${result.manifest.compactJadesSha256}, got ${jadesHash}`,
+        );
+      }
+      if (jsonHash !== result.manifest.loteJsonSha256) {
+        throw new Error(
+          `Staged LoTE JSON hash mismatch: expected ${result.manifest.loteJsonSha256}, got ${jsonHash}`,
+        );
+      }
+
+      // Create parent dirs for final location
+      const listDir = resolve(this.publicationDir, result.listKey);
+      const versionsDir = resolve(listDir, "versions");
+      mkdirSync(versionsDir, { recursive: true });
+
+      // Atomic rename from stage to final
+      renameSync(stageDir, finalDir);
+
+      // Derive index from version manifests
+      this.deriveIndex(result.listKey);
+    } catch (e) {
+      removeDir(stageDir);
+      throw e;
+    }
   }
 
-  private updateIndex(result: PublicationResult): void {
-    const indexPath = this.indexPath(result.listKey);
-    assertInside(this.publicationDir, indexPath);
+  private deriveIndex(listKey: string): void {
+    assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
+    const indexPath = this.indexPath(listKey);
+    const versionsDir = resolve(this.publicationDir, listKey, "versions");
 
-    let index: IndexEntry;
-    if (existsSync(indexPath)) {
-      index = JSON.parse(readFileSync(indexPath, "utf-8")) as IndexEntry;
-    } else {
-      index = {
-        listKey: result.listKey,
-        versions: [],
-      };
-    }
+    if (!existsSync(versionsDir)) return;
 
-    const existing = index.versions.find(
-      (v) => v.sequenceNumber === result.sequenceNumber,
-    );
-    if (existing) {
-      existing.issueDate = result.manifest.issueDate;
-      existing.nextUpdateDate = result.manifest.nextUpdateDate;
-      existing.publicationTimestamp = result.manifest.publicationTimestamp;
-      existing.compactJadesSha256 = result.manifest.compactJadesSha256;
-      existing.loteJsonSha256 = result.manifest.loteJsonSha256;
-    } else {
-      index.versions.push({
-        sequenceNumber: result.sequenceNumber,
-        issueDate: result.manifest.issueDate,
-        nextUpdateDate: result.manifest.nextUpdateDate,
-        publicationTimestamp: result.manifest.publicationTimestamp,
-        compactJadesSha256: result.manifest.compactJadesSha256,
-        loteJsonSha256: result.manifest.loteJsonSha256,
-        signatureValid: result.manifest.signatureValid,
-        etsiSchemaValid: result.manifest.etsiSchemaValid,
-        signerTrustStatus: result.manifest.signerTrustStatus,
-      });
-    }
+    const entries = readdirSync(versionsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => {
+        const seq = parseInt(d.name, 10);
+        if (!SAFE_SEQ_RE.test(d.name)) return null;
+        const maniPath = resolve(versionsDir, d.name, "manifest.json");
+        if (!existsSync(maniPath)) return null;
+        try {
+          const m = JSON.parse(readFileSync(maniPath, "utf-8")) as Manifest;
+          return {
+            sequenceNumber: seq,
+            issueDate: m.issueDate,
+            nextUpdateDate: m.nextUpdateDate,
+            publicationTimestamp: m.publicationTimestamp,
+            compactJadesSha256: m.compactJadesSha256,
+            loteJsonSha256: m.loteJsonSha256,
+            signatureValid: m.signatureValid,
+            etsiSchemaValid: m.etsiSchemaValid,
+            signerTrustStatus: m.signerTrustStatus,
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((e): e is NonNullable<typeof e> => e !== null)
+      .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
-    index.versions.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+    const index: IndexEntry = {
+      listKey,
+      versions: entries,
+    };
 
     writeFileSync(indexPath, JSON.stringify(index, null, 2), "utf-8");
   }
 
   loadIndex(listKey: string): IndexEntry | null {
     assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
+    return this.deriveOrLoadIndex(listKey);
+  }
+
+  private deriveOrLoadIndex(listKey: string): IndexEntry | null {
     const indexPath = this.indexPath(listKey);
-    if (!existsSync(indexPath)) return null;
-    return JSON.parse(readFileSync(indexPath, "utf-8")) as IndexEntry;
+    if (!existsSync(indexPath)) {
+      // Try to derive from version manifests
+      const versionsDir = resolve(this.publicationDir, listKey, "versions");
+      if (existsSync(versionsDir)) {
+        this.deriveIndex(listKey);
+        if (existsSync(indexPath)) {
+          return JSON.parse(readFileSync(indexPath, "utf-8")) as IndexEntry;
+        }
+      }
+      return null;
+    }
+    try {
+      return JSON.parse(readFileSync(indexPath, "utf-8")) as IndexEntry;
+    } catch {
+      // Corrupt index — derive from manifests
+      this.deriveIndex(listKey);
+      if (existsSync(indexPath)) {
+        try {
+          return JSON.parse(readFileSync(indexPath, "utf-8")) as IndexEntry;
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
   }
 
   loadManifest(listKey: string, sequenceNumber: number): Manifest | null {
+    assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
+    assertSafeSegment(String(sequenceNumber), SAFE_SEQ_RE, "sequence number");
     const mp = this.manifestPath(listKey, sequenceNumber);
     if (!existsSync(mp)) return null;
-    return JSON.parse(readFileSync(mp, "utf-8")) as Manifest;
+    try {
+      return JSON.parse(readFileSync(mp, "utf-8")) as Manifest;
+    } catch {
+      return null;
+    }
   }
 
   listKeys(): string[] {
     if (!existsSync(this.publicationDir)) return [];
     return readdirSync(this.publicationDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
+      .filter((d) => d.isDirectory() && !d.name.startsWith(".staging_"))
       .map((d) => d.name)
       .filter((n) => SAFE_KEY_RE.test(n))
       .sort();

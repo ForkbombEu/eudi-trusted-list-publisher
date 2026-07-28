@@ -13,6 +13,7 @@ import {
   verify,
   publish,
   PublicationStore,
+  PublicationError,
 } from "../core/index.js";
 import type { AuthoringInput, LoTEDocument } from "../core/index.js";
 
@@ -299,57 +300,38 @@ program
   .option(
     "--publication-dir <path>",
     "Publication root directory",
-    "./publications",
+    process.env["TLP_PUBLICATION_DIR"] ?? "./publications",
   )
   .action(async (options) => {
     try {
       const content = readFileSync(options.input, "utf-8").trim();
-
-      // Reject WE BUILD detached format
-      if (content.startsWith("{")) {
-        const obj = JSON.parse(content);
-        if (obj.signature?.protected && obj.signature?.signature) {
-          exitWithDiagnostic(1, {
-            status: "error",
-            message:
-              "WE BUILD detached format is not supported. Use Compact JAdES serialization (header.payload.signature).",
-          });
-        }
-      }
-
-      const compactJws = content;
       const certPem = readFileSync(options.certFile, "utf-8");
 
-      const result = await publish({ compactJws, certificatePem: certPem });
+      const result = await publish({
+        compactJws: content,
+        certificatePem: certPem,
+      });
 
       const store = new PublicationStore({
         publicationDir: options.publicationDir,
       });
 
-      const loteJson = JSON.stringify(
-        JSON.parse(
-          new TextDecoder().decode(
-            Buffer.from(compactJws.split(".")[1]!, "base64url"),
-          ),
-        ),
-        null,
-        2,
-      );
       const manifestJson = JSON.stringify(result.manifest, null, 2);
 
-      store.store(result, compactJws, loteJson, manifestJson);
+      store.store(result, content, result.loteJson, manifestJson);
 
-      const diag = {
-        status: "published",
-        listKey: result.listKey,
-        sequenceNumber: result.sequenceNumber,
-        signatureValid: result.manifest.signatureValid,
-        etsiSchemaValid: result.manifest.etsiSchemaValid,
-        signerTrustStatus: result.manifest.signerTrustStatus,
-        compactJadesSha256: result.manifest.compactJadesSha256,
-        signingCertificateSha256: result.manifest.signingCertificateSha256,
-      };
-      process.stderr.write(JSON.stringify(diag) + "\n");
+      process.stderr.write(
+        JSON.stringify({
+          status: "published",
+          listKey: result.listKey,
+          sequenceNumber: result.sequenceNumber,
+          signatureValid: result.manifest.signatureValid,
+          etsiSchemaValid: result.manifest.etsiSchemaValid,
+          signerTrustStatus: result.manifest.signerTrustStatus,
+          compactJadesSha256: result.manifest.compactJadesSha256,
+          signingCertificateSha256: result.manifest.signingCertificateSha256,
+        }) + "\n",
+      );
       process.stdout.write(
         JSON.stringify(
           {
@@ -365,6 +347,13 @@ program
         ) + "\n",
       );
     } catch (e) {
+      if (e instanceof PublicationError) {
+        exitWithDiagnostic(6, {
+          status: "error",
+          code: e.code,
+          message: e.message,
+        });
+      }
       exitWithDiagnostic(1, {
         status: "error",
         message: e instanceof Error ? e.message : "Unknown error",
@@ -378,18 +367,32 @@ program
   .option(
     "--publication-dir <path>",
     "Publication root directory",
-    "./publications",
+    process.env["TLP_PUBLICATION_DIR"] ?? "./publications",
   )
-  .option("--host <host>", "Bind address", "127.0.0.1")
-  .option("--port <port>", "Bind port", "8080")
+  .option(
+    "--host <host>",
+    "Bind address",
+    process.env["TLP_HOST"] ?? "127.0.0.1",
+  )
+  .option("--port <port>", "Bind port", process.env["TLP_PORT"] ?? "8080")
   .action(async (options) => {
     const { createWebServer } = await import("../web/server.js");
 
-    const host = options.host || process.env["TLP_HOST"] || "127.0.0.1";
-    const port = parseInt(
-      options.port || process.env["TLP_PORT"] || "8080",
-      10,
-    );
+    const host = String(options.host);
+    const port = parseInt(String(options.port), 10);
+
+    if (host.includes("://") || host.includes("/")) {
+      exitWithDiagnostic(1, {
+        status: "error",
+        message: `Invalid host: "${host}". Must be an IP or hostname without protocol/path.`,
+      });
+    }
+    if (isNaN(port) || port < 1 || port > 65535) {
+      exitWithDiagnostic(1, {
+        status: "error",
+        message: `Invalid port: "${options.port}". Must be a number between 1 and 65535.`,
+      });
+    }
 
     const server = createWebServer({
       publicationDir: options.publicationDir,
@@ -406,19 +409,6 @@ program
       process.stderr.write(
         JSON.stringify({ status: "listening", address: bindAddr }) + "\n",
       );
-
-      // Console signature
-      console.log(
-        "%cCredimi %cTrusted List Publisher %c\u00A0",
-        "color: #2563eb; font-weight: bold; font-size: 1.2em;",
-        "color: #1e293b; font-weight: normal;",
-        "",
-      );
-      console.log(
-        `%cread-only publication viewer \u2014 ${bindAddr}`,
-        "color: #64748b;",
-      );
-      console.log("%csigner trust: not evaluated", "color: #d97706;");
     });
 
     const shutdown = () => {

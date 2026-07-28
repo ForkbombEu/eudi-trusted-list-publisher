@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+  existsSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -25,8 +32,8 @@ function runCli(args: string[]): {
   status: number;
 } {
   const result = spawnSync(
-    "npx",
-    ["tsx", resolve(__dirname, "..", "src", "cli", "main.ts"), ...args],
+    "node",
+    [resolve(__dirname, "..", "dist", "src", "cli", "main.js"), ...args],
     {
       encoding: "utf-8",
       timeout: 30000,
@@ -335,6 +342,113 @@ describe("CLI", () => {
       } finally {
         if (existsSync(compiledPath)) unlinkSync(compiledPath);
         if (existsSync(detachedPath)) unlinkSync(detachedPath);
+      }
+    });
+  });
+
+  describe("publish", () => {
+    it("publishes a valid signed LoTE and exits 0", () => {
+      const compileResult = runCli(["compile", "-i", SCHEME_PATH]);
+      expect(compileResult.status).toBe(0);
+      const signedPath = resolve(tmpdir(), `test-pub-cli-${randomUUID()}.txt`);
+      const pubDir = resolve(tmpdir(), `test-pubdir-${randomUUID()}`);
+      try {
+        const compiledPath = resolve(
+          tmpdir(),
+          `test-comp-${randomUUID()}.json`,
+        );
+        writeFileSync(compiledPath, compileResult.stdout, "utf-8");
+        const signResult = runCli([
+          "sign",
+          "-i",
+          compiledPath,
+          "-k",
+          KEY_PATH,
+          "-c",
+          CERT_PATH,
+          "-o",
+          signedPath,
+        ]);
+        expect(signResult.status).toBe(0);
+
+        const pubResult = runCli([
+          "publish",
+          "-i",
+          signedPath,
+          "-c",
+          CERT_PATH,
+          "--publication-dir",
+          pubDir,
+        ]);
+        expect(pubResult.status).toBe(0);
+        expect(JSON.parse(pubResult.stdout).status).toBe("ok");
+        expect(existsSync(pubDir)).toBe(true);
+      } finally {
+        if (existsSync(signedPath)) unlinkSync(signedPath);
+        try {
+          rmSync(pubDir, { recursive: true, force: true });
+        } catch {
+          /* ok */
+        }
+      }
+    });
+
+    it("fails with non-zero exit on invalid signature", () => {
+      const compiledPath = resolve(
+        tmpdir(),
+        `test-badsig-${randomUUID()}.json`,
+      );
+      const outPath = resolve(tmpdir(), `test-badsig-out-${randomUUID()}.txt`);
+      const pubDir = resolve(tmpdir(), `test-badsig-pub-${randomUUID()}`);
+      try {
+        const compileResult = runCli(["compile", "-i", SCHEME_PATH]);
+        writeFileSync(compiledPath, compileResult.stdout, "utf-8");
+        const signResult = runCli([
+          "sign",
+          "-i",
+          compiledPath,
+          "-k",
+          KEY_PATH,
+          "-c",
+          CERT_PATH,
+          "-o",
+          outPath,
+        ]);
+        expect(signResult.status).toBe(0);
+
+        // Tamper the signature
+        const signed = readFileSync(outPath, "utf-8").trim();
+        const parts = signed.split(".");
+        const tampered = `${parts[0]}.${parts[1]}.AAAA${parts[2]!.slice(4)}`;
+        const tamperedPath = resolve(tmpdir(), `test-tamp-${randomUUID()}.txt`);
+        writeFileSync(tamperedPath, tampered, "utf-8");
+
+        const pubResult = runCli([
+          "publish",
+          "-i",
+          tamperedPath,
+          "-c",
+          CERT_PATH,
+          "--publication-dir",
+          pubDir,
+        ]);
+        expect(pubResult.status).not.toBe(0);
+
+        // Publication dir should be empty or contain no actual publications
+        if (existsSync(pubDir)) {
+          const entries = readdirSync(pubDir).filter(
+            (e: string) => !e.startsWith(".staging_"),
+          );
+          expect(entries.length).toBe(0);
+        }
+      } finally {
+        if (existsSync(compiledPath)) unlinkSync(compiledPath);
+        if (existsSync(outPath)) unlinkSync(outPath);
+        try {
+          rmSync(pubDir, { recursive: true, force: true });
+        } catch {
+          /* ok */
+        }
       }
     });
   });

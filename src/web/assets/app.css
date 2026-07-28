@@ -71,3 +71,20 @@
   font-weight: 600;
   font-size: 1.1rem;
 }
+
+footer.dark {
+  background: #153FB5;
+  color: #fff;
+}
+
+footer.dark .footer-inner {
+  color: #fff;
+}
+
+footer.dark p {
+  color: #ccc;
+}
+
+.footer-logo {
+  margin-bottom: 0.5rem;
+}

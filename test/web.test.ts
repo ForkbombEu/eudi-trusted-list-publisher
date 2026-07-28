@@ -68,10 +68,16 @@ let baseUrl: string;
 
 async function httpGet(
   path: string,
-): Promise<{ status: number; body: string; contentType: string }> {
+  method = "GET",
+): Promise<{
+  status: number;
+  body: string;
+  contentType: string;
+  headers: Record<string, string>;
+}> {
   return new Promise((resolve, reject) => {
     const url = new URL(path, baseUrl);
-    httpGetRaw(url, (res) => {
+    httpGetRaw(url, { method }, (res) => {
       let data = "";
       res.setEncoding("utf-8");
       res.on("data", (chunk: string) => {
@@ -82,6 +88,7 @@ async function httpGet(
           status: res.statusCode ?? 500,
           body: data,
           contentType: res.headers["content-type"] ?? "",
+          headers: res.headers as Record<string, string>,
         });
       });
     }).on("error", reject);
@@ -121,23 +128,15 @@ beforeAll(async () => {
   pubDir = resolve(tmpdir(), `test-web-${randomUUID()}`);
   mkdirSync(pubDir, { recursive: true });
 
-  // Publish one entry
   const result = await publish({
     compactJws: signedCompact,
     certificatePem: testCertPem,
   });
   const store = new PublicationStore({ publicationDir: pubDir });
-  const loteJson = JSON.stringify(
-    JSON.parse(
-      Buffer.from(signedCompact.split(".")[1]!, "base64url").toString(),
-    ),
-    null,
-    2,
-  );
   store.store(
     result,
     signedCompact,
-    loteJson,
+    result.loteJson,
     JSON.stringify(result.manifest, null, 2),
   );
 
@@ -340,5 +339,111 @@ describe("Branding", () => {
     );
     const logoRes = await httpGet("/assets/credimi_logo.svg");
     expect(logoRes.body).toBe(canonicalLogo);
+  });
+
+  it("browser console signature present in HTML pages", async () => {
+    const res = await httpGet("/");
+    expect(res.body).toContain("console.log");
+    expect(res.body).toContain("Credimi");
+    expect(res.body).toContain("Trusted List Publisher");
+  });
+});
+
+describe("HTTP correctness", () => {
+  it("returns 405 for POST requests", async () => {
+    const res = await httpGet("/", "POST");
+    expect(res.status).toBe(405);
+    expect(res.headers["allow"]).toBe("GET, HEAD");
+  });
+
+  it("returns 405 for PUT requests", async () => {
+    const res = await httpGet("/healthz", "PUT");
+    expect(res.status).toBe(405);
+  });
+
+  it("returns 405 for DELETE requests", async () => {
+    const res = await httpGet("/", "DELETE");
+    expect(res.status).toBe(405);
+  });
+
+  it("includes X-Request-ID in all responses", async () => {
+    const res = await httpGet("/");
+    expect(res.headers["x-request-id"]).toBeDefined();
+  });
+
+  it("does not include local paths or stack traces in errors", async () => {
+    const res = await httpGet("/api/v1/lists/nonexistent");
+    expect(res.body).not.toContain("/home/");
+    expect(res.body).not.toContain("src/");
+    expect(res.body).not.toContain("at ");
+  });
+
+  it("caches immutable artifacts", async () => {
+    const res = await httpGet(
+      `/api/v1/lists/${storedKey}/versions/1/signature`,
+    );
+    expect(res.headers["cache-control"]).toContain("immutable");
+  });
+
+  it("does not cache catalogue index", async () => {
+    const res = await httpGet("/api/v1/lists");
+    expect(res.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("starts with empty publication directory", async () => {
+    const emptyDir = resolve(tmpdir(), `empty-web-${randomUUID()}`);
+    const srv = createWebServer({ publicationDir: emptyDir });
+    await new Promise<void>((resolve) => {
+      srv.listen(0, "127.0.0.1", () => resolve());
+    });
+    const addr = srv.address();
+    if (addr && typeof addr === "object") {
+      const emptyUrl = `http://127.0.0.1:${addr.port}`;
+      const res = await new Promise<{ status: number }>((resolve, reject) => {
+        const url = new URL("/", emptyUrl);
+        httpGetRaw(url, (r) => {
+          resolve({ status: r.statusCode ?? 500 });
+        }).on("error", reject);
+      });
+      expect(res.status).toBe(200);
+    }
+    srv.close();
+  });
+
+  it("/openapi.json returns valid JSON", async () => {
+    const res = await httpGet("/openapi.json");
+    expect(res.status).toBe(200);
+    expect(res.contentType).toContain("application/json");
+    const parsed = JSON.parse(res.body);
+    expect(parsed.openapi).toBe("3.1.0");
+    expect(parsed.paths).toBeDefined();
+  });
+
+  it("/openapi.yaml returns valid YAML", async () => {
+    const res = await httpGet("/openapi.yaml");
+    expect(res.status).toBe(200);
+    expect(res.contentType).toContain("application/yaml");
+  });
+
+  it("API routes exist in OpenAPI spec", async () => {
+    const res = await httpGet("/openapi.json");
+    const spec = JSON.parse(res.body);
+    const paths = Object.keys(spec.paths ?? {});
+    expect(paths).toContain("/api/v1/lists");
+    expect(paths).toContain("/api/v1/lists/{listKey}");
+    expect(paths).toContain("/api/v1/lists/{listKey}/versions/{sequence}");
+    expect(paths).toContain("/api/v1/lists/{listKey}/versions/{sequence}/lote");
+    expect(paths).toContain(
+      "/api/v1/lists/{listKey}/versions/{sequence}/signature",
+    );
+    expect(paths).toContain(
+      "/api/v1/lists/{listKey}/versions/{sequence}/manifest",
+    );
+  });
+
+  it("negative logo used on dark footer", async () => {
+    const res = await httpGet("/");
+    expect(res.body).toContain("credimi_logo_negative.svg");
+    expect(res.body).toContain('class="site-footer dark"');
   });
 });

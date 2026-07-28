@@ -44,6 +44,7 @@ export interface PublicationResult {
   listKey: string;
   sequenceNumber: number;
   manifest: Manifest;
+  loteJson: string;
 }
 
 function deriveListKey(document: LoTEDocument): string {
@@ -71,20 +72,80 @@ function sha256(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
+export class PublicationError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+  ) {
+    super(message);
+    this.name = "PublicationError";
+  }
+}
+
 export async function publish(
   input: PublicationInput,
 ): Promise<PublicationResult> {
   const now = input.clock ?? new Date();
 
-  const compactJadesSha256 = sha256(input.compactJws);
+  // Reject WE BUILD detached format
+  const trimmed = input.compactJws.trim();
+  if (trimmed.startsWith("{")) {
+    throw new PublicationError(
+      "WE BUILD detached format is not supported. Use Compact JAdES serialization.",
+      "DETACHED_FORMAT",
+    );
+  }
+
+  // Must be compact JWS (exactly 3 base64url segments separated by dots)
+  const parts = trimmed.split(".");
+  if (parts.length !== 3) {
+    throw new PublicationError(
+      "Input is not a valid Compact JAdES serialization",
+      "INVALID_FORMAT",
+    );
+  }
+
+  const compactJadesSha256 = sha256(trimmed);
 
   const verifyResult = await verifyJades({
-    compactJws: input.compactJws,
+    compactJws: trimmed,
     certificatePem: input.certificatePem,
   });
 
   if (!verifyResult.payload) {
-    throw new Error("Failed to parse signed payload");
+    throw new PublicationError(
+      "Failed to parse signed payload as valid JSON",
+      "INVALID_PAYLOAD",
+    );
+  }
+
+  if (!verifyResult.valid) {
+    const reasons = verifyResult.findings
+      .map((f) => `${f.code}: ${f.message}`)
+      .join("; ");
+    throw new PublicationError(
+      `Signature verification failed: ${reasons}`,
+      "SIGNATURE_INVALID",
+    );
+  }
+
+  const signer = getSignerInfo(input.certificatePem);
+
+  const certValidFrom = new Date(signer.validFrom);
+  const certValidTo = new Date(signer.validTo);
+
+  if (now < certValidFrom) {
+    throw new PublicationError(
+      `Certificate is not yet valid (valid from ${signer.validFrom})`,
+      "CERT_NOT_YET_VALID",
+    );
+  }
+
+  if (now > certValidTo) {
+    throw new PublicationError(
+      `Certificate has expired (valid to ${signer.validTo})`,
+      "CERT_EXPIRED",
+    );
   }
 
   const document = verifyResult.payload;
@@ -93,7 +154,15 @@ export async function publish(
 
   const etsiResult = await validateEtsiStruct(document);
 
-  const signer = getSignerInfo(input.certificatePem);
+  if (!etsiResult.valid) {
+    const reasons = etsiResult.findings
+      .map((f) => `${f.path}: ${f.message}`)
+      .join("; ");
+    throw new PublicationError(
+      `ETSI schema validation failed: ${reasons}`,
+      "ETSI_SCHEMA_INVALID",
+    );
+  }
 
   const info = document.LoTE.ListAndSchemeInformation;
   const listKey = deriveListKey(document);
@@ -120,8 +189,8 @@ export async function publish(
     certificateIssuer: signer.issuer,
     certificateValidFrom: signer.validFrom,
     certificateValidTo: signer.validTo,
-    signatureValid: verifyResult.valid,
-    etsiSchemaValid: etsiResult.valid,
+    signatureValid: true,
+    etsiSchemaValid: true,
     signerTrustStatus: "not_evaluated",
   };
 
@@ -129,5 +198,6 @@ export async function publish(
     listKey,
     sequenceNumber: info.LoTESequenceNumber,
     manifest,
+    loteJson,
   };
 }

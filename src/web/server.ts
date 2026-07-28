@@ -3,9 +3,10 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { randomUUID } from "node:crypto";
+import { parse as parseYaml } from "yaml";
 import { PublicationStore } from "../core/publication/store.js";
 
 const MIME: Record<string, string> = {
@@ -18,6 +19,8 @@ const MIME: Record<string, string> = {
   ".jades": "application/octet-stream",
   ".txt": "text/plain; charset=utf-8",
 };
+
+const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 function escapeHtml(s: string): string {
   return s
@@ -61,12 +64,22 @@ ${APPLY_CSS}
 <main class="content">
 ${body}
 </main>
-<footer class="site-footer">
+<footer class="site-footer dark">
   <div class="footer-inner">
+    <img src="/assets/credimi_logo_negative.svg" alt="Credimi" class="footer-logo" height="24">
     <p>Credimi &mdash; read-only publication viewer</p>
     <p>Signer trust status: not evaluated. This tool does not establish PKIX trust.</p>
   </div>
 </footer>
+<script>
+console.log(
+  "%cCredimi %cTrusted List Publisher",
+  "color: #2563eb; font-weight: bold; font-size: 1.2em;",
+  "color: #1e293b;"
+);
+console.log("%cread-only publication viewer", "color: #64748b;");
+console.log("%csigner trust: not evaluated", "color: #d97706;");
+</script>
 </body>
 </html>`;
 }
@@ -76,6 +89,7 @@ export interface ServerConfig {
   host?: string;
   port?: number;
   assetsDir?: string;
+  maxFileBytes?: number;
 }
 
 function send(
@@ -83,24 +97,36 @@ function send(
   status: number,
   body: string,
   contentType: string,
+  cacheControl: string,
 ): void {
   const headers: Record<string, string> = {
     "Content-Type": contentType,
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
-    "Cache-Control": "no-store",
+    "Cache-Control": cacheControl,
   };
   res.writeHead(status, headers);
   res.end(body);
 }
 
-function sendJson(res: ServerResponse, status: number, data: unknown): void {
-  send(res, status, JSON.stringify(data), "application/json");
+function sendJson(
+  res: ServerResponse,
+  status: number,
+  data: unknown,
+  cacheControl?: string,
+): void {
+  send(
+    res,
+    status,
+    JSON.stringify(data),
+    "application/json",
+    cacheControl ?? "no-store",
+  );
 }
 
 function sendHtml(res: ServerResponse, status: number, body: string): void {
-  send(res, status, body, "text/html; charset=utf-8");
+  send(res, status, body, "text/html; charset=utf-8", "no-store");
 }
 
 function send404(res: ServerResponse, message?: string): void {
@@ -114,6 +140,14 @@ function send404(res: ServerResponse, message?: string): void {
   );
 }
 
+function send405(res: ServerResponse): void {
+  res.writeHead(405, {
+    "Content-Type": "text/plain; charset=utf-8",
+    Allow: "GET, HEAD",
+  });
+  res.end("405 Method Not Allowed");
+}
+
 function send500(res: ServerResponse, requestId: string): void {
   sendHtml(
     res,
@@ -125,10 +159,36 @@ function send500(res: ServerResponse, requestId: string): void {
   );
 }
 
+function logRequest(
+  method: string,
+  url: string,
+  status: number,
+  requestId: string,
+): void {
+  process.stderr.write(
+    JSON.stringify({
+      event: "request",
+      method,
+      url,
+      status,
+      requestId,
+      timestamp: new Date().toISOString(),
+    }) + "\n",
+  );
+}
+
+function readFileBounded(filePath: string, maxBytes: number): string | null {
+  if (!existsSync(filePath)) return null;
+  const st = statSync(filePath);
+  if (st.size > maxBytes) return null;
+  return readFileSync(filePath, "utf-8");
+}
+
 export function createWebServer(config: ServerConfig) {
   const assetsDir = config.assetsDir
     ? resolve(config.assetsDir)
     : resolve(process.cwd(), "src", "web", "assets");
+  const maxFileBytes = config.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
 
   const store = new PublicationStore({
     publicationDir: config.publicationDir,
@@ -136,16 +196,27 @@ export function createWebServer(config: ServerConfig) {
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const requestId = randomUUID();
+    res.setHeader("X-Request-ID", requestId);
+
     try {
+      const method = req.method ?? "GET";
+
+      if (method !== "GET" && method !== "HEAD") {
+        send405(res);
+        logRequest(method, req.url ?? "/", 405, requestId);
+        return;
+      }
+
       const url = new URL(
         req.url ?? "/",
         `http://${req.headers.host ?? "localhost"}`,
       );
       handler(req, res, url, requestId);
-    } catch (e) {
+    } catch {
       if (!res.headersSent) {
         send500(res, requestId);
       }
+      logRequest(req.method ?? "GET", req.url ?? "/", 500, requestId);
     }
   });
 
@@ -159,7 +230,8 @@ export function createWebServer(config: ServerConfig) {
 
     // Health check
     if (path === "/healthz") {
-      sendJson(res, 200, { status: "ok" });
+      sendJson(res, 200, { status: "ok" }, "no-store");
+      logRequest("GET", path, 200, requestId);
       return;
     }
 
@@ -171,6 +243,7 @@ export function createWebServer(config: ServerConfig) {
         "image/svg+xml",
         "public, max-age=86400, immutable",
       );
+      logRequest("GET", path, res.statusCode, requestId);
       return;
     }
 
@@ -179,15 +252,18 @@ export function createWebServer(config: ServerConfig) {
       const assetName = path.slice("/assets/".length);
       if (assetName.includes("..") || assetName.includes("/")) {
         send404(res);
+        logRequest("GET", path, 404, requestId);
         return;
       }
       const assetPath = resolve(assetsDir, assetName);
       if (!assetPath.startsWith(resolve(assetsDir))) {
         send404(res);
+        logRequest("GET", path, 404, requestId);
         return;
       }
       if (!existsSync(assetPath)) {
         send404(res);
+        logRequest("GET", path, 404, requestId);
         return;
       }
       const ext = extname(assetName).toLowerCase();
@@ -197,22 +273,26 @@ export function createWebServer(config: ServerConfig) {
           ? "no-store"
           : "public, max-age=86400, immutable";
       serveAsset(res, assetName, mimeType, cacheControl);
+      logRequest("GET", path, res.statusCode, requestId);
       return;
     }
 
     // OpenAPI spec
     if (path === "/openapi.yaml") {
       serveOpenApi(res, "yaml");
+      logRequest("GET", path, res.statusCode, requestId);
       return;
     }
     if (path === "/openapi.json") {
       serveOpenApi(res, "json");
+      logRequest("GET", path, res.statusCode, requestId);
       return;
     }
 
     // API docs
     if (path === "/docs") {
       serveDocs(res);
+      logRequest("GET", path, res.statusCode, requestId);
       return;
     }
 
@@ -225,6 +305,7 @@ export function createWebServer(config: ServerConfig) {
     // Catalogue home
     if (path === "/") {
       serveCatalogue(res, store);
+      logRequest("GET", path, res.statusCode, requestId);
       return;
     }
 
@@ -232,6 +313,7 @@ export function createWebServer(config: ServerConfig) {
     const listMatch = path.match(/^\/lists\/([a-z0-9_.@()-]+)$/);
     if (listMatch) {
       serveListDetail(res, store, listMatch[1]!);
+      logRequest("GET", path, res.statusCode, requestId);
       return;
     }
 
@@ -246,10 +328,12 @@ export function createWebServer(config: ServerConfig) {
         versionMatch[1]!,
         parseInt(versionMatch[2]!, 10),
       );
+      logRequest("GET", path, res.statusCode, requestId);
       return;
     }
 
     send404(res);
+    logRequest("GET", path, 404, requestId);
   }
 
   function serveAsset(
@@ -264,7 +348,12 @@ export function createWebServer(config: ServerConfig) {
       res.end();
       return;
     }
-    const content = readFileSync(path, "utf-8");
+    const content = readFileBounded(path, maxFileBytes);
+    if (content === null) {
+      res.writeHead(413, { "Content-Type": "text/plain" });
+      res.end("413 Payload Too Large");
+      return;
+    }
     const headers: Record<string, string> = {
       "Content-Type": contentType,
       "X-Content-Type-Options": "nosniff",
@@ -278,16 +367,20 @@ export function createWebServer(config: ServerConfig) {
 
   function serveOpenApi(res: ServerResponse, format: "yaml" | "json"): void {
     const path = resolve(assetsDir, "openapi.yaml");
-    if (!existsSync(path)) {
+    const content = readFileBounded(path, maxFileBytes);
+    if (content === null) {
       send404(res, "OpenAPI spec not found");
       return;
     }
     if (format === "yaml") {
-      const content = readFileSync(path, "utf-8");
-      send(res, 200, content, "application/yaml");
+      send(res, 200, content, "application/yaml", "no-store");
     } else {
-      const content = readFileSync(path, "utf-8");
-      send(res, 200, content, "application/json");
+      try {
+        const parsed = parseYaml(content);
+        send(res, 200, JSON.stringify(parsed), "application/json", "no-store");
+      } catch {
+        send500(res, "parse-error");
+      }
     }
   }
 
@@ -315,26 +408,27 @@ export function createWebServer(config: ServerConfig) {
   }
 
   function serveCatalogue(res: ServerResponse, s: PublicationStore): void {
-    const keys = s.listKeys();
-    if (keys.length === 0) {
-      sendHtml(
-        res,
-        200,
-        htmlPage(
-          "Catalogue",
-          `<h1>Published Lists</h1><div class="card"><p>No lists have been published yet.</p><p>Use <code>trusted-list-publisher publish</code> to publish a LoTE.</p></div>`,
-        ),
-      );
-      return;
-    }
+    try {
+      const keys = s.listKeys();
+      if (keys.length === 0) {
+        sendHtml(
+          res,
+          200,
+          htmlPage(
+            "Catalogue",
+            `<h1>Published Lists</h1><div class="card"><p>No lists have been published yet.</p><p>Use <code>trusted-list-publisher publish</code> to publish a LoTE.</p></div>`,
+          ),
+        );
+        return;
+      }
 
-    let rows = "";
-    for (const key of keys) {
-      const index = s.loadIndex(key);
-      if (!index) continue;
-      const latest = index.versions[index.versions.length - 1];
-      if (!latest) continue;
-      rows += `
+      let rows = "";
+      for (const key of keys) {
+        const index = s.loadIndex(key);
+        if (!index) continue;
+        const latest = index.versions[index.versions.length - 1];
+        if (!latest) continue;
+        rows += `
       <tr>
         <td><a href="/lists/${escapeHtml(key)}"><code>${escapeHtml(key)}</code></a></td>
         <td>${escapeHtml(String(latest.sequenceNumber))}</td>
@@ -343,21 +437,24 @@ export function createWebServer(config: ServerConfig) {
         <td>${latest.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
         <td><strong>not evaluated</strong></td>
       </tr>`;
-    }
+      }
 
-    sendHtml(
-      res,
-      200,
-      htmlPage(
-        "Catalogue",
-        `<h1>Published Lists</h1>
+      sendHtml(
+        res,
+        200,
+        htmlPage(
+          "Catalogue",
+          `<h1>Published Lists</h1>
         <div class="trust-notice"><strong>&#x26A0; Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
         <table class="catalogue-table">
         <thead><tr><th>List Key</th><th>Latest Seq</th><th>Issue Date</th><th>Next Update</th><th>Signature</th><th>Trust</th></tr></thead>
         <tbody>${rows}</tbody>
         </table>`,
-      ),
-    );
+        ),
+      );
+    } catch {
+      send500(res, "catalogue-error");
+    }
   }
 
   function serveListDetail(
@@ -365,15 +462,16 @@ export function createWebServer(config: ServerConfig) {
     s: PublicationStore,
     listKey: string,
   ): void {
-    const index = s.loadIndex(listKey);
-    if (!index) {
-      send404(res, `List "${listKey}" not found`);
-      return;
-    }
+    try {
+      const index = s.loadIndex(listKey);
+      if (!index) {
+        send404(res, `List "${listKey}" not found`);
+        return;
+      }
 
-    let rows = "";
-    for (const v of index.versions) {
-      rows += `
+      let rows = "";
+      for (const v of index.versions) {
+        rows += `
       <tr>
         <td><a href="/lists/${escapeHtml(listKey)}/versions/${v.sequenceNumber}">${v.sequenceNumber}</a></td>
         <td>${escapeHtml(v.issueDate)}</td>
@@ -381,21 +479,24 @@ export function createWebServer(config: ServerConfig) {
         <td>${escapeHtml(v.publicationTimestamp)}</td>
         <td>${v.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
       </tr>`;
-    }
+      }
 
-    sendHtml(
-      res,
-      200,
-      htmlPage(
-        `List: ${listKey}`,
-        `<h1>List: <code>${escapeHtml(listKey)}</code></h1>
+      sendHtml(
+        res,
+        200,
+        htmlPage(
+          `List: ${listKey}`,
+          `<h1>List: <code>${escapeHtml(listKey)}</code></h1>
         <div class="trust-notice"><strong>&#x26A0; Trust not evaluated.</strong></div>
         <table class="catalogue-table">
         <thead><tr><th>Sequence</th><th>Issue Date</th><th>Next Update</th><th>Published</th><th>Signature</th></tr></thead>
         <tbody>${rows}</tbody>
         </table>`,
-      ),
-    );
+        ),
+      );
+    } catch {
+      send500(res, "list-detail-error");
+    }
   }
 
   function serveVersionDetail(
@@ -404,45 +505,49 @@ export function createWebServer(config: ServerConfig) {
     listKey: string,
     sequence: number,
   ): void {
-    const manifest = s.loadManifest(listKey, sequence);
-    if (!manifest) {
-      send404(res, `Version ${sequence} not found`);
-      return;
-    }
-
-    const loteJsonPath = s.loteJsonPath(listKey, sequence);
-    let entityRows = "";
-    if (existsSync(loteJsonPath)) {
-      try {
-        const doc = JSON.parse(readFileSync(loteJsonPath, "utf-8"));
-        const entities = doc?.LoTE?.TrustedEntitiesList ?? [];
-        for (const e of entities) {
-          const names =
-            e?.TrustedEntityInformation?.TEName?.map((n: { value: string }) =>
-              escapeHtml(n.value),
-            ).join(", ") ?? "";
-          const svcs =
-            e?.TrustedEntityServices?.map(
-              (s: {
-                ServiceInformation: { ServiceName: Array<{ value: string }> };
-              }) =>
-                s?.ServiceInformation?.ServiceName?.map(
-                  (n: { value: string }) => escapeHtml(n.value),
-                ).join(", ") ?? "",
-            ).join("; ") ?? "";
-          entityRows += `<tr><td>${names}</td><td>${svcs}</td></tr>`;
-        }
-      } catch {
-        entityRows = `<tr><td colspan="2">Could not parse LoTE</td></tr>`;
+    try {
+      const manifest = s.loadManifest(listKey, sequence);
+      if (!manifest) {
+        send404(res, `Version ${sequence} not found`);
+        return;
       }
-    }
 
-    sendHtml(
-      res,
-      200,
-      htmlPage(
-        `Version ${sequence} — ${listKey}`,
-        `<h1>Version ${sequence} — <code>${escapeHtml(listKey)}</code></h1>
+      const loteJsonPath = s.loteJsonPath(listKey, sequence);
+      let entityRows = "";
+      const loteContent = readFileBounded(loteJsonPath, maxFileBytes);
+      if (loteContent) {
+        try {
+          const doc = JSON.parse(loteContent);
+          const entities = doc?.LoTE?.TrustedEntitiesList ?? [];
+          for (const e of entities) {
+            const names =
+              e?.TrustedEntityInformation?.TEName?.map((n: { value: string }) =>
+                escapeHtml(n.value),
+              ).join(", ") ?? "";
+            const svcs =
+              e?.TrustedEntityServices?.map(
+                (s: {
+                  ServiceInformation: {
+                    ServiceName: Array<{ value: string }>;
+                  };
+                }) =>
+                  s?.ServiceInformation?.ServiceName?.map(
+                    (n: { value: string }) => escapeHtml(n.value),
+                  ).join(", ") ?? "",
+              ).join("; ") ?? "";
+            entityRows += `<tr><td>${names}</td><td>${svcs}</td></tr>`;
+          }
+        } catch {
+          entityRows = `<tr><td colspan="2">Could not parse LoTE</td></tr>`;
+        }
+      }
+
+      sendHtml(
+        res,
+        200,
+        htmlPage(
+          `Version ${sequence} — ${listKey}`,
+          `<h1>Version ${sequence} — <code>${escapeHtml(listKey)}</code></h1>
 
 <div class="trust-notice"><strong>&#x26A0; Signer trust: not evaluated.</strong> Cryptographic signature is ${manifest.signatureValid ? "valid" : "INVALID"}.</div>
 
@@ -510,38 +615,49 @@ ${
 </table>
 </div>
 `,
-      ),
-    );
+        ),
+      );
+    } catch {
+      send500(res, "version-detail-error");
+    }
   }
 
   function apiListKeys(res: ServerResponse, _req: IncomingMessage): void {
-    const keys = store.listKeys();
-    const result = keys.map((key) => {
-      const index = store.loadIndex(key);
-      const latest = index?.versions.length
-        ? index.versions[index.versions.length - 1]
-        : null;
-      return {
-        listKey: key,
-        versionCount: index?.versions.length ?? 0,
-        latestSequenceNumber: latest?.sequenceNumber ?? null,
-        latestIssueDate: latest?.issueDate ?? null,
-        latestNextUpdate: latest?.nextUpdateDate ?? null,
-      };
-    });
-    sendJson(res, 200, { lists: result });
+    try {
+      const keys = store.listKeys();
+      const result = keys.map((key) => {
+        const index = store.loadIndex(key);
+        const latest = index?.versions.length
+          ? index.versions[index.versions.length - 1]
+          : null;
+        return {
+          listKey: key,
+          versionCount: index?.versions.length ?? 0,
+          latestSequenceNumber: latest?.sequenceNumber ?? null,
+          latestIssueDate: latest?.issueDate ?? null,
+          latestNextUpdate: latest?.nextUpdateDate ?? null,
+        };
+      });
+      sendJson(res, 200, { lists: result }, "no-store");
+    } catch {
+      sendJson(res, 500, { error: "internal_error" });
+    }
   }
 
   function apiListDetail(res: ServerResponse, listKey: string): void {
-    const index = store.loadIndex(listKey);
-    if (!index) {
-      sendJson(res, 404, {
-        error: "not_found",
-        message: `List "${listKey}" not found`,
-      });
-      return;
+    try {
+      const index = store.loadIndex(listKey);
+      if (!index) {
+        sendJson(res, 404, {
+          error: "not_found",
+          message: `List "${listKey}" not found`,
+        });
+        return;
+      }
+      sendJson(res, 200, index, "no-store");
+    } catch {
+      sendJson(res, 500, { error: "internal_error" });
     }
-    sendJson(res, 200, index);
   }
 
   function apiVersionDetail(
@@ -549,15 +665,19 @@ ${
     listKey: string,
     sequence: number,
   ): void {
-    const manifest = store.loadManifest(listKey, sequence);
-    if (!manifest) {
-      sendJson(res, 404, {
-        error: "not_found",
-        message: `Version ${sequence} not found`,
-      });
-      return;
+    try {
+      const manifest = store.loadManifest(listKey, sequence);
+      if (!manifest) {
+        sendJson(res, 404, {
+          error: "not_found",
+          message: `Version ${sequence} not found`,
+        });
+        return;
+      }
+      sendJson(res, 200, manifest, "no-store");
+    } catch {
+      sendJson(res, 500, { error: "internal_error" });
     }
-    sendJson(res, 200, manifest);
   }
 
   function apiVersionFile(
@@ -566,39 +686,47 @@ ${
     sequence: number,
     fileType: "lote" | "signature" | "manifest",
   ): void {
-    const filePath = (() => {
-      switch (fileType) {
-        case "lote":
-          return store.loteJsonPath(listKey, sequence);
-        case "signature":
-          return store.loteJadesPath(listKey, sequence);
-        case "manifest":
-          return store.manifestPath(listKey, sequence);
-      }
-    })();
+    try {
+      const filePath = (() => {
+        switch (fileType) {
+          case "lote":
+            return store.loteJsonPath(listKey, sequence);
+          case "signature":
+            return store.loteJadesPath(listKey, sequence);
+          case "manifest":
+            return store.manifestPath(listKey, sequence);
+        }
+      })();
 
-    if (!existsSync(filePath)) {
-      sendJson(res, 404, { error: "not_found", message: "File not found" });
-      return;
+      const content = readFileBounded(filePath, maxFileBytes);
+      if (content === null) {
+        sendJson(res, 404, {
+          error: "not_found",
+          message: "File not found or too large",
+        });
+        return;
+      }
+
+      const contentType = (() => {
+        switch (fileType) {
+          case "lote":
+            return "application/json";
+          case "signature":
+            return "application/octet-stream";
+          case "manifest":
+            return "application/json";
+        }
+      })();
+
+      const cacheControl =
+        fileType === "manifest"
+          ? "no-store"
+          : "public, max-age=86400, immutable";
+
+      send(res, 200, content, contentType, cacheControl);
+    } catch {
+      sendJson(res, 500, { error: "internal_error" });
     }
-
-    const content = readFileSync(filePath, "utf-8");
-    const contentType = (() => {
-      switch (fileType) {
-        case "lote":
-          return "application/json";
-        case "signature":
-          return "application/octet-stream";
-        case "manifest":
-          return "application/json";
-      }
-    })();
-
-    res.setHeader(
-      "Cache-Control",
-      fileType === "manifest" ? "no-store" : "public, max-age=86400, immutable",
-    );
-    send(res, 200, content, contentType);
   }
 
   function handleApi(
@@ -607,12 +735,13 @@ ${
     url: URL,
     requestId: string,
   ): void {
-    try {
-      const path = url.pathname;
+    const path = url.pathname;
 
+    try {
       // GET /api/v1/lists
       if (path === "/api/v1/lists") {
         apiListKeys(res, req);
+        logRequest("GET", path, res.statusCode, requestId);
         return;
       }
 
@@ -620,6 +749,7 @@ ${
       const listKeyMatch = path.match(/^\/api\/v1\/lists\/([a-z0-9_.@()-]+)$/);
       if (listKeyMatch) {
         apiListDetail(res, listKeyMatch[1]!);
+        logRequest("GET", path, res.statusCode, requestId);
         return;
       }
 
@@ -629,6 +759,7 @@ ${
       );
       if (versionMatch) {
         apiVersionDetail(res, versionMatch[1]!, parseInt(versionMatch[2]!, 10));
+        logRequest("GET", path, res.statusCode, requestId);
         return;
       }
 
@@ -643,6 +774,7 @@ ${
           parseInt(fileMatch[2]!, 10),
           fileMatch[3]! as "lote" | "signature" | "manifest",
         );
+        logRequest("GET", path, res.statusCode, requestId);
         return;
       }
 
@@ -650,12 +782,14 @@ ${
         error: "not_found",
         message: "API route not found",
       });
-    } catch (e) {
+      logRequest("GET", path, 404, requestId);
+    } catch {
       sendJson(res, 500, {
         error: "internal_error",
         message: "Internal server error",
         requestId,
       });
+      logRequest("GET", path, 500, requestId);
     }
   }
 

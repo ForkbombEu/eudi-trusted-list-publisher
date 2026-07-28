@@ -50,6 +50,7 @@ must never be committed or uploaded through a public web interface.
 - **jose** (^5.x): JOSE/JWS signing and verification
 - **commander** (^12.x): CLI argument parsing
 - **ajv-formats** (^3.x): JSON Schema format validation (date-time, uri)
+- **yaml** (^2.x): OpenAPI YAML → JSON parsing
 
 ### Dev dependencies
 
