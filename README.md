@@ -44,7 +44,7 @@ cp .env.example .env
 # Edit .env: set DATA_COLLECTION_GUI=true, configure signing config path
 
 # Create signing configuration
-cp signing-config.example.json signing-config.json
+cp examples/signing/signing-config.example.json signing-config.json
 # Edit signing-config.json with paths to your actual signing key/cert
 
 npm run build

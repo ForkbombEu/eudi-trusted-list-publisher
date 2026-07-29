@@ -1,0 +1,30 @@
+{
+  "lists": [
+    {
+      "listKey": "eu_credimi",
+      "family": "wallet-providers",
+      "schemeOperatorName": "Credimi",
+      "schemeOperatorStreet": "Via Roma 1",
+      "schemeOperatorCountry": "IT",
+      "schemeName": "EU Wallet Providers List",
+      "schemeTerritory": "EU",
+      "schemeOperatorContactUri": "https://credimi.eu",
+      "distributionPointUri": "https://credimi.eu/wallet-providers/latest",
+      "keyFile": "/path/to/signing-key.pem",
+      "certFile": "/path/to/signing-cert.pem"
+    },
+    {
+      "listKey": "eu_pid_example",
+      "family": "pid-providers",
+      "schemeOperatorName": "Example Member State",
+      "schemeOperatorStreet": "Example Street 1",
+      "schemeOperatorCountry": "EU",
+      "schemeName": "EU PID Providers List",
+      "schemeTerritory": "EU",
+      "schemeOperatorContactUri": "https://example.test/pid",
+      "distributionPointUri": "https://example.test/pid/latest",
+      "keyFile": "/path/to/pid-signing-key.pem",
+      "certFile": "/path/to/pid-signing-cert.pem"
+    }
+  ]
+}

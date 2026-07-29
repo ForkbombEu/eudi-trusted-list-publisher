@@ -22,6 +22,7 @@ export type ProfileFamily =
   | "wrpac-providers"
   | "wrprc-providers"
   | "registrars";
+export type EnabledProfileFamily = "wallet-providers" | "pid-providers";
 
 export interface TrustedEntityProfile {
   readonly family: ProfileFamily;
@@ -89,11 +90,24 @@ export const PROFILE_REGISTRY: Readonly<Record<ProfileFamily, TrustedEntityProfi
     registrars: disabled("registrars", "Registrars"),
   });
 
+export function parseProfileFamily(family: string): ProfileFamily | undefined {
+  return Object.prototype.hasOwnProperty.call(PROFILE_REGISTRY, family)
+    ? (family as ProfileFamily)
+    : undefined;
+}
+
 export function getProfile(family: string): TrustedEntityProfile {
-  const profile = PROFILE_REGISTRY[family as ProfileFamily];
-  if (!profile) throw new Error(`Unknown list family: ${family}`);
+  const parsed = parseProfileFamily(family);
+  if (!parsed) throw new Error(`Unknown list family: ${family}`);
+  const profile = PROFILE_REGISTRY[parsed];
   if (!profile.enabled) throw new Error(`List family is not implemented: ${family}`);
   return profile;
+}
+
+export function getEnabledProfile(family: string): TrustedEntityProfile & { readonly family: EnabledProfileFamily; readonly enabled: true } {
+  const profile = getProfile(family);
+  if (profile.family !== "wallet-providers" && profile.family !== "pid-providers") throw new Error(`List family is not implemented: ${family}`);
+  return profile as TrustedEntityProfile & { readonly family: EnabledProfileFamily; readonly enabled: true };
 }
 
 export function profileForLoTEType(loTEType: string): TrustedEntityProfile | undefined {

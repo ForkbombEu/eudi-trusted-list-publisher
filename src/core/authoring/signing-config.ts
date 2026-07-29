@@ -1,68 +1,17 @@
-// @ts-nocheck
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { X509Certificate } from "node:crypto";
 import { parse as parseYaml } from "yaml";
-import { getProfile } from "../profiles/registry.js";
-export interface SigningConfigEntry { listKey: string; family: string; schemeOperatorName: string; schemeOperatorStreet: string; schemeOperatorCountry: string; schemeName: string; schemeTerritory: string; schemeOperatorContactUri: string; distributionPointUri: string; keyFile: string; certFile: string; }
+import { getEnabledProfile, type EnabledProfileFamily } from "../profiles/registry.js";
+
+export interface SigningConfigEntry { listKey: string; family: EnabledProfileFamily; schemeOperatorName: string; schemeOperatorStreet: string; schemeOperatorCountry: string; schemeName: string; schemeTerritory: string; schemeOperatorContactUri: string; distributionPointUri: string; keyFile: string; certFile: string; }
 export interface SigningConfig { lists: SigningConfigEntry[]; }
-export interface SigningConfigEntryDisplay { listKey: string; family: string; configured: boolean; certificateSubject?: string; certificateFingerprint?: string; }
-export function loadSigningConfig(path) {
-    if (!existsSync(path))
-        return { lists: [] };
-    const content = readFileSync(path, "utf-8");
-    const config = path.endsWith(".yaml") || path.endsWith(".yml")
-        ? parseYaml(content)
-        : JSON.parse(content);
-    if (!config || !Array.isArray(config.lists)) throw new Error("Signing configuration must contain a lists array.");
-    const keys = new Set();
-    for (const entry of config.lists) {
-        if (!entry.listKey || !entry.family || !entry.keyFile || !entry.certFile) throw new Error("Each signing configuration entry requires listKey, family, keyFile, and certFile.");
-        if (keys.has(entry.listKey)) throw new Error(`Duplicate signing configuration list key: ${entry.listKey}`);
-        keys.add(entry.listKey);
-        getProfile(entry.family);
-        for (const field of ["schemeOperatorName", "schemeOperatorStreet", "schemeOperatorCountry", "schemeName", "schemeTerritory", "schemeOperatorContactUri", "distributionPointUri"]) {
-            if (!entry[field]) throw new Error(`Signing configuration '${entry.listKey}' is missing ${field}.`);
-        }
-    }
-    return config;
-}
-export function findSigningConfig(config, listKey) {
-    return config.lists.find((e) => e.listKey === listKey);
-}
-export function getWalletProviderConfigs(config) {
-    return config.lists.filter((e) => e.family === "wallet-providers");
-}
-export function getFamilyConfigs(config, family) {
-    getProfile(family);
-    return config.lists.filter((entry) => entry.family === family);
-}
-export function signingConfigDisplay(config) {
-    return config.lists.map((entry) => {
-        let certificateSubject;
-        let certificateFingerprint;
-        if (existsSync(entry.certFile)) {
-            try {
-                const certPem = readFileSync(entry.certFile, "utf-8");
-                const cert = new X509Certificate(certPem);
-                certificateSubject = cert.subject.replace(/\n/g, ", ");
-                certificateFingerprint = cert.fingerprint256
-                    .replace(/:/g, "")
-                    .toLowerCase();
-            }
-            catch {
-                /* leave undefined */
-            }
-        }
-        return {
-            listKey: entry.listKey,
-            family: entry.family,
-            configured: existsSync(entry.certFile) && existsSync(entry.keyFile),
-            certificateSubject,
-            certificateFingerprint,
-        };
-    });
-}
-export function loadSigningKey(certFile) {
-    return readFileSync(certFile, "utf-8");
-}
-//# sourceMappingURL=signing-config.js.map
+export interface SigningConfigEntryDisplay { listKey: string; family: EnabledProfileFamily; configured: boolean; certificateSubject?: string; certificateFingerprint?: string; }
+const FIELDS = ["listKey", "family", "schemeOperatorName", "schemeOperatorStreet", "schemeOperatorCountry", "schemeName", "schemeTerritory", "schemeOperatorContactUri", "distributionPointUri", "keyFile", "certFile"] as const;
+function stringField(record: Record<string, unknown>, field: typeof FIELDS[number]): string { const value = record[field]; if (typeof value !== "string" || !value.trim()) throw new Error(`Signing configuration entry is missing ${field}.`); return value; }
+function parseEntry(value: unknown): SigningConfigEntry { if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Signing configuration entry must be an object."); const record = value as Record<string, unknown>; const family = stringField(record, "family"); getEnabledProfile(family); return { listKey: stringField(record, "listKey"), family: family as EnabledProfileFamily, schemeOperatorName: stringField(record, "schemeOperatorName"), schemeOperatorStreet: stringField(record, "schemeOperatorStreet"), schemeOperatorCountry: stringField(record, "schemeOperatorCountry"), schemeName: stringField(record, "schemeName"), schemeTerritory: stringField(record, "schemeTerritory"), schemeOperatorContactUri: stringField(record, "schemeOperatorContactUri"), distributionPointUri: stringField(record, "distributionPointUri"), keyFile: stringField(record, "keyFile"), certFile: stringField(record, "certFile") }; }
+export function loadSigningConfig(path: string): SigningConfig { if (!existsSync(path)) return { lists: [] }; const raw: unknown = path.endsWith(".yaml") || path.endsWith(".yml") ? parseYaml(readFileSync(path, "utf-8")) : JSON.parse(readFileSync(path, "utf-8")) as unknown; if (typeof raw !== "object" || raw === null || Array.isArray(raw) || !Array.isArray((raw as Record<string, unknown>).lists)) throw new Error("Signing configuration must contain a lists array."); const lists = ((raw as Record<string, unknown>).lists as unknown[]).map(parseEntry); const keys = new Set<string>(); for (const entry of lists) { if (keys.has(entry.listKey)) throw new Error(`Duplicate signing configuration list key: ${entry.listKey}`); keys.add(entry.listKey); } return { lists }; }
+export function findSigningConfig(config: SigningConfig, listKey: string): SigningConfigEntry | undefined { return config.lists.find((entry) => entry.listKey === listKey); }
+export function getWalletProviderConfigs(config: SigningConfig): SigningConfigEntry[] { return getFamilyConfigs(config, "wallet-providers"); }
+export function getFamilyConfigs(config: SigningConfig, family: EnabledProfileFamily): SigningConfigEntry[] { getEnabledProfile(family); return config.lists.filter((entry) => entry.family === family); }
+export function signingConfigDisplay(config: SigningConfig): SigningConfigEntryDisplay[] { return config.lists.map((entry) => { let certificateSubject: string | undefined; let certificateFingerprint: string | undefined; if (existsSync(entry.certFile)) { try { const certificate = new X509Certificate(readFileSync(entry.certFile, "utf-8")); certificateSubject = certificate.subject.replace(/\n/g, ", "); certificateFingerprint = certificate.fingerprint256.replace(/:/g, "").toLowerCase(); } catch { /* configuration status remains false */ } } return { listKey: entry.listKey, family: entry.family, configured: existsSync(entry.certFile) && existsSync(entry.keyFile), certificateSubject, certificateFingerprint }; }); }
+export function loadSigningKey(certFile: string): string { return readFileSync(certFile, "utf-8"); }
