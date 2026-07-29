@@ -22,7 +22,7 @@ import {
   createApplicationRecord,
   type SubmissionParseResult,
 } from "./submission-parser.js";
-import type { AuthoringInput } from "../model/authoring.js";
+import type { AuthoringInput, AuthoringEntity } from "../model/authoring.js";
 import type { ValidationFinding } from "../validate/validate.js";
 import {
   loadLatestPublication,
@@ -149,6 +149,8 @@ export class ApplicationService {
         listIssueDateTime: string;
         nextUpdate: string;
         entry: SigningConfigEntry;
+        existingEntityCount: number;
+        duplicateError?: string;
       }
     | { success: false; error: string }
   > {
@@ -166,14 +168,36 @@ export class ApplicationService {
       now.getTime() + 180 * 24 * 60 * 60 * 1000,
     ).toISOString();
 
-    const latest = await loadLatestPublication(
-      this.publicationStore,
-      app.targetListKey,
-    );
-    const existingEntities = latest.exists ? latest.entities : [];
-    const nextSeq = latest.exists ? latest.sequenceNumber + 1 : 1;
+    let existingEntities: AuthoringEntity[] = [];
+    let nextSeq = 1;
+
+    try {
+      const latest = await loadLatestPublication(
+        this.publicationStore,
+        app.targetListKey,
+      );
+      existingEntities = latest.exists ? latest.entities : [];
+      nextSeq = latest.exists ? latest.sequenceNumber + 1 : 1;
+    } catch (e) {
+      return {
+        success: false,
+        error: `Cannot load latest publication: ${e instanceof Error ? e.message : "unknown"}`,
+      };
+    }
 
     const candidateEntity = buildCandidateEntity(app);
+
+    // Check duplicates
+    const dupCheck = checkServiceIdentifierUniqueness(
+      existingEntities,
+      candidateEntity,
+    );
+    if (!dupCheck.ok) {
+      return {
+        success: false,
+        error: `DUPLICATE_IDENTIFIER: ${dupCheck.duplicate}`,
+      };
+    }
 
     const input = assembleNextList(
       existingEntities,
@@ -192,6 +216,7 @@ export class ApplicationService {
       listIssueDateTime,
       nextUpdate,
       entry,
+      existingEntityCount: existingEntities.length,
     };
   }
 
@@ -229,26 +254,6 @@ export class ApplicationService {
       return {
         success: false,
         error: `Signing configuration for '${app.targetListKey}' is missing key or certificate paths.`,
-      };
-    }
-
-    // Load latest and build candidate for duplicate check
-    const latest = await loadLatestPublication(
-      this.publicationStore,
-      app.targetListKey,
-    );
-    const existingEntities = latest.exists ? latest.entities : [];
-
-    const candidateEntity = buildCandidateEntity(app);
-
-    const dupCheck = checkServiceIdentifierUniqueness(
-      existingEntities,
-      candidateEntity,
-    );
-    if (!dupCheck.ok) {
-      return {
-        success: false,
-        error: `Duplicate service identifier: ${dupCheck.duplicate} already exists in the current list.`,
       };
     }
 
@@ -333,10 +338,8 @@ export class ApplicationService {
         this.authoringStore.save(app);
       } catch {
         return {
-          success: true,
-          data: app,
-          message: `Publication succeeded but application record update failed. Reconciliation required for list key "${pubResult.listKey}" sequence ${pubResult.sequenceNumber}.`,
-          warning: "APPLICATION_RECORD_STALE",
+          success: false,
+          error: `PUBLICATION_COMMITTED_APPLICATION_STALE: immutable publication succeeded for list key "${pubResult.listKey}" sequence ${pubResult.sequenceNumber} but the application record could not be updated. Run reconciliation to repair.`,
         };
       }
 
@@ -372,30 +375,34 @@ export class ApplicationService {
       return { success: false, error: "No publications exist for this list." };
     }
 
-    // Check if the applicant's service identifiers appear in the latest LoTE
     const data = app.applicantData;
-    const svcIds = new Set(data.services.map((s) => s.serviceUniqueIdentifier));
+    const candidateIds = new Set(
+      data.services.map((s) => s.serviceUniqueIdentifier),
+    );
 
-    let found = false;
+    // Find an entity whose service set EXACTLY matches all candidate IDs
+    let matchEntity: (typeof latest.entities)[0] | undefined;
     for (const entity of latest.entities) {
-      for (const svc of entity.services) {
-        if (svcIds.has(svc.serviceUniqueIdentifier)) {
-          found = true;
-          break;
-        }
+      const entityIds = new Set(
+        entity.services.map((s) => s.serviceUniqueIdentifier),
+      );
+      if (
+        entityIds.size === candidateIds.size &&
+        [...candidateIds].every((id) => entityIds.has(id))
+      ) {
+        matchEntity = entity;
+        break;
       }
-      if (found) break;
     }
 
-    if (!found) {
+    if (!matchEntity) {
       return {
         success: false,
         error:
-          "Applicant's services are not present in the current published list.",
+          "Reconciliation failed: no published entity exactly matches all candidate service identifiers.",
       };
     }
 
-    // Load the latest manifest
     const manifest = await this.publicationStore.loadManifest(
       app.targetListKey,
       latest.sequenceNumber,
@@ -464,7 +471,8 @@ export class ApplicationService {
       const { document } = compile(prepare.data);
       const etsiResult = await validateEtsiStruct(document);
 
-      const existingCount = prepare.data.entities.length - 1;
+      const existingCount =
+        prepare.existingEntityCount ?? prepare.data.entities.length - 1;
 
       return {
         compilerInput: prepare.data,
@@ -502,28 +510,27 @@ export class ApplicationService {
     listKey: string,
     fn: () => Promise<T>,
   ): Promise<T> {
-    const previous = this.listLocks.get(listKey) ?? Promise.resolve();
-    let release: () => void = () => {};
-    const lock = new Promise<void>((resolve) => {
-      release = resolve;
+    const prev = this.listLocks.get(listKey) ?? Promise.resolve();
+    let release!: () => void;
+    const next = new Promise<void>((r) => {
+      release = r;
     });
 
-    const chained = previous
-      .then(() => {})
-      .then(() => {
-        return fn().finally(() => release());
-      });
+    const result = prev
+      .catch(() => {})
+      .then(() => fn())
+      .finally(() => release());
 
-    // Clean up after completion
-    chained.finally(() => {
-      if (this.listLocks.get(listKey) === lock) {
-        this.listLocks.delete(listKey);
-      }
-    });
+    this.listLocks.set(listKey, next);
 
-    this.listLocks.set(listKey, lock);
-
-    return chained;
+    try {
+      const val = await result;
+      this.listLocks.delete(listKey);
+      return val;
+    } catch (e) {
+      this.listLocks.delete(listKey);
+      throw e;
+    }
   }
 
   getSigningConfig(): SigningConfig | null {

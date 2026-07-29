@@ -33,13 +33,12 @@ export async function loadLatestPublication(
   store: PublicationStore,
   listKey: string,
 ): Promise<LatestResult> {
-  const index = await store.loadIndex(listKey);
-  if (!index || index.versions.length === 0) {
+  const highest = store.getHighestStoredSequence(listKey);
+  if (highest === null) {
     return { exists: false };
   }
 
-  const latest = index.versions[index.versions.length - 1]!;
-  const seq = latest.sequenceNumber;
+  const seq = highest;
 
   const outcome = await loadVersionArtifacts(
     store.publicationDir,
@@ -83,22 +82,70 @@ export function convertLoTEToAuthoringEntities(
     const services = (te.TrustedEntityServices ?? []).map(
       (tes): AuthoringService => {
         const si: ServiceInformation = tes.ServiceInformation;
-        let certList: string[] = [];
-        if (si.ServiceDigitalIdentity?.X509Certificates) {
-          certList = si.ServiceDigitalIdentity.X509Certificates.map(
-            (c) => c.val,
+
+        // Reject unsupported structures
+        if (si.ServiceStatus) {
+          throw new Error(
+            "Cannot convert existing entity: ServiceStatus is present but not supported in the current profile. The existing LoTE contains data that cannot be preserved losslessly.",
           );
         }
+        if (si.StatusStartingTime) {
+          throw new Error(
+            "Cannot convert existing entity: StatusStartingTime is present but not supported in the current profile.",
+          );
+        }
+        if (tes.ServiceHistory && tes.ServiceHistory.length > 0) {
+          throw new Error(
+            "Cannot convert existing entity: ServiceHistory is present but not supported in the current profile.",
+          );
+        }
+        if (
+          si.ServiceDigitalIdentity?.X509SubjectNames &&
+          si.ServiceDigitalIdentity.X509SubjectNames.length > 0
+        ) {
+          throw new Error(
+            "Cannot convert existing entity: X509SubjectNames are present but not supported in the current authoring model.",
+          );
+        }
+        if (
+          si.ServiceDigitalIdentity?.X509SKIs &&
+          si.ServiceDigitalIdentity.X509SKIs.length > 0
+        ) {
+          throw new Error(
+            "Cannot convert existing entity: X509SKIs are present but not supported in the current authoring model.",
+          );
+        }
+
+        let certList: string[] = [];
+        if (si.ServiceDigitalIdentity?.X509Certificates) {
+          certList = si.ServiceDigitalIdentity.X509Certificates.map((c) => {
+            if (c.encoding || c.specRef) {
+              throw new Error(
+                "Cannot convert existing entity: X509Certificate has encoding/specRef fields not supported in the authoring model.",
+              );
+            }
+            return c.val;
+          });
+        }
+
         let svcId = "";
         if (
           si.ServiceInformationExtensions &&
           si.ServiceInformationExtensions.length > 0
         ) {
-          const ext = si.ServiceInformationExtensions[0] as Record<
-            string,
-            unknown
-          >;
-          svcId = (ext["ServiceUniqueIdentifier"] as string) ?? "";
+          // Only ServiceUniqueIdentifier is supported
+          for (const ext of si.ServiceInformationExtensions) {
+            const e = ext as Record<string, unknown>;
+            const keys = Object.keys(e);
+            for (const k of keys) {
+              if (k !== "ServiceUniqueIdentifier") {
+                throw new Error(
+                  `Cannot convert existing entity: unsupported extension "${k}" in ServiceInformationExtensions.`,
+                );
+              }
+            }
+            svcId = (e["ServiceUniqueIdentifier"] as string) ?? "";
+          }
         }
 
         return {
@@ -113,9 +160,14 @@ export function convertLoTEToAuthoringEntities(
           },
           serviceUniqueIdentifier: svcId,
           serviceSupplyPoints:
-            si.ServiceSupplyPoints?.map((sp) => ({
-              uriValue: sp.uriValue,
-            })) ?? [],
+            si.ServiceSupplyPoints?.map((sp) => {
+              if (sp.ServiceType) {
+                throw new Error(
+                  "Cannot convert existing entity: ServiceSupplyPointURI has ServiceType not supported in the authoring model.",
+                );
+              }
+              return { uriValue: sp.uriValue };
+            }) ?? [],
         };
       },
     );
@@ -130,6 +182,7 @@ export function convertLoTEToAuthoringEntities(
           lang: a.lang,
           StreetAddress: a.StreetAddress,
           Locality: a.Locality,
+          StateOrProvince: a.StateOrProvince,
           PostalCode: a.PostalCode,
           Country: a.Country,
         })) ?? [],

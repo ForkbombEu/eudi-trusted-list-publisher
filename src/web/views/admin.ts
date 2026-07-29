@@ -97,6 +97,12 @@ export function adminApplicationDetailHtml(
   params?: DetailParams,
   etsiStatus?: EtsiStatus,
   compilerInputJson?: string,
+  previewMeta?: {
+    existingEntityCount: number;
+    resultingEntityCount: number;
+    currentSequence: number | null;
+    proposedSequence: number | null;
+  },
 ): string {
   const data = app.applicantData;
   const p = params ?? {};
@@ -188,6 +194,21 @@ ${pubInfo}
 
 ${etsiSection}
 ${compilerSection}
+
+${
+  previewMeta
+    ? `
+<div class="card">
+  <h2>Preview &mdash; Cumulative Publication</h2>
+  <table class="kv-table">
+    <tr><th>Existing Entities</th><td>${previewMeta.existingEntityCount}</td></tr>
+    <tr><th>Resulting Entities</th><td>${previewMeta.resultingEntityCount}</td></tr>
+    <tr><th>Current Sequence</th><td>${escape(String(previewMeta.currentSequence ?? "none"))}</td></tr>
+    <tr><th>Proposed Sequence</th><td>${escape(String(previewMeta.proposedSequence ?? "—"))}</td></tr>
+  </table>
+</div>`
+    : ""
+}
 
 <div class="card">
   <h2>Required Documents</h2>

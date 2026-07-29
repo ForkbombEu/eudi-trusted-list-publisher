@@ -1095,6 +1095,14 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
               }
             | undefined;
           let compilerInputJson: string | undefined;
+          let previewMeta:
+            | {
+                existingEntityCount: number;
+                resultingEntityCount: number;
+                currentSequence: number | null;
+                proposedSequence: number | null;
+              }
+            | undefined;
 
           if (appService) {
             const previewResult = await appService.preview(app);
@@ -1107,6 +1115,13 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
                 findings: previewResult.etsiFindings,
               };
             }
+            // Pass preview metadata
+            previewMeta = {
+              existingEntityCount: previewResult.existingEntityCount,
+              resultingEntityCount: previewResult.resultingEntityCount,
+              currentSequence: previewResult.currentSequence,
+              proposedSequence: previewResult.proposedSequence,
+            };
           }
 
           sendHtml(
@@ -1119,6 +1134,7 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
                 detailParams,
                 etsiStatus,
                 compilerInputJson,
+                previewMeta,
               ),
             ),
           );

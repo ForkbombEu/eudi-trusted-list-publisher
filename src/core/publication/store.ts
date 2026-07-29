@@ -858,6 +858,18 @@ export class PublicationStore {
       .filter((n) => SAFE_KEY_RE.test(n))
       .sort();
   }
+
+  getHighestStoredSequence(listKey: string): number | null {
+    assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
+    const versionsDir = resolve(this.canonicalRoot, listKey, "versions");
+    if (!this.fs.existsSync(versionsDir)) return null;
+    const entries = this.fs
+      .readdirSync(versionsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && SAFE_SEQ_RE.test(d.name))
+      .map((d) => parseInt(d.name, 10));
+    if (entries.length === 0) return null;
+    return Math.max(...entries);
+  }
 }
 
 export interface IndexVersionEntry {
