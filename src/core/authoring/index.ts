@@ -40,6 +40,7 @@ export {
   type ServiceResult,
   type PublishResult,
   type PreviewResult,
+  type PartialCommitResult,
 } from "./application-service.js";
 export {
   loadLatestPublication,

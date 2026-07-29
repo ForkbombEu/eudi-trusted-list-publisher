@@ -3,11 +3,16 @@ import type {
   AuthoringEntity,
   AuthoringService,
 } from "../model/authoring.js";
-import type { LoTEDocument, ServiceInformation } from "../model/types.js";
+import type {
+  LoTEDocument,
+  ServiceInformation,
+  TrustedEntity,
+} from "../model/types.js";
 import {
   PublicationStore,
   loadVersionArtifacts,
 } from "../publication/store.js";
+import { compile } from "../compile/compile.js";
 import type { SigningConfigEntry } from "./signing-config.js";
 import {
   normalizeToAuthoringInput,
@@ -62,6 +67,16 @@ export async function loadLatestPublication(
   }
 
   const entities = convertLoTEToAuthoringEntities(loteDocument);
+
+  const preservation = checkLosslessPreservation(
+    loteDocument?.LoTE?.TrustedEntitiesList ?? [],
+    entities,
+  );
+  if (!preservation.ok) {
+    throw new Error(
+      `Cannot load latest publication for "${listKey}" at sequence ${seq}: existing entity fields cannot be preserved losslessly. First difference: ${preservation.path}`,
+    );
+  }
 
   return {
     exists: true,
@@ -211,6 +226,84 @@ export function convertLoTEToAuthoringEntities(
   }
 
   return result;
+}
+
+export function checkLosslessPreservation(
+  originalEntities: TrustedEntity[],
+  convertedEntities: AuthoringEntity[],
+): { ok: true } | { ok: false; path: string } {
+  if (originalEntities.length !== convertedEntities.length) {
+    return { ok: false, path: `TrustedEntitiesList.length` };
+  }
+
+  for (let i = 0; i < originalEntities.length; i++) {
+    const orig: any = originalEntities[i];
+    // Create a minimal valid AuthoringInput so we can compile just the entities
+    const minimalInput: AuthoringInput = {
+      schemeOperator: {
+        name: [{ lang: "en", value: "Test" }],
+        postalAddress: [
+          {
+            lang: "en",
+            StreetAddress: "1 St",
+            Country: "EU",
+          },
+        ],
+        electronicAddress: [{ lang: "en", uriValue: "mailto:t@t.org" }],
+      },
+      scheme: {
+        schemeName: [{ lang: "en", value: "Test" }],
+        schemeTerritory: "EU",
+        distributionPoints: ["https://t.org"],
+      },
+      listIssueDateTime: "2026-01-01T00:00:00Z",
+      nextUpdate: "2026-07-01T00:00:00Z",
+      loTESequenceNumber: 1,
+      entities: [convertedEntities[i]!],
+    };
+    const { document } = compile(minimalInput);
+    const recompiled: any = document.LoTE.TrustedEntitiesList?.[0];
+
+    const diff = deepDiff(`TrustedEntitiesList[${i}]`, orig, recompiled);
+    if (diff) return { ok: false, path: diff };
+  }
+
+  return { ok: true };
+}
+
+function deepDiff(prefix: string, a: any, b: any): string | null {
+  if (a === b) return null;
+  if (a === null || b === null) return `${prefix}: ${a} !== ${b}`;
+  if (typeof a !== typeof b)
+    return `${prefix}: type ${typeof a} !== ${typeof b}`;
+  if (typeof a !== "object")
+    return `${prefix}: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`;
+
+  if (Array.isArray(a) !== Array.isArray(b)) return `${prefix}: array mismatch`;
+
+  if (Array.isArray(a)) {
+    if (a.length !== b.length)
+      return `${prefix}.length: ${a.length} !== ${b.length}`;
+    for (let i = 0; i < a.length; i++) {
+      const d = deepDiff(`${prefix}[${i}]`, a[i], b[i]);
+      if (d) return d;
+    }
+    return null;
+  }
+
+  // Both are objects — compare keys and values
+  const aKeys = Object.keys(a).filter((k) => a[k] !== undefined);
+  const bKeys = Object.keys(b).filter((k) => b[k] !== undefined);
+  const allKeys = new Set([...aKeys, ...bKeys]);
+
+  for (const k of allKeys) {
+    if (!(k in a)) return `${prefix}.${k}: missing from original`;
+    if (!(k in b)) return `${prefix}.${k}: missing from recompiled`;
+    const d = deepDiff(`${prefix}.${k}`, a[k], b[k]);
+    if (d) return d;
+  }
+
+  return null;
 }
 
 export function checkServiceIdentifierUniqueness(

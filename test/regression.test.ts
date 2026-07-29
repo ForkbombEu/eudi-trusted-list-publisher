@@ -3998,9 +3998,9 @@ describe("LOCK-1: 20-iteration concurrency", () => {
       const ps = new PublicationStore({ publicationDir: pubDir });
       const svc = new ApplicationService(as, ps, sc);
       try {
-        const A = makeApp(as, "A", "lk1a-" + iter + ".svc");
-        const B = makeApp(as, "B", "lk1b-" + iter + ".svc");
-        const C = makeApp(as, "C", "lk1c-" + iter + ".svc");
+        const A = makeApp(as, "A", `https://lock.test/a/${iter}`);
+        const B = makeApp(as, "B", `https://lock.test/b/${iter}`);
+        const C = makeApp(as, "C", `https://lock.test/c/${iter}`);
         as.save(A);
         as.save(B);
         as.save(C);
@@ -4079,11 +4079,11 @@ describe("LOCK-2: Failed middle releases queue", () => {
       const ps = new PublicationStore({ publicationDir: pubDir });
       const svc = new ApplicationService(as, ps, sc);
       try {
-        const A = makeApp(as, "A", "lk2a-" + iter + ".svc");
+        const A = makeApp(as, "A", `https://lock2.test/a/${iter}`);
         as.save(A);
         await svc.publishApplication(A.id);
-        const B = makeApp(as, "B", "lk2a-" + iter + ".svc"); // dup
-        const C = makeApp(as, "C", "lk2c-" + iter + ".svc");
+        const B = makeApp(as, "B", `https://lock2.test/a/${iter}`); // dup
+        const C = makeApp(as, "C", `https://lock2.test/c/${iter}`);
         as.save(B);
         as.save(C);
         const [rB, rC] = await Promise.all([
