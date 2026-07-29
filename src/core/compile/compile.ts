@@ -44,17 +44,28 @@ function toPostalAddress(
     lang: string;
     StreetAddress: string;
     Locality?: string;
+    StateOrProvince?: string;
     PostalCode?: string;
     Country: string;
   }[],
 ): PostalAddress[] {
-  return arr.map(({ lang, StreetAddress, Locality, PostalCode, Country }) => ({
-    lang,
-    StreetAddress,
-    Locality,
-    PostalCode,
-    Country,
-  }));
+  return arr.map(
+    ({
+      lang,
+      StreetAddress,
+      Locality,
+      StateOrProvince,
+      PostalCode,
+      Country,
+    }) => ({
+      lang,
+      StreetAddress,
+      Locality,
+      StateOrProvince,
+      PostalCode,
+      Country,
+    }),
+  );
 }
 
 function compileEntity(entity: AuthoringEntity): TrustedEntity {

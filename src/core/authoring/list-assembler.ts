@@ -99,6 +99,16 @@ export function convertLoTEToAuthoringEntities(
             "Cannot convert existing entity: ServiceHistory is present but not supported in the current profile.",
           );
         }
+        if (si.SchemeServiceDefinitionURI) {
+          throw new Error(
+            "Cannot convert existing entity: SchemeServiceDefinitionURI is present but not supported in the current authoring model.",
+          );
+        }
+        if (si.ServiceDefinitionURI) {
+          throw new Error(
+            "Cannot convert existing entity: ServiceDefinitionURI is present but not supported in the current authoring model.",
+          );
+        }
         if (
           si.ServiceDigitalIdentity?.X509SubjectNames &&
           si.ServiceDigitalIdentity.X509SubjectNames.length > 0

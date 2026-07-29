@@ -34,6 +34,19 @@ export type ServiceResult<T> =
   | { success: true; data: T; message?: string; warning?: string }
   | { success: false; error: string };
 
+export interface PartialCommitResult {
+  success: false;
+  code: "PUBLICATION_COMMITTED_APPLICATION_STALE";
+  error: string;
+  publication: {
+    listKey: string;
+    sequenceNumber: number;
+    manifestSha256: string;
+    compactJadesSha256: string;
+    publicationTimestamp: string;
+  };
+}
+
 export interface PublishResult {
   listKey: string;
   sequenceNumber: number;
@@ -337,10 +350,19 @@ export class ApplicationService {
       try {
         this.authoringStore.save(app);
       } catch {
-        return {
+        const partial: PartialCommitResult = {
           success: false,
-          error: `PUBLICATION_COMMITTED_APPLICATION_STALE: immutable publication succeeded for list key "${pubResult.listKey}" sequence ${pubResult.sequenceNumber} but the application record could not be updated. Run reconciliation to repair.`,
+          code: "PUBLICATION_COMMITTED_APPLICATION_STALE",
+          error: `Immutable publication succeeded for list key "${pubResult.listKey}" sequence ${pubResult.sequenceNumber} but the application record could not be updated. Run reconciliation to repair.`,
+          publication: {
+            listKey: pubResult.listKey,
+            sequenceNumber: pubResult.sequenceNumber,
+            manifestSha256: manifestHash,
+            compactJadesSha256: pubResult.manifest.compactJadesSha256,
+            publicationTimestamp: pubResult.manifest.publicationTimestamp,
+          },
         };
+        return partial;
       }
 
       let msg = "Application published successfully.";
@@ -512,23 +534,28 @@ export class ApplicationService {
   ): Promise<T> {
     const prev = this.listLocks.get(listKey) ?? Promise.resolve();
     let release!: () => void;
-    const next = new Promise<void>((r) => {
+    const tail = new Promise<void>((r) => {
       release = r;
     });
+
+    this.listLocks.set(listKey, tail);
 
     const result = prev
       .catch(() => {})
       .then(() => fn())
       .finally(() => release());
 
-    this.listLocks.set(listKey, next);
-
     try {
       const val = await result;
-      this.listLocks.delete(listKey);
+      // Only delete our own tail entry — never delete a later queued operation
+      if (this.listLocks.get(listKey) === tail) {
+        this.listLocks.delete(listKey);
+      }
       return val;
     } catch (e) {
-      this.listLocks.delete(listKey);
+      if (this.listLocks.get(listKey) === tail) {
+        this.listLocks.delete(listKey);
+      }
       throw e;
     }
   }

@@ -7,6 +7,7 @@ export interface AuthoringPostalAddress {
   lang: string;
   StreetAddress: string;
   Locality?: string;
+  StateOrProvince?: string;
   PostalCode?: string;
   Country: string;
 }
