@@ -10,11 +10,15 @@ import { parse as parseYaml } from "yaml";
 import { PublicationStore } from "../core/publication/store.js";
 import {
   AuthoringStore,
+  SettingsStore,
+  emptySettings,
   loadSigningConfig,
+  findSigningConfig,
   getWalletProviderConfigs,
   getFamilyConfigs,
   signingConfigDisplay,
   ApplicationService,
+  type PublisherSettings,
   type SigningConfig,
   type PIDProviderApplicantData,
   type WalletProviderApplicantData,
@@ -23,6 +27,7 @@ import {
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
   ".json": "application/json",
   ".yaml": "application/yaml",
@@ -49,13 +54,27 @@ const APPLY_CSS = `
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 `;
 
-/** Nav entries shown on every page when the data-collection GUI is enabled. */
+const PRODUCT_NAME = "Credimi EUDI Trusted Lists";
+const REPOSITORY_URL =
+  "https://github.com/ForkbombEu/eudi-trusted-list-publisher";
+
+/** Nav entry shown on every page when the data-collection GUI is enabled. */
 const GUI_NAV = `
-        <li><a href="/onboarding">Onboarding</a></li>
-        <li><a href="/admin">Admin</a></li>`;
+      <li><a href="/onboarding">Onboarding</a></li>`;
+
+/** Visual divider between the three top-nav groups. */
+const NAV_SEP = `
+      <li class="nav-sep" role="separator" aria-hidden="true"></li>`;
 
 function htmlPage(title: string, body: string, guiNav?: string): string {
   const extraNav = guiNav ?? "";
+  const settingsCol = guiNav
+    ? `
+        <div class="footer-col">
+          <h5>Settings</h5>
+          <a href="/admin">Admin</a>
+        </div>`
+    : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -67,15 +86,15 @@ ${APPLY_CSS}
 <body>
 <nav class="topbar">
   <div class="topbar-inner">
-    <a href="/" class="topbar-logo" aria-label="Credimi Trusted List Publisher home">
+    <a href="/" class="topbar-logo" aria-label="${escapeHtml(PRODUCT_NAME)} home">
       <img src="/assets/credimi_logo.svg" alt="Credimi">
-      <span class="tlp-product-name">Trusted List Publisher</span>
+      <span class="tlp-product-name">${escapeHtml(PRODUCT_NAME)}</span>
     </a>
     <ul class="topbar-nav">
-      <li><a href="/">Catalogue</a></li>${extraNav}
+      <li><a href="/">Catalogue</a></li>${extraNav}${NAV_SEP}
       <li><a href="/docs">API Docs</a></li>
-      <li><a href="/openapi.yaml">OpenAPI</a></li>
-      <li><a href="https://github.com/ForkbombEu/eudi-trusted-list-publisher">Repository</a></li>
+      <li><a href="/openapi.yaml">Open API</a></li>${NAV_SEP}
+      <li><a href="${REPOSITORY_URL}">Repository</a></li>
     </ul>
   </div>
 </nav>
@@ -91,20 +110,20 @@ ${body}
     <div class="footer-content">
       <div class="footer-brand">
         <img class="tlp-footer-logo" src="/assets/credimi_logo_negative.svg" alt="Credimi">
-        <p>Credimi Trusted List Publisher &mdash; a test/debug fixture publisher for
-        TS 119 602 Lists of Trusted Entities. Read-only publication viewer.</p>
+        <p>${escapeHtml(PRODUCT_NAME)} &mdash; authoring, signing and publication of
+        TS 119 602 Lists of Trusted Entities. For testing and debugging purposes only.</p>
       </div>
       <div class="footer-links">
         <div class="footer-col">
           <h5>Explore</h5>
           <a href="/">Catalogue</a>
           <a href="/docs">API Docs</a>
-          <a href="/openapi.yaml">OpenAPI</a>
+          <a href="/openapi.yaml">Open API</a>
         </div>
         <div class="footer-col">
           <h5>Resources</h5>
-          <a href="https://github.com/ForkbombEu/eudi-trusted-list-publisher">Repository</a>
-        </div>
+          <a href="${REPOSITORY_URL}">Repository</a>
+        </div>${settingsCol}
       </div>
     </div>
   </div>
@@ -116,11 +135,11 @@ ${body}
 </div>
 <script>
 console.log(
-  "%cCredimi %cTrusted List Publisher",
+  "%cCredimi %cEUDI Trusted Lists",
   "color: #2563eb; font-weight: bold; font-size: 1.2em;",
   "color: #1e293b;"
 );
-console.log("%cread-only publication viewer", "color: #64748b;");
+console.log("%ctesting and debugging tool", "color: #64748b;");
 console.log("%csigner trust: not evaluated", "color: #d97706;");
 </script>
 </body>
@@ -411,6 +430,7 @@ export function createWebServer(config: ServerConfig) {
   });
 
   let authoringStore: AuthoringStore | null = null;
+  let settingsStore: SettingsStore | null = null;
   let signingConfig: SigningConfig | null = null;
   let appService: ApplicationService | null = null;
   let walletProviderLists: string[] = [];
@@ -418,6 +438,9 @@ export function createWebServer(config: ServerConfig) {
 
   if (guiEnabled && config.authoringDir) {
     authoringStore = new AuthoringStore({ authoringDir: config.authoringDir });
+    // Administrator settings are mutable state, so they live beside the
+    // authoring records rather than in the immutable publication store.
+    settingsStore = new SettingsStore({ settingsDir: config.authoringDir });
   }
   if (guiEnabled && config.signingConfigPath) {
     signingConfig = loadSigningConfig(config.signingConfigPath);
@@ -428,7 +451,12 @@ export function createWebServer(config: ServerConfig) {
     );
   }
   if (authoringStore) {
-    appService = new ApplicationService(authoringStore, store, signingConfig);
+    appService = new ApplicationService(
+      authoringStore,
+      store,
+      signingConfig,
+      settingsStore,
+    );
   }
 
   /**
@@ -441,6 +469,44 @@ export function createWebServer(config: ServerConfig) {
 
   function guiPage(title: string, body: string): string {
     return page(title, body);
+  }
+
+  /** Configured Trusted Lists grouped by the family they belong to. */
+  function settingsListsByFamily(): Record<
+    string,
+    Array<{ listKey: string; schemeOperatorName: string }>
+  > {
+    const grouped: Record<
+      string,
+      Array<{ listKey: string; schemeOperatorName: string }>
+    > = {};
+    for (const entry of signingConfig?.lists ?? []) {
+      (grouped[entry.family] ??= []).push({
+        listKey: entry.listKey,
+        schemeOperatorName: entry.schemeOperatorName,
+      });
+    }
+    return grouped;
+  }
+
+  /**
+   * Checkboxes are absent from the body when unchecked, so the posted form is
+   * the complete new state: anything not named here is turned off.
+   */
+  function settingsFromForm(fields: Record<string, string>): PublisherSettings {
+    const settings = emptySettings();
+    for (const key of Object.keys(fields)) {
+      const family = key.match(/^family\[([a-z-]+)\]$/);
+      if (family) {
+        settings.autoApproveFamilies[
+          family[1]! as keyof PublisherSettings["autoApproveFamilies"]
+        ] = true;
+        continue;
+      }
+      const list = key.match(/^list\[([a-z0-9_]+)\]$/);
+      if (list) settings.autoApproveLists[list[1]!] = true;
+    }
+    return settings;
   }
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -690,12 +756,6 @@ export function createWebServer(config: ServerConfig) {
 <p class="lead">Wallet Provider and PID Provider LoTE API &mdash; a read-only HTTP API
 over the published Lists of Trusted Entities.</p>
 
-<div class="notice notice-info">
-  <strong>Embedded reference.</strong> The interactive reference is rendered in an
-  isolated frame. If Stoplight cannot load, open the raw specification directly:
-  <a href="/openapi.yaml">/openapi.yaml</a>.
-</div>
-
 <div class="card api-docs">
   <iframe class="api-docs-frame" src="/docs/reference" title="API reference"
     loading="lazy"></iframe>
@@ -711,6 +771,9 @@ over the published Lists of Trusted Entities.</p>
   /**
    * Isolated Stoplight document: no Credimi stylesheet is loaded here, and the
    * page is framed only by this origin.
+   *
+   * Stoplight Elements is served from this origin rather than from a CDN, so
+   * the reference renders whenever the publisher itself is reachable.
    */
   function serveDocsReference(res: ServerResponse): void {
     const html = `<!DOCTYPE html>
@@ -719,41 +782,18 @@ over the published Lists of Trusted Entities.</p>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>API Reference</title>
-<link rel="stylesheet" href="https://unpkg.com/@stoplight/elements@7.15.0/styles.min.css">
+<link rel="stylesheet" href="/assets/stoplight-elements.min.css">
 <style>
   html, body { margin: 0; padding: 0; height: 100%; }
-  #stoplight-fallback {
-    display: none;
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    padding: 1rem 1.25rem;
-    font-size: 14px;
-  }
-  #stoplight-fallback.visible { display: block; }
 </style>
 </head>
 <body>
-<div id="stoplight-fallback">
-  <p><strong>The interactive API reference could not be loaded.</strong></p>
-  <p>Open the specification directly: <a href="/openapi.yaml">/openapi.yaml</a></p>
-</div>
 <elements-api
   apiDescriptionUrl="/openapi.yaml"
   router="hash"
   layout="sidebar">
 </elements-api>
-<noscript>
-  <p>JavaScript is required for the interactive reference.
-  Open <a href="/openapi.yaml">/openapi.yaml</a> instead.</p>
-</noscript>
-<script src="https://unpkg.com/@stoplight/elements@7.15.0/web-components.min.js"
-  onerror="document.getElementById('stoplight-fallback').classList.add('visible')"></script>
-<script>
-window.addEventListener("load", function () {
-  if (!window.customElements || !customElements.get("elements-api")) {
-    document.getElementById("stoplight-fallback").classList.add("visible");
-  }
-});
-</script>
+<script src="/assets/stoplight-elements.min.js"></script>
 </body>
 </html>`;
     const headers: Record<string, string> = {
@@ -771,6 +811,10 @@ window.addEventListener("load", function () {
     s: PublicationStore,
   ): Promise<void> {
     try {
+      const { listChip, familyChip } = await import("./views/colors.js");
+      const lead = `<p class="lead">Browse here EUDI Trusted lists. For testing
+        and debugging purposes only.</p>`;
+
       const keys = s.listKeys();
       if (keys.length === 0) {
         sendHtml(
@@ -778,7 +822,7 @@ window.addEventListener("load", function () {
           200,
           page(
             "Catalogue",
-            `<h1>Published Lists</h1><div class="card"><p>No lists have been published yet.</p><p>Use <code>trusted-list-publisher publish</code> to publish a LoTE.</p></div>`,
+            `<h1>Published Lists</h1>${lead}<div class="card"><p>No lists have been published yet.</p></div>`,
           ),
         );
         return;
@@ -790,9 +834,13 @@ window.addEventListener("load", function () {
         if (!index) continue;
         const latest = index.versions[index.versions.length - 1];
         if (!latest) continue;
+        const family = signingConfig
+          ? findSigningConfig(signingConfig, key)?.family
+          : undefined;
         rows += `
       <tr>
-        <td><a href="/lists/${escapeHtml(key)}"><code>${escapeHtml(key)}</code></a></td>
+        <td><a href="/lists/${escapeHtml(key)}">${listChip(key)}</a></td>
+        <td>${family ? familyChip(family) : "&mdash;"}</td>
         <td>${escapeHtml(String(latest.sequenceNumber))}</td>
         <td>${escapeHtml(latest.issueDate)}</td>
         <td>${escapeHtml(latest.nextUpdateDate)}</td>
@@ -806,10 +854,10 @@ window.addEventListener("load", function () {
         200,
         page(
           "Catalogue",
-          `<h1>Published Lists</h1>
-        <div class="trust-notice"><strong>&#x26A0; Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
+          `<h1>Published Lists</h1>${lead}
+        <div class="trust-notice"><strong>Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
         <table class="catalogue-table">
-        <thead><tr><th>List Key</th><th>Latest Seq</th><th>Issue Date</th><th>Next Update</th><th>Signature</th><th>Trust</th></tr></thead>
+        <thead><tr><th>Trusted List</th><th>Trusted List Family</th><th>Latest Seq</th><th>Issue Date</th><th>Next Update</th><th>Signature</th><th>Trust</th></tr></thead>
         <tbody>${rows}</tbody>
         </table>`,
         ),
@@ -841,13 +889,18 @@ window.addEventListener("load", function () {
         <td>${v.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
       </tr>`;
       }
+      const { listChip, familyChip } = await import("./views/colors.js");
+      const family = signingConfig
+        ? findSigningConfig(signingConfig, listKey)?.family
+        : undefined;
       sendHtml(
         res,
         200,
         page(
           `List: ${listKey}`,
-          `<h1>List: <code>${escapeHtml(listKey)}</code></h1>
-        <div class="trust-notice"><strong>&#x26A0; Trust not evaluated.</strong></div>
+          `<h1>Trusted List: ${listChip(listKey)}</h1>
+        ${family ? `<p>Trusted List Family: ${familyChip(family)}</p>` : ""}
+        <div class="trust-notice"><strong>Trust not evaluated.</strong></div>
         <table class="catalogue-table">
         <thead><tr><th>Sequence</th><th>Issue Date</th><th>Next Update</th><th>Published</th><th>Signature</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -899,16 +952,17 @@ window.addEventListener("load", function () {
           entityRows = `<tr><td colspan="2">Could not parse LoTE</td></tr>`;
         }
       }
+      const { listChip } = await import("./views/colors.js");
       sendHtml(
         res,
         200,
         page(
           `Version ${sequence} — ${listKey}`,
-          `<h1>Version ${sequence} — <code>${escapeHtml(listKey)}</code></h1>
-<div class="trust-notice"><strong>&#x26A0; Signer trust: not evaluated.</strong> Cryptographic signature is ${manifest.signatureValid ? "valid" : "INVALID"}.</div>
+          `<h1>Version ${sequence} — ${listChip(listKey)}</h1>
+<div class="trust-notice"><strong>Signer trust: not evaluated.</strong> Cryptographic signature is ${manifest.signatureValid ? "valid" : "INVALID"}.</div>
 <div class="card"><h2>List Information</h2>
 <table class="kv-table">
-<tr><th>List Key</th><td><code>${escapeHtml(manifest.listKey)}</code></td></tr>
+<tr><th>Trusted List</th><td>${listChip(manifest.listKey)}</td></tr>
 <tr><th>LoTE Identifier</th><td><code>${escapeHtml(manifest.loteIdentifier)}</code></td></tr>
 <tr><th>Sequence Number</th><td>${manifest.sequenceNumber}</td></tr>
 <tr><th>Issue Date</th><td>${escapeHtml(manifest.issueDate)}</td></tr>
@@ -1256,6 +1310,30 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
       return;
     }
 
+    if (path === "/admin/settings" && settingsStore) {
+      import("../web/views/admin.js")
+        .then(({ adminSettingsHtml }) => {
+          sendHtml(
+            res,
+            200,
+            guiPage(
+              "Settings",
+              adminSettingsHtml(
+                settingsStore!.load(),
+                settingsListsByFamily(),
+                url.searchParams.get("saved") === "1",
+              ),
+            ),
+          );
+          logRequest("GET", path, 200, requestId);
+        })
+        .catch(() => {
+          send500(res, requestId);
+          logRequest("GET", path, 500, requestId);
+        });
+      return;
+    }
+
     if (path === "/admin/signing" && signingConfig) {
       import("../web/views/admin.js")
         .then(({ adminSigningConfigHtml }) => {
@@ -1448,13 +1526,25 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
         logRequest("GET", path, 404, requestId);
         return;
       }
-      sendHtml(
-        res,
-        200,
-        guiPage(
-          "Application Submitted",
-          `<h1>Application Submitted</h1>
-<div class="test-notice"><strong>&#x26A0; Testing tool.</strong></div>
+      const auto = url.searchParams.get("auto");
+      const autoError = url.searchParams.get("error");
+      const outcome =
+        auto === "published"
+          ? `<p>This Trusted List is set to auto-approve, so the application was
+             approved and published without administrator review.</p>`
+          : auto === "failed"
+            ? `<div class="error-msg">Automatic publication failed:
+               ${escapeHtml(autoError ?? "unknown error")}. An administrator will
+               review the application.</div>`
+            : `<p>An administrator will review your application. Keep this ID for reference.</p>`;
+      import("../web/views/colors.js")
+        .then(({ listChip, familyChip }) => {
+          sendHtml(
+            res,
+            200,
+            guiPage(
+              "Application Submitted",
+              `<h1>Application Submitted</h1>
 <div class="card">
 <h2>&#x2705; Your application has been submitted.</h2>
 <table class="kv-table">
@@ -1462,14 +1552,20 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
 <tr><th>Status</th><td><span class="badge info">${escapeHtml(app.state)}</span></td></tr>
 <tr><th>Submitted</th><td>${escapeHtml(app.submittedAt)}</td></tr>
 <tr><th>Entity</th><td>${escapeHtml(app.applicantData.entityName)}</td></tr>
-<tr><th>Target List</th><td><code>${escapeHtml(app.targetListKey)}</code></td></tr>
+<tr><th>Trusted List Family</th><td>${familyChip(app.family)}</td></tr>
+<tr><th>Target Trusted List</th><td>${listChip(app.targetListKey)}</td></tr>
 </table>
-<p>An administrator will review your application. Keep this ID for reference.</p>
+${outcome}
 </div>
 <p><a href="/" class="btn">Return to Catalogue</a></p>`,
-        ),
-      );
-      logRequest("GET", path, 200, requestId);
+            ),
+          );
+          logRequest("GET", path, 200, requestId);
+        })
+        .catch(() => {
+          send500(res, requestId);
+          logRequest("GET", path, 500, requestId);
+        });
       return;
     }
 
@@ -1506,12 +1602,24 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
     try {
       const body = await readBody(req);
 
+      if (path === "/admin/settings" && settingsStore) {
+        settingsStore.save(settingsFromForm(parseFormBody(body)));
+        res.writeHead(303, {
+          ...securityHeaders(),
+          "Cache-Control": "no-store",
+          Location: "/admin/settings?saved=1",
+        });
+        res.end();
+        logRequest("POST", path, 303, requestId);
+        return;
+      }
+
       if (path === "/onboarding/wallet-provider") {
-        handleSubmitApplication(res, body, requestId, "wallet-providers");
+        await handleSubmitApplication(res, body, requestId, "wallet-providers");
         return;
       }
       if (path === "/onboarding/pid-provider") {
-        handleSubmitApplication(res, body, requestId, "pid-providers");
+        await handleSubmitApplication(res, body, requestId, "pid-providers");
         return;
       }
 
@@ -1598,12 +1706,12 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
     }
   }
 
-  function handleSubmitApplication(
+  async function handleSubmitApplication(
     res: ServerResponse,
     body: string,
     requestId: string,
     family: "wallet-providers" | "pid-providers",
-  ): void {
+  ): Promise<void> {
     if (!appService) {
       send500(res, requestId);
       logRequest(
@@ -1697,7 +1805,14 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
               );
             })();
 
-    res.writeHead(303, { Location: `/onboarding/submitted/${app.id}` });
+    const auto = await appService.autoApproveIfEnabled(app);
+    const query = auto.applied
+      ? auto.published
+        ? "?auto=published"
+        : `?auto=failed&error=${encodeURIComponent(auto.error ?? "Automatic publication failed.")}`
+      : "";
+
+    res.writeHead(303, { Location: `/onboarding/submitted/${app.id}${query}` });
     res.end();
     logRequest(
       "POST",

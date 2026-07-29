@@ -1,5 +1,6 @@
 import { LIST_FAMILIES } from "../../core/authoring/list-family-catalogue.js";
 import type { ProfileFamily } from "../../core/profiles/registry.js";
+import { familyChip, listChip } from "./colors.js";
 
 /**
  * Implemented onboarding routes are singular; the profile registry keys are
@@ -27,7 +28,7 @@ export function onboardingCatalogueHtml(): string {
         <h3>${escape(f.label)}</h3>
         ${status}
       </div>
-      <p class="onboarding-card-key"><code>${escape(f.key)}</code></p>
+      <p class="onboarding-card-key">${familyChip(f.key, f.key)}</p>
       <div class="onboarding-card-action">${action}</div>
     </div>`;
   }
@@ -35,15 +36,15 @@ export function onboardingCatalogueHtml(): string {
   return `
 <h1>Welcome to Credimi Trusted List onboarding tool</h1>
 <p class="lead">Apply to be listed as a trusted entity in a TS 119 602 List of
-Trusted Entities. Wallet Provider and PID Provider onboarding are implemented;
-the remaining families are planned.</p>
+Trusted Entities. Pick the Trusted List Family your organisation belongs to and
+fill in the application form: you describe your entity and the services it
+operates, and attach the certificate each service signs with. The application is
+then reviewed by the scheme operator, and once it is approved the publisher
+compiles it into the target Trusted List, signs the list as a JAdES document and
+publishes a new, immutable version of it. Every published version stays readable
+in the Catalogue and over the API.</p>
 
-<div class="notice notice-warning">
-  <strong>&#x26A0; Testing tool.</strong>
-  This is a test/debug fixture publisher, not an official or production Trusted List Provider.
-</div>
-
-<div class="section-header"><h2>List Families</h2></div>
+<div class="section-header"><h2>Trusted List Families</h2></div>
 <div class="onboarding-grid">${cards}
 </div>
 `;
@@ -53,6 +54,18 @@ export interface ListOption {
   key: string;
   label: string;
 }
+
+/**
+ * Shown once under the Services card. The publisher accepts any syntactically
+ * valid X.509 certificate; it never builds or checks a certification path, so
+ * in practice a service is registered with its own self-signed certificate.
+ */
+const SELF_SIGNED_EXPLANATION =
+  "Self-signed certificate: paste the certificate the service signs with, " +
+  "including the BEGIN and END CERTIFICATE lines. This publisher stores the " +
+  "certificate as the service digital identity and does not build or verify " +
+  "a certification path, so the certificate does not need to be issued by a " +
+  "CA and is normally the service own self-signed certificate.";
 
 /** Per-family wording. Field names and the POST contract are identical. */
 interface FormProfile {
@@ -153,7 +166,7 @@ function providerFormHtml(
   } else if (opts.length === 1) {
     listSelect = `
       <input type="hidden" name="targetListKey" value="${escape(opts[0]!.key)}">
-      <p><strong>Target List:</strong> <code>${escape(opts[0]!.key)}</code> &mdash; ${escape(opts[0]!.label)}</p>
+      <p><strong>Target List:</strong> ${listChip(opts[0]!.key)} &mdash; ${escape(opts[0]!.label)}</p>
       <p class="field-help">${escape(profile.listHelp)}</p>`;
   } else {
     listSelect = `
@@ -175,9 +188,6 @@ function providerFormHtml(
 
   return `
 <h1>${escape(profile.title)}</h1>
-<div class="notice notice-warning">
-  <strong>&#x26A0; Testing tool.</strong> This is a test/debug fixture publisher.
-</div>
 
 <form method="post" action="${escape(profile.action)}" class="onboarding-form">
   <div class="card">
@@ -252,6 +262,7 @@ ${profile.extraEntityFields}
       ${renderAllServices(profile, v, errors)}
     </div>
     <button type="button" class="btn btn-outline btn-sm" id="add-service-btn" style="margin-top:1rem;">+ Add Service</button>
+    <p class="field-help">${SELF_SIGNED_EXPLANATION}</p>
   </div>
 
   <div class="card">
@@ -272,17 +283,46 @@ ${profile.extraEntityFields}
 
 <script>
 (function() {
-  var initialNext = ${computeNextServiceIndex(v, errors)};
-  var nextIdx = initialNext;
+  var container = document.getElementById("services-container");
+  var nextIdx = ${computeNextServiceIndex(v, errors)};
+
+  /*
+    Field names keep the index they were created with so a rejected submission
+    can be re-rendered as it was posted. Only the visible numbering is
+    recomputed, so the blocks always read Service 1, 2, 3 … in page order, and
+    only the first block is non-removable.
+  */
+  function renumber() {
+    var blocks = container.querySelectorAll(".service-block");
+    for (var i = 0; i < blocks.length; i++) {
+      var title = blocks[i].querySelector(".service-block-title");
+      if (title) title.textContent = "Service " + (i + 1);
+      var remove = blocks[i].querySelector(".service-remove");
+      if (remove) remove.hidden = i === 0;
+    }
+  }
+
+  container.addEventListener("click", function(event) {
+    var button = event.target.closest(".service-remove");
+    if (!button) return;
+    var block = button.closest(".service-block");
+    if (!block || container.querySelectorAll(".service-block").length < 2) return;
+    block.remove();
+    renumber();
+  });
+
   document.getElementById("add-service-btn").onclick = function() {
     var template = document.createElement("template");
     template.innerHTML = ${JSON.stringify(serviceBlockHtml(profile, -1, {}, {}))};
     var html = template.innerHTML.replace(/\\.service_marker\\./g, "[" + nextIdx + "]");
     var div = document.createElement("div");
     div.innerHTML = html;
-    document.getElementById("services-container").appendChild(div.firstElementChild);
+    container.appendChild(div.firstElementChild);
     nextIdx++;
+    renumber();
   };
+
+  renumber();
 })();
 </script>
 `;
@@ -322,9 +362,22 @@ function serviceBlockHtml(
       ? `<span class="field-error">${escape(errs?.[f(n)] ?? "")}</span>`
       : "";
 
+  /*
+    The block rendered for the "+ Add Service" template (i < 0) is renumbered
+    by the client once it is appended, so it never shows a placeholder heading
+    and its remove button is always usable — it can never become the first
+    block on the page.
+  */
+  const position = i >= 0 ? i + 1 : 1;
+  const hidden = i === 0 ? " hidden" : "";
+
   return `
 <div class="service-block card">
-  <h3>Service ${i >= 0 ? i + 1 : "N"}</h3>
+  <div class="service-block-head">
+    <h3 class="service-block-title">Service ${position}</h3>
+    <button type="button" class="btn btn-outline btn-sm service-remove"
+      title="Remove this service" aria-label="Remove this service"${hidden}>&times;</button>
+  </div>
   <div class="form-group">
     <label>Service Type <span class="required">*</span></label>
     <select name="${escape(f("serviceType"))}" required>
@@ -347,10 +400,10 @@ function serviceBlockHtml(
     ${e("serviceName")}
   </div>
   <div class="form-group">
-    <label>X.509 Certificate (PEM) <span class="required">*</span></label>
+    <label>Self-Signed Certificate (PEM) <span class="required">*</span></label>
     <textarea name="${escape(f("certificatePem"))}" required rows="4"
       placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----">${escape(v[f("certificatePem")] ?? "")}</textarea>
-    <span class="field-help">The service's X.509 certificate in PEM format.</span>
+    <span class="field-help">The X.509 certificate this service signs with, in PEM format.</span>
     ${e("certificatePem")}
   </div>
   <div class="form-group">

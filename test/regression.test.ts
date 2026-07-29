@@ -2202,7 +2202,7 @@ describe("Empty/small service indexes", () => {
       await import("../src/web/views/onboarding.js");
     const html = walletProviderFormHtml({}, {}, []);
     expect(html).toContain("service[0]");
-    expect(html).toContain("initialNext = 1");
+    expect(html).toContain("nextIdx = 1");
     expect(html).not.toContain("initialNext = 0");
   });
 });

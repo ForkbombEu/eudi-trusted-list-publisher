@@ -253,7 +253,9 @@ GET /api/v1/lists/:listKey/versions/:seq/manifest    — Manifest download
 ### OpenAPI
 
 One authoritative YAML document at `src/web/assets/openapi.yaml`. JSON derived.
-Stoplight Elements pinned at v7.15.0.
+Stoplight Elements pinned at v7.15.0 and vendored into `src/web/assets/`, so
+`/docs/reference` never depends on a CDN and renders whenever the publisher
+itself is reachable.
 
 ### Runtime asset locations
 
@@ -263,6 +265,8 @@ src/web/assets/credimi_logo.svg       — byte-for-byte copy of HITL/credimi_log
 src/web/assets/credimi_logo_negative.svg — byte-for-byte copy of HITL/credimi_logo_negative.svg
 src/web/assets/app.css                — application-specific layout
 src/web/assets/openapi.yaml           — OpenAPI 3.1 specification
+src/web/assets/stoplight-elements.min.js  — Stoplight Elements 7.15.0 bundle
+src/web/assets/stoplight-elements.min.css — Stoplight Elements 7.15.0 styles
 ```
 
 ## Phase 3: Data collection and administration GUI
@@ -357,6 +361,8 @@ Administration (requires admin token via `?token=` query parameter):
 - `POST /admin/applications/{id}/publish` — compile, sign, verify, store
 - `POST /admin/applications/{id}/delete` — delete (unpublished only)
 - `GET /admin/signing` — signing configuration status
+- `GET /admin/settings` — auto-approval settings
+- `POST /admin/settings` — save auto-approval settings
 
 HTML form routes are not added to OpenAPI.
 
@@ -462,3 +468,57 @@ requires `family`, which is never inferred or silently changed. PID uses
 `/onboarding/pid-provider` and the shared administration, cumulative
 publication, and partial-commit reconciliation paths. Schema and signature
 checks remain internal safety boundaries rather than external trust assessment.
+
+## Phase 6: presentation, colour coding and auto-approval
+
+### Product identity
+
+The web shell is named **Credimi EUDI Trusted Lists**. The topbar nav is split
+into three groups separated by `<li class="nav-sep">` hairlines — Catalogue and
+Onboarding, API Docs and Open API, Repository. Administration is reached from
+the footer `Settings` column rather than from the topbar. Logo boxes follow the
+Credimi Capture Wallet shell: 42×42 px with 4 px padding in the topbar, 56×56 px
+with 6 px padding in the footer, both `object-fit: contain`.
+
+### Colour coding
+
+`src/web/views/colors.ts` is the single source of the chips that name a Trusted
+List Family or a Trusted List. Each of the seven families has a fixed class;
+list keys are hashed to one of `LIST_SWATCH_COUNT` swatches, so a given key is
+always the same colour. The colours themselves live in `app.css`; a test asserts
+that every class the module can emit is declared there. Catalogue, list and
+version pages, onboarding, administration and settings all render through these
+chips — no page prints a bare family name or list key.
+
+### Onboarding services
+
+Service blocks are numbered by position, not by field index. Field names keep
+the index they were created with so a rejected submission re-renders as posted,
+while `renumber()` recomputes the headings and hides the remove button on
+whichever block is currently first. The certificate field is labelled
+`Self-Signed Certificate (PEM)`: the publisher stores the certificate as the
+service's digital identity and never builds or verifies a certification path.
+
+### Auto-approval settings
+
+`src/core/authoring/settings-store.ts` persists `settings.json` in the authoring
+directory (mutable state, never in the publication store):
+
+```ts
+{ schemaVersion: 1,
+  autoApproveFamilies: Partial<Record<ProfileFamily, boolean>>,
+  autoApproveLists: Record<string, boolean> }
+```
+
+Unknown families, unsafe list keys and non-boolean values are dropped on read so
+a drifted file cannot break the administration pages. Writes are atomic
+(`wx` temp file + rename), and the posted form is the complete new state: a box
+that is absent from the body turns its flag off.
+
+`ApplicationService.autoApproveIfEnabled()` applies the settings on submission.
+A family opt-in and a list opt-in are equivalent — either one approves the
+application and publishes it through the ordinary locked, cumulative
+publication path, bypassing the manual Approve and Publish actions. A failed
+automatic publication is reported on the confirmation page and leaves the
+application in the manual queue; it never falls back to a plausible-looking
+success.

@@ -457,13 +457,17 @@ describe("Phase 5.1 GUI shell", () => {
         for (const label of [
           "Catalogue",
           "Onboarding",
-          "Admin",
           "API Docs",
-          "OpenAPI",
+          "Open API",
           "Repository",
+          // Admin now lives in the footer Settings column, not in the topbar.
+          "Admin",
         ]) {
           expect(r.body).toContain(`>${label}</a>`);
         }
+        // Three top-nav groups: site, API surface, source.
+        expect(r.body.match(/class="nav-sep"/g)).toHaveLength(2);
+        expect(r.body).toContain("<h5>Settings</h5>");
       }
     } finally {
       await cleanup();
@@ -524,7 +528,8 @@ describe("Phase 5.1 GUI shell", () => {
       expect(docs.body).toContain("Wallet Provider and PID Provider LoTE API");
       expect(docs.body).toContain('src="/docs/reference"');
       expect(docs.body).toContain('href="/openapi.yaml"');
-      expect(docs.body).toContain("If Stoplight cannot load");
+      // The embedded-reference caveat is gone: the reference always loads.
+      expect(docs.body).not.toContain("If Stoplight cannot load");
       // The shell must not pull in any Stoplight asset.
       expect(docs.body).not.toContain("@stoplight/elements");
 
@@ -534,6 +539,18 @@ describe("Phase 5.1 GUI shell", () => {
       expect(ref.body).toContain('apiDescriptionUrl="/openapi.yaml"');
       expect(ref.body).toContain('router="hash"');
       expect(ref.body).toContain('layout="sidebar"');
+      // Stoplight is served from this origin, never from a CDN.
+      expect(ref.body).toContain('src="/assets/stoplight-elements.min.js"');
+      expect(ref.body).toContain('href="/assets/stoplight-elements.min.css"');
+      expect(ref.body).not.toContain("unpkg.com");
+      for (const asset of [
+        "/assets/stoplight-elements.min.js",
+        "/assets/stoplight-elements.min.css",
+      ]) {
+        const served = await httpGet(`${url}${asset}`);
+        expect(served.status).toBe(200);
+        expect(served.body.length).toBeGreaterThan(1000);
+      }
       // Isolated document: no Credimi stylesheet, framed by this origin only.
       expect(ref.body).not.toContain("/assets/style.css");
       expect(ref.body).not.toContain("/assets/app.css");

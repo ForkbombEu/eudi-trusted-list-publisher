@@ -1,6 +1,6 @@
 openapi: "3.1.0"
 info:
-  title: EUDI Trusted List Publisher API
+  title: Credimi EUDI Trusted Lists API
   description: Read-only API for published TS 119 602 JSON Wallet Provider LoTEs.
   version: "0.1.0"
   contact:

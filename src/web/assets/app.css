@@ -1,5 +1,5 @@
 /*
-  Trusted List Publisher — application styles.
+  Credimi EUDI Trusted Lists — application styles.
 
   Shared Credimi design tokens and components (topbar, footer, cards, buttons,
   badges, page shell, responsive breakpoints) live in style.css, adapted from
@@ -8,7 +8,13 @@
   notices and the embedded API reference.
 */
 
-/* --- Product lockup (Atlas .atlas-product-name / .atlas-footer-logo) --- */
+/*
+  --- Product lockup ---
+
+  The logo boxes match the Credimi Capture Wallet shell (HITL reference
+  `credimi-capture-wallet-master/src/ui.ts`): a square, padded, contained box
+  of 42px in the topbar and 56px in the footer.
+*/
 .tlp-product-name {
   color: var(--fg);
   font-size: var(--fs-sm);
@@ -17,27 +23,192 @@
 }
 
 .topbar-logo {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 10px;
+  height: auto;
+  color: var(--fg);
+  font-weight: 800;
   text-decoration: none;
 }
 
-.tlp-footer-logo {
-  display: block;
-  width: 96px;
-  height: auto;
-  max-height: 42px;
+.topbar-logo img {
+  box-sizing: border-box;
+  width: 42px;
+  height: 42px;
+  padding: 4px;
   object-fit: contain;
-  margin-bottom: var(--space-3);
+  flex: 0 0 auto;
+}
+
+.tlp-footer-logo {
+  box-sizing: border-box;
+  width: 56px;
+  height: 56px;
+  padding: 6px;
+  object-fit: contain;
+  flex: 0 0 auto;
 }
 
 .footer-brand {
+  display: inline-flex;
   align-items: center;
+  gap: 14px;
+  min-width: 0;
 }
 
 .footer-brand p {
   color: rgba(255, 255, 255, 0.7);
+}
+
+/*
+  --- Top navigation groups ---
+
+  The nav reads as three groups — the site itself, the API surface, and the
+  source — separated by a hairline rule rather than by extra whitespace alone.
+*/
+.topbar-nav .nav-sep {
+  width: 1px;
+  height: 18px;
+  padding: 0;
+  background: var(--border);
+  flex: 0 0 auto;
+}
+
+/*
+  --- Colour coding for Trusted List Families and Trusted Lists ---
+
+  Every place that names a family or a list renders one of these chips, so the
+  same family (and the same list key) is always the same colour across the
+  catalogue, onboarding, administration and settings pages.
+*/
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.chip code {
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
+}
+
+a .chip {
+  text-decoration: none;
+}
+
+.chip-family--wallet {
+  background: oklch(0.95 0.04 300);
+  border-color: oklch(0.82 0.09 300);
+  color: oklch(0.42 0.18 300);
+}
+
+.chip-family--pid {
+  background: oklch(0.95 0.04 235);
+  border-color: oklch(0.82 0.09 235);
+  color: oklch(0.42 0.16 235);
+}
+
+.chip-family--eaa {
+  background: oklch(0.95 0.04 160);
+  border-color: oklch(0.82 0.09 160);
+  color: oklch(0.4 0.13 160);
+}
+
+.chip-family--qeaa {
+  background: oklch(0.95 0.05 85);
+  border-color: oklch(0.82 0.1 85);
+  color: oklch(0.42 0.13 85);
+}
+
+.chip-family--wrpac {
+  background: oklch(0.95 0.04 25);
+  border-color: oklch(0.82 0.09 25);
+  color: oklch(0.45 0.18 25);
+}
+
+.chip-family--wrprc {
+  background: oklch(0.95 0.04 345);
+  border-color: oklch(0.82 0.09 345);
+  color: oklch(0.44 0.17 345);
+}
+
+.chip-family--registrar {
+  background: oklch(0.95 0.04 200);
+  border-color: oklch(0.82 0.08 200);
+  color: oklch(0.4 0.12 200);
+}
+
+.chip-family--unknown {
+  background: var(--bg-muted);
+  border-color: var(--border);
+  color: var(--fg-muted);
+}
+
+/*
+  List swatches are picked by `listColorClass()` from the list key, so the
+  count here must stay in step with `LIST_SWATCH_COUNT` in colors.ts.
+*/
+.chip-list {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-weight: 500;
+}
+
+.chip-list--0 {
+  background: oklch(0.96 0.035 264);
+  border-color: oklch(0.84 0.08 264);
+  color: oklch(0.42 0.15 264);
+}
+
+.chip-list--1 {
+  background: oklch(0.96 0.035 150);
+  border-color: oklch(0.84 0.08 150);
+  color: oklch(0.4 0.13 150);
+}
+
+.chip-list--2 {
+  background: oklch(0.96 0.04 40);
+  border-color: oklch(0.84 0.09 40);
+  color: oklch(0.44 0.15 40);
+}
+
+.chip-list--3 {
+  background: oklch(0.96 0.035 315);
+  border-color: oklch(0.84 0.08 315);
+  color: oklch(0.43 0.16 315);
+}
+
+.chip-list--4 {
+  background: oklch(0.96 0.04 190);
+  border-color: oklch(0.84 0.08 190);
+  color: oklch(0.4 0.11 190);
+}
+
+.chip-list--5 {
+  background: oklch(0.96 0.045 100);
+  border-color: oklch(0.84 0.1 100);
+  color: oklch(0.42 0.12 100);
+}
+
+.chip-list--6 {
+  background: oklch(0.96 0.035 10);
+  border-color: oklch(0.84 0.09 10);
+  color: oklch(0.45 0.17 10);
+}
+
+.chip-list--7 {
+  background: oklch(0.96 0.035 285);
+  border-color: oklch(0.84 0.08 285);
+  color: oklch(0.42 0.16 285);
 }
 
 /* --- Page rhythm --- */
@@ -98,7 +269,6 @@
 /* --- Notices / alerts --- */
 .notice,
 .trust-notice,
-.test-notice,
 .error-msg,
 .success-msg,
 .warn-msg {
@@ -113,7 +283,6 @@
 
 .notice-warning,
 .trust-notice,
-.test-notice,
 .warn-msg {
   background: var(--warning-bg);
   border-color: var(--warning);
@@ -474,7 +643,78 @@ textarea:focus {
 .service-block h3 {
   font-size: var(--fs-md);
   font-weight: 700;
+  margin-bottom: 0;
+}
+
+.service-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   margin-bottom: var(--space-3);
+}
+
+/*
+  Only the second and later service blocks are removable, so the button is
+  rendered on every block and hidden on whichever block is currently first.
+*/
+.service-remove {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex: 0 0 auto;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.service-remove[hidden] {
+  display: none;
+}
+
+/* --- Settings --- */
+.settings-family {
+  margin-bottom: var(--space-5);
+}
+
+.settings-family-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.settings-lists {
+  border-left: 2px solid var(--border);
+  margin-left: var(--space-2);
+  padding-left: var(--space-4);
+}
+
+.settings-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid var(--border);
+}
+
+.settings-row input[type="checkbox"] {
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+
+.settings-row label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  margin: 0;
+}
+
+.settings-row .field-help {
+  margin-top: 0;
 }
 
 .cert-preview {

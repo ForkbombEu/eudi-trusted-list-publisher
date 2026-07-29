@@ -20,6 +20,7 @@ import type {
   WalletProviderApplication,
 } from "./application-model.js";
 import { AuthoringStore } from "./authoring-store.js";
+import type { SettingsStore } from "./settings-store.js";
 import { findSigningConfig } from "./signing-config.js";
 import type { SigningConfig, SigningConfigEntry } from "./signing-config.js";
 import {
@@ -70,19 +71,55 @@ export interface PreviewResult {
   proposedSequence: number | null;
   error?: string;
 }
+/**
+ * Outcome of the automatic approval configured on the administration settings
+ * page. `applied` is false when neither the family nor the target list opted
+ * in, which leaves the application in the ordinary manual review queue.
+ */
+export interface AutoApproveOutcome {
+  applied: boolean;
+  published: boolean;
+  error?: string;
+}
+
 export class ApplicationService {
   readonly authoringStore: AuthoringStore;
   readonly publicationStore: PublicationStore;
   readonly signingConfig: SigningConfig | null | undefined;
+  readonly settingsStore: SettingsStore | null | undefined;
   private readonly listLocks = new Map<string, Promise<void>>();
   constructor(
     authoringStore: AuthoringStore,
     publicationStore: PublicationStore,
     signingConfig?: SigningConfig | null,
+    settingsStore?: SettingsStore | null,
   ) {
     this.authoringStore = authoringStore;
     this.publicationStore = publicationStore;
     this.signingConfig = signingConfig;
+    this.settingsStore = settingsStore;
+  }
+  /**
+   * Applies the administrator's auto-approve settings to a freshly submitted
+   * application: it is approved and published in one step, bypassing the
+   * manual Approve and Publish actions on the application detail page.
+   */
+  async autoApproveIfEnabled(
+    app: TrustedEntityApplication,
+  ): Promise<AutoApproveOutcome> {
+    if (!this.settingsStore) return { applied: false, published: false };
+    if (!this.settingsStore.isAutoApprove(app.family, app.targetListKey)) {
+      return { applied: false, published: false };
+    }
+    const approved = this.approve(app.id);
+    if (!approved.success) {
+      return { applied: true, published: false, error: approved.error };
+    }
+    const published = await this.publishApplication(app.id);
+    if (!published.success) {
+      return { applied: true, published: false, error: published.error };
+    }
+    return { applied: true, published: true };
   }
   submitApplication(
     formFields: SubmissionFields,

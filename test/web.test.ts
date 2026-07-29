@@ -354,7 +354,7 @@ describe("Branding", () => {
     const res = await httpGet("/");
     expect(res.body).toContain("console.log");
     expect(res.body).toContain("Credimi");
-    expect(res.body).toContain("Trusted List Publisher");
+    expect(res.body).toContain("EUDI Trusted Lists");
   });
 });
 

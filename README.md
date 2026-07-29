@@ -1,4 +1,4 @@
-# EUDI Trusted List Publisher
+# Credimi EUDI Trusted Lists
 
 A TS 119 602 JSON List of Trusted Entities (LoTE) publisher for the Wallet
 Provider (Annex E) and PID Provider (Annex D) profiles. Compiles, validates, signs (JAdES Compact Baseline B),
@@ -26,6 +26,8 @@ which is always `"not_evaluated"`. No PKIX trust chain validation is performed.
 - **Module system**: ESM (`"type": "module"`)
 - **Web server**: `node:http` (no framework)
 - **Libraries**: `jose` (JOSE/JWS), `ajv` + `ajv-formats` (JSON Schema), `commander` (CLI)
+- **API reference**: Stoplight Elements 7.15.0, vendored into `src/web/assets/`
+  and served from the same origin, so `/docs` renders without a CDN
 
 ## How to run
 
@@ -52,12 +54,13 @@ node dist/src/cli/main.js serve --data-collection-gui
 ```
 
 When enabled:
-- `/onboarding` — applicant onboarding and list-family catalogue
+- `/onboarding` — applicant onboarding and Trusted List Family catalogue
 - `/onboarding/wallet-provider` — Wallet Provider application form
 - `/onboarding/pid-provider` — PID Provider application form
 - `/admin` — administration backoffice (requires `TLP_ADMIN_TOKEN`)
 - `/admin/applications` — manage submitted applications
 - `/admin/signing` — view signing configuration status
+- `/admin/settings` — auto-approval settings per family and per list
 
 When `DATA_COLLECTION_GUI` is `false` or unset, the server operates in read-only
 mode exactly as before — no onboarding, no admin routes, no authoring state.
@@ -81,6 +84,50 @@ mode exactly as before — no onboarding, no admin routes, no authoring state.
 official or production Trusted List Provider. Document uploads are not
 implemented; required documents use placeholder `{FILENAME}.md` references.
 
+## Quick GUI guide
+
+### Catalogue (`/`)
+
+The home page lists every published Trusted List with its family, latest
+sequence, issue and next-update dates and cryptographic signature status. Signer
+trust is always reported as *not evaluated*. Each Trusted List and each Trusted
+List Family is shown as a colour-coded chip, and the same colour is used for that
+family or list on every other page. Click a list to see its version history, and
+a version to see its manifest, entities, certificate details and downloads.
+
+### Onboarding (`/onboarding`)
+
+Pick the Trusted List Family your organisation belongs to and start an
+application. The form collects the entity's legal name, postal address and
+information URI, plus one or more services. Each service needs a type, a name, a
+self-signed X.509 certificate in PEM form and a unique service URI. Use
+**+ Add Service** to add more services; blocks are renumbered automatically and
+every block after the first has an **×** button to remove it. Submitting returns
+an application ID to quote when following up.
+
+### Administration (`/admin`)
+
+Sign in with `ADMIN_USER`/`ADMIN_PASSWORD`, or with `/admin?token=…`. From the
+dashboard:
+
+- **Manage Applications** — filter by state, open an application to review the
+  entity, its services, the ETSI validation result, the normalized compiler
+  input and the cumulative publication preview, then Approve, Reject, Publish or
+  Delete it.
+- **Signing Configuration** — per-list signing status, certificate subject and
+  fingerprint. Private key contents are never displayed.
+- **Settings** — auto-approval. Tick a Trusted List Family, or a single Trusted
+  List nested under it, to approve and publish every future application for it
+  immediately on submission, bypassing the manual Approve and Publish actions.
+  Either level is sufficient. Families with no implemented profile cannot be
+  enabled. If an automatic publication fails, the applicant is told and the
+  application stays in the manual review queue.
+
+### API documentation (`/docs`)
+
+The full API reference renders in an embedded Stoplight Elements frame. The raw
+specification is available at `/openapi.yaml` and `/openapi.json`.
+
 ## CLI Examples
 
 | Command | Example |
@@ -102,14 +149,31 @@ implemented; required documents use placeholder `{FILENAME}.md` references.
 - 5: signature verification failure
 - 6: publication error (invalid signature, expired cert, ETSI schema failure)
 
+## API Examples
+
+| API | Example |
+|-----|---------|
+| List published lists | `curl http://localhost:8080/api/v1/lists` |
+| Get list index | `curl http://localhost:8080/api/v1/lists/eu_credimi` |
+| Get version manifest | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1` |
+| Download decoded LoTE JSON | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/lote` |
+| Download Compact JAdES | `curl -o lote.jades http://localhost:8080/api/v1/lists/eu_credimi/versions/1/signature` |
+| Download publication manifest | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/manifest` |
+| Health check | `curl http://localhost:8080/healthz` |
+| OpenAPI specification | `curl http://localhost:8080/openapi.yaml` |
+
 ## Authoring workflow (Phase 3)
 
 1. Applicant navigates to `/onboarding` and selects Wallet Providers or PID Providers
-2. Applicant submits entity details, addresses, and X.509 certificate(s)
+2. Applicant submits entity details, addresses, and self-signed X.509 certificate(s)
 3. Applicant receives a confirmed application ID
 4. Administrator reviews at `/admin/applications`
 5. Administrator approves, then publishes
 6. Published LoTE appears in the public catalogue at `/`
+
+Steps 4 and 5 are skipped for a Trusted List Family or Trusted List that is set
+to auto-approve in `/admin/settings`: those applications are approved and
+published as soon as they are submitted.
 
 The mutable application/draft layer (`AUTHORING_DIR`) is separate from the
 immutable publication store (`PUBLICATION_DIR`). Applications track their
@@ -159,6 +223,26 @@ Every configured list key declares `family`, and cumulative publication rejects
 an authenticated existing LoTE whose type conflicts with that family. Internal
 schema/signature checks are publication safety boundaries, not external trust
 or regulatory-conformance evaluation.
+
+## Auto-approval settings
+
+`/admin/settings` stores its state in `settings.json` inside `AUTHORING_DIR`,
+beside the mutable application records and never in the publication store:
+
+```json
+{
+  "schemaVersion": 1,
+  "autoApproveFamilies": { "wallet-providers": true },
+  "autoApproveLists": { "eu_credimi": true }
+}
+```
+
+A family opt-in and a list opt-in are equivalent — either one is enough. An
+auto-approved application still goes through the ordinary locked, cumulative
+publication path, so uniqueness, round-trip and ETSI checks all still apply. On
+read, unknown families, unsafe list keys and non-boolean values are dropped so a
+hand-edited file cannot break the administration pages. Writes are atomic, and
+the posted form is the complete new state: a box left unticked turns its flag off.
 
 ## Environment variables
 

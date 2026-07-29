@@ -11,6 +11,12 @@ export {
 } from "./application-model.js";
 export { AuthoringStore } from "./authoring-store.js";
 export {
+  SettingsStore,
+  SETTINGS_SCHEMA_VERSION,
+  SETTINGS_FILE_NAME,
+  emptySettings,
+} from "./settings-store.js";
+export {
   loadSigningConfig,
   findSigningConfig,
   getWalletProviderConfigs,
@@ -45,6 +51,10 @@ export type {
   SigningConfigEntryDisplay,
 } from "./signing-config.js";
 export type { AuthoringStoreConfig } from "./authoring-store.js";
+export type {
+  PublisherSettings,
+  SettingsStoreConfig,
+} from "./settings-store.js";
 export type { ProfileFamily as ListFamily } from "../profiles/registry.js";
 export type { PublicationRecord as PublishResult } from "./application-model.js";
 export type {
@@ -53,6 +63,7 @@ export type {
   SubmissionParseResult,
 } from "./submission-parser.js";
 export type {
+  AutoApproveOutcome,
   PartialCommitResult,
   PreparedPublication,
   PreparedPublicationResult,

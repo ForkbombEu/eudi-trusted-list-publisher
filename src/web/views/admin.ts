@@ -1,6 +1,8 @@
 import type { TrustedEntityApplication } from "../../core/authoring/application-model.js";
 import type { SigningConfigEntryDisplay } from "../../core/authoring/signing-config.js";
+import type { PublisherSettings } from "../../core/authoring/settings-store.js";
 import { LIST_FAMILIES } from "../../core/authoring/list-family-catalogue.js";
+import { familyChip, listChip } from "./colors.js";
 
 function escape(s: string): string {
   return s
@@ -14,12 +16,10 @@ function escape(s: string): string {
 export function adminIndexHtml(): string {
   return `
 <h1>Administration</h1>
-<div class="test-notice">
-  <strong>&#x26A0; Testing tool.</strong> This is a test/debug fixture publisher.
-</div>
 <div class="card">
   <p><a href="/admin/applications" class="btn">Manage Applications</a></p>
   <p><a href="/admin/signing" class="btn">Signing Configuration</a></p>
+  <p><a href="/admin/settings" class="btn">Settings</a></p>
 </div>
 `;
 }
@@ -46,7 +46,6 @@ export function adminApplicationsHtml(
   if (filtered.length === 0) {
     return `
 <h1>Applications</h1>
-<div class="test-notice"><strong>&#x26A0; Testing tool.</strong></div>
 <p>Filter:${filterHtml}</p>
 <div class="card"><p>No applications found.</p></div>
 <a href="/admin" class="btn">Back to Admin</a>
@@ -55,12 +54,11 @@ export function adminApplicationsHtml(
 
   let rows = "";
   for (const a of filtered) {
-    const familyLabel = familyLabelFor(a);
     rows += `
   <tr>
     <td>${escape(a.id.slice(0, 8))}...</td>
-    <td>${escape(familyLabel)}</td>
-    <td>${escape(a.targetListKey)}</td>
+    <td>${familyChip(a.family, familyLabelFor(a))}</td>
+    <td>${listChip(a.targetListKey)}</td>
     <td><span class="badge ${stateBadge(a.state)}">${escape(a.state)}</span></td>
     <td>${escape(a.submittedAt)}</td>
     <td><a href="/admin/applications/${escape(a.id)}" class="btn btn-sm">View</a></td>
@@ -69,10 +67,9 @@ export function adminApplicationsHtml(
 
   return `
 <h1>Applications</h1>
-<div class="test-notice"><strong>&#x26A0; Testing tool.</strong></div>
 <p>Filter:${filterHtml}</p>
 <table class="catalogue-table">
-<thead><tr><th>ID</th><th>Family</th><th>List</th><th>State</th><th>Submitted</th><th></th></tr></thead>
+<thead><tr><th>ID</th><th>Trusted List Family</th><th>Trusted List</th><th>State</th><th>Submitted</th><th></th></tr></thead>
 <tbody>${rows}</tbody>
 </table>
 <p><a href="/admin" class="btn">Back to Admin</a></p>
@@ -153,15 +150,14 @@ export function adminApplicationDetailHtml(
 
   return `
 <h1>Application: <code>${escape(app.id)}</code></h1>
-<div class="test-notice"><strong>&#x26A0; Testing tool.</strong></div>
 ${messages}
 
 <div class="card">
   <h2>Status</h2>
   <table class="kv-table">
     <tr><th>ID</th><td><code>${escape(app.id)}</code></td></tr>
-    <tr><th>Family</th><td>${escape(familyLabelFor(app))}</td></tr>
-    <tr><th>Target List Key</th><td><code>${escape(app.targetListKey)}</code></td></tr>
+    <tr><th>Trusted List Family</th><td>${familyChip(app.family, familyLabelFor(app))}</td></tr>
+    <tr><th>Target Trusted List</th><td>${listChip(app.targetListKey)}</td></tr>
     <tr><th>State</th><td><span class="badge ${stateBadge(app.state)}">${escape(app.state)}</span></td></tr>
     <tr><th>Schema Version</th><td>${app.schemaVersion}</td></tr>
     <tr><th>Submitted</th><td>${escape(app.submittedAt)}</td></tr>
@@ -273,7 +269,7 @@ function publicationInfoHtml(app: TrustedEntityApplication): string {
 <div class="card">
   <h2>Publication Record</h2>
   <table class="kv-table">
-    <tr><th>List Key</th><td><code>${escape(p.listKey)}</code></td></tr>
+    <tr><th>Trusted List</th><td>${listChip(p.listKey)}</td></tr>
     <tr><th>Sequence Number</th><td>${p.sequenceNumber}</td></tr>
     <tr><th>Publication Timestamp</th><td>${escape(p.publicationTimestamp)}</td></tr>
     <tr><th>Compact JAdES SHA-256</th><td><code>${escape(p.compactJadesSha256)}</code></td></tr>
@@ -330,10 +326,6 @@ export function adminLoginHtml(next?: string, error?: string): string {
 <p class="lead">Sign in with the administrator credentials configured for this
 instance to review and publish onboarding applications.</p>
 
-<div class="notice notice-warning">
-  <strong>&#x26A0; Testing tool.</strong> This is a test/debug fixture publisher.
-</div>
-
 <div class="card admin-login-card">
   <h2>Sign in</h2>
   ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
@@ -366,7 +358,6 @@ export function adminSigningConfigHtml(
   if (entries.length === 0) {
     return `
 <h1>Signing Configuration</h1>
-<div class="test-notice"><strong>&#x26A0; Testing tool.</strong></div>
 <div class="card">
   <p>No signing configuration found.</p>
   <p>Create a <code>signing-config.json</code> file with list entries referencing your signing keys.</p>
@@ -377,12 +368,10 @@ export function adminSigningConfigHtml(
 
   let rows = "";
   for (const e of entries) {
-    const familyLabel =
-      LIST_FAMILIES.find((f) => f.key === e.family)?.label ?? e.family;
     rows += `
   <tr>
-    <td><code>${escape(e.listKey)}</code></td>
-    <td>${escape(familyLabel)}</td>
+    <td>${listChip(e.listKey)}</td>
+    <td>${familyChip(e.family)}</td>
     <td>${e.configured ? '<span class="badge ok">configured</span>' : '<span class="badge error">not configured</span>'}</td>
     <td>${escape(e.certificateSubject ?? "—")}</td>
     <td>${e.certificateFingerprint ? `<code>${escape(e.certificateFingerprint.slice(0, 16))}...</code>` : "—"}</td>
@@ -391,11 +380,93 @@ export function adminSigningConfigHtml(
 
   return `
 <h1>Signing Configuration</h1>
-<div class="test-notice"><strong>&#x26A0; Testing tool.</strong> Private key contents are never displayed.</div>
+<p class="lead">Private key contents are never displayed.</p>
 <table class="catalogue-table">
-<thead><tr><th>List Key</th><th>Family</th><th>Status</th><th>Cert Subject</th><th>Cert Fingerprint</th></tr></thead>
+<thead><tr><th>Trusted List</th><th>Trusted List Family</th><th>Status</th><th>Cert Subject</th><th>Cert Fingerprint</th></tr></thead>
 <tbody>${rows}</tbody>
 </table>
 <p><a href="/admin" class="btn">Back to Admin</a></p>
+`;
+}
+
+export interface SettingsListRow {
+  listKey: string;
+  schemeOperatorName: string;
+}
+
+/**
+ * Administration settings: one auto-approve switch per Trusted List Family and
+ * one per configured Trusted List, the lists nested under their family.
+ *
+ * Families with no implemented profile cannot receive applications, so their
+ * switch is rendered read-only rather than silently accepted.
+ */
+export function adminSettingsHtml(
+  settings: PublisherSettings,
+  listsByFamily: Record<string, SettingsListRow[]>,
+  saved?: boolean,
+): string {
+  const sections = LIST_FAMILIES.map((family) => {
+    const lists = listsByFamily[family.key] ?? [];
+    const familyChecked =
+      settings.autoApproveFamilies[family.key] === true ? " checked" : "";
+    const familyDisabled = family.enabled ? "" : " disabled";
+
+    const listRows =
+      lists.length === 0
+        ? `<p class="field-help">No Trusted List is configured for this family in
+           <code>signing-config</code>.</p>`
+        : lists
+            .map((list) => {
+              const checked =
+                settings.autoApproveLists[list.listKey] === true
+                  ? " checked"
+                  : "";
+              const id = `list-${list.listKey}`;
+              return `
+      <div class="settings-row">
+        <input type="checkbox" id="${escape(id)}" name="list[${escape(list.listKey)}]" value="on"${checked}>
+        <div>
+          <label for="${escape(id)}">Auto-approve all the applications for ${listChip(list.listKey)}</label>
+          <span class="field-help">${escape(list.schemeOperatorName)}</span>
+        </div>
+      </div>`;
+            })
+            .join("");
+
+    return `
+<div class="card settings-family">
+  <div class="settings-family-head">
+    <h2>${familyChip(family.key, family.label)}</h2>
+    ${family.enabled ? '<span class="badge badge-assurance">Available</span>' : `<span class="badge badge-neutral">${escape(family.notImplementedNote)}</span>`}
+  </div>
+  <div class="settings-row">
+    <input type="checkbox" id="family-${escape(family.key)}" name="family[${escape(family.key)}]" value="on"${familyChecked}${familyDisabled}>
+    <div>
+      <label for="family-${escape(family.key)}">Auto-approve all the applications for this Trusted List Family</label>
+      <span class="field-help">Applies to every Trusted List in the family, including lists added later.</span>
+    </div>
+  </div>
+  <div class="settings-lists">${listRows}
+  </div>
+</div>`;
+  }).join("");
+
+  return `
+<h1>Settings</h1>
+<p class="lead">Auto-approval settings for onboarding applications. When a
+Trusted List Family or a single Trusted List is set to auto-approve, every
+application targeting it is approved and published immediately on submission,
+bypassing the Approve and Publish actions on the application detail page.</p>
+
+${saved ? '<div class="success-msg">Settings saved.</div>' : ""}
+
+<form method="post" action="/admin/settings" class="onboarding-form">
+${sections}
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary btn-md">Save Settings</button>
+    <a href="/admin" class="btn btn-outline btn-md">Back to Admin</a>
+  </div>
+</form>
 `;
 }
