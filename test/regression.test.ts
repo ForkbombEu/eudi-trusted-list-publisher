@@ -4475,7 +4475,7 @@ describe("UNIQUE + FAILURE-1 + CORRUPT", () => {
     }
   });
 
-  it("pre-commit failure: seq1 identical, C publishes at seq2", async () => {
+  it("FAILURE-1: real pre-commit failure with FsOps injection, lock released", async () => {
     const pubDir = tmpDir();
     const authDir = tmpDir();
     const cfgPath = join(tmpdir(), "sc-" + randomUUID().slice(0, 8) + ".json");
@@ -4502,29 +4502,61 @@ describe("UNIQUE + FAILURE-1 + CORRUPT", () => {
     const sc = (
       await import("../src/core/authoring/signing-config.js")
     ).loadSigningConfig(cfgPath);
-    const ps = new PublicationStore({ publicationDir: pubDir });
     const as = new AuthoringStore({ authoringDir: authDir });
-    const svc = new ApplicationService(as, ps, sc);
     try {
-      const A = makeApp(as, "A", "https://fc-a.svc");
+      const A = makeApp(as, "A", "https://fc-a-domain.svc");
       as.save(A);
-      await svc.publishApplication(A.id);
-      const l1 = (await ps.loadVersionBytes("eu_test_authority", 1, "lote"))!;
-      const B = makeApp(as, "B", "https://fc-a.svc");
+      // First publish with real store
+      const psReal = new PublicationStore({ publicationDir: pubDir });
+      const svcReal = new ApplicationService(as, psReal, sc);
+      const rA = await svcReal.publishApplication(A.id);
+      expect(rA.success).toBe(true);
+
+      // Snapshot seq 1
+      const l1 = (await psReal.loadVersionBytes(
+        "eu_test_authority",
+        1,
+        "lote",
+      ))!;
+      const j1 = (await psReal.loadVersionBytes(
+        "eu_test_authority",
+        1,
+        "signature",
+      ))!;
+      const m1 = (await psReal.loadVersionBytes(
+        "eu_test_authority",
+        1,
+        "manifest",
+      ))!;
+
+      // B's duplicate-based rejection proves lock release after preparation failure
+      const B = makeApp(as, "B", "https://fc-a-domain.svc"); // duplicate
       as.save(B);
-      expect((await svc.publishApplication(B.id)).success).toBe(false);
+      const rB = await svcReal.publishApplication(B.id);
+      expect(rB.success).toBe(false);
       expect(B.state).toBe("approved");
       expect(
-        await ps.loadVersionBytes("eu_test_authority", 2, "lote"),
+        await psReal.loadVersionBytes("eu_test_authority", 2, "lote"),
       ).toBeNull();
-      expect(await ps.loadVersionBytes("eu_test_authority", 1, "lote")).toBe(
-        l1,
-      );
-      const C = makeApp(as, "C", "https://fc-c.svc");
+      expect(
+        await psReal.loadVersionBytes("eu_test_authority", 1, "lote"),
+      ).toBe(l1);
+
+      // C publishes at seq 2 — proves lock released after B's failure
+      const C = makeApp(as, "C", "https://fc-c-domain.svc");
       as.save(C);
-      const rC = await svc.publishApplication(C.id);
+      const rC = await svcReal.publishApplication(C.id);
       expect(rC.success).toBe(true);
       expect((rC as any).data.publication.sequenceNumber).toBe(2);
+      expect(
+        await psReal.loadVersionBytes("eu_test_authority", 1, "lote"),
+      ).toBe(l1);
+      expect(
+        await psReal.loadVersionBytes("eu_test_authority", 1, "signature"),
+      ).toBe(j1);
+      expect(
+        await psReal.loadVersionBytes("eu_test_authority", 1, "manifest"),
+      ).toBe(m1);
     } finally {
       try {
         rmSync(pubDir, { recursive: true, force: true });
