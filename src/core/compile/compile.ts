@@ -117,12 +117,18 @@ export function compileForProfile(
   input: AuthoringInput,
 ): CompileResult {
   const profile = getProfile(family);
-  if (!profile.loTEType || !profile.statusDeterminationApproach || !profile.schemeRules) {
+  if (
+    !profile.loTEType ||
+    !profile.statusDeterminationApproach ||
+    !profile.schemeRules
+  ) {
     throw new Error(`Profile ${family} has incomplete compilation metadata.`);
   }
   for (const entity of input.entities) {
     for (const service of entity.services) {
-      if (!profile.allowedServiceTypes.includes(service.serviceTypeIdentifier)) {
+      if (
+        !profile.allowedServiceTypes.includes(service.serviceTypeIdentifier)
+      ) {
         throw new Error(
           `Service type '${service.serviceTypeIdentifier}' is not allowed for ${profile.label}.`,
         );
@@ -144,9 +150,7 @@ export function compileForProfile(
     },
     SchemeName: toMultiLang(input.scheme.schemeName),
     StatusDeterminationApproach: profile.statusDeterminationApproach,
-    SchemeTypeCommunityRules: [
-      { lang: "en", uriValue: profile.schemeRules },
-    ],
+    SchemeTypeCommunityRules: [{ lang: "en", uriValue: profile.schemeRules }],
     SchemeTerritory: input.scheme.schemeTerritory,
     ListIssueDateTime: input.listIssueDateTime,
     NextUpdate: input.nextUpdate,

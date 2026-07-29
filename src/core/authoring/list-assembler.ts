@@ -53,7 +53,9 @@ function parseLoTEDocument(value: unknown): LoTEDocument {
 export async function loadLatestPublication(
   store: PublicationStore,
   listKey: string,
+  family: EnabledProfileFamily = "wallet-providers",
 ): Promise<LatestPublication> {
+  getEnabledProfile(family);
   const highest = store.getHighestStoredSequence(listKey);
   if (highest === null) return { exists: false };
   const outcome = await loadVersionArtifacts(
@@ -85,6 +87,7 @@ export async function loadLatestPublication(
   const preservation = checkLosslessPreservation(
     loteDocument.LoTE.TrustedEntitiesList ?? [],
     entities,
+    family,
   );
   if (!preservation.ok)
     throw new Error(

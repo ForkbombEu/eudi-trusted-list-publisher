@@ -218,6 +218,7 @@ export class ApplicationService {
       const latest = await loadLatestPublication(
         this.publicationStore,
         app.targetListKey,
+        app.family,
       );
       if (latest.exists) {
         const storedType =
@@ -418,6 +419,7 @@ export class ApplicationService {
     const latest = await loadLatestPublication(
       this.publicationStore,
       app.targetListKey,
+      app.family,
     );
     if (!latest.exists) {
       return { success: false, error: "No publications exist for this list." };

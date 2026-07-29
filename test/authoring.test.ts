@@ -102,26 +102,32 @@ describe("List Family Catalogue", () => {
     expect(labels).toContain("Registrars");
   });
 
-  it("only Wallet Providers are enabled", () => {
+  it("enables exactly Wallet and PID Providers", () => {
     const enabled = getEnabledFamilies();
-    expect(enabled).toHaveLength(1);
-    expect(enabled[0]!.key).toBe("wallet-providers");
-    expect(enabled[0]!.label).toBe("Wallet Providers");
+    expect(enabled.map((family) => [family.key, family.label])).toEqual([
+      ["wallet-providers", "Wallet Providers"],
+      ["pid-providers", "PID Providers"],
+    ]);
   });
 
-  it("other six families are disabled with 'Not implemented yet'", () => {
+  it("keeps the other five families disabled with 'Not implemented yet'", () => {
     for (const f of LIST_FAMILIES) {
-      if (f.key !== "wallet-providers") {
+      if (f.key !== "wallet-providers" && f.key !== "pid-providers") {
         expect(f.enabled).toBe(false);
         expect(f.notImplementedNote).toBe("Not implemented yet");
       }
     }
   });
 
-  it("findFamily works for known key", () => {
-    const f = findFamily("wallet-providers");
-    expect(f).toBeDefined();
-    expect(f!.label).toBe("Wallet Providers");
+  it("findFamily resolves both enabled families", () => {
+    expect(findFamily("wallet-providers")).toMatchObject({
+      key: "wallet-providers",
+      label: "Wallet Providers",
+    });
+    expect(findFamily("pid-providers")).toMatchObject({
+      key: "pid-providers",
+      label: "PID Providers",
+    });
   });
 
   it("findFamily returns undefined for unknown key", () => {

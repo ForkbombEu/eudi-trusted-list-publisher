@@ -3,7 +3,7 @@
 ## Project scope
 
 This project implements a **TS 119 602 JSON List of Trusted Entities (LoTE) publisher**
-for the Wallet Provider profile (Annex E).
+for the Wallet Provider profile (Annex E) and PID Provider profile (Annex D).
 
 ### Normative definitions
 
@@ -26,7 +26,7 @@ for the Wallet Provider profile (Annex E).
 ### ETSI TS 119 182-1 (JAdES)
 
 - Defines Compact JAdES Baseline B profile for JSON Advanced Electronic Signatures
-- Wallet Provider profile requires Compact JAdES Baseline B
+- Wallet Provider and PID Provider profiles require Compact JAdES Baseline B
 - JAdES Compact Serialization: BASE64URL(UTF8(JWS Protected Header)).BASE64URL(JWS Payload).BASE64URL(JWS Signature)
 - Required header parameters: `alg`, `x5c` (certificate chain), `typ` (optional, value "JAdES")
 

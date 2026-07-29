@@ -1,7 +1,7 @@
 # EUDI Trusted List Publisher
 
 A TS 119 602 JSON List of Trusted Entities (LoTE) publisher for the Wallet
-Provider profile (Annex E). Compiles, validates, signs (JAdES Compact Baseline B),
+Provider (Annex E) and PID Provider (Annex D) profiles. Compiles, validates, signs (JAdES Compact Baseline B),
 verifies, stores, and publishes LoTE artefacts. Signing keys are supplied through
 local files or CI secrets and are never uploaded through a public web interface.
 
@@ -9,8 +9,8 @@ Includes an immutable filesystem publication store and a read-only Credimi-brand
 web UI for browsing published LoTEs. Does not implement TS 119 612 Trusted Lists,
 LoTL aggregation, XML/XAdES, or the EC TS02 notification API.
 
-**Phase 3** adds an opt-in data-collection and administration GUI for authoring
-and publishing Wallet Provider LoTEs. When enabled, it provides applicant
+**Historical Phase 3** added an opt-in data-collection and administration GUI for authoring
+and publishing Wallet Provider LoTEs. The current Phase 5 GUI also supports PID Providers. When enabled, it provides applicant
 onboarding and an administration backoffice.
 
 ## Important: signature valid vs signer trusted
@@ -54,6 +54,7 @@ node dist/src/cli/main.js serve --data-collection-gui
 When enabled:
 - `/onboarding` — applicant onboarding and list-family catalogue
 - `/onboarding/wallet-provider` — Wallet Provider application form
+- `/onboarding/pid-provider` — PID Provider application form
 - `/admin` — administration backoffice (requires `TLP_ADMIN_TOKEN`)
 - `/admin/applications` — manage submitted applications
 - `/admin/signing` — view signing configuration status
@@ -103,7 +104,7 @@ implemented; required documents use placeholder `{FILENAME}.md` references.
 
 ## Authoring workflow (Phase 3)
 
-1. Applicant navigates to `/onboarding` and selects Wallet Providers
+1. Applicant navigates to `/onboarding` and selects Wallet Providers or PID Providers
 2. Applicant submits entity details, addresses, and X.509 certificate(s)
 3. Applicant receives a confirmed application ID
 4. Administrator reviews at `/admin/applications`
@@ -117,8 +118,8 @@ resulting publication metadata.
 
 ## Cumulative publication semantics
 
-Phase 4 publishes cumulative membership independently for each configured list
-key. A successful publication adds one approved Wallet Provider entity to the
+Phase 4 introduced cumulative membership independently for each configured list
+key. The current profile-aware path adds one approved Wallet Provider or PID Provider entity to the
 latest authenticated list and creates the next immutable sequence; it does not
 replace earlier entities.
 
@@ -144,8 +145,8 @@ replace earlier entities.
 - The authenticated admin application-detail route renders existing/resulting
   entity counts and current/proposed sequences before publication.
 
-Wallet Providers remain the only implemented list family. The other catalogue
-families are visible in the GUI but are not accepted for authoring or
+Wallet Providers and PID Providers are implemented list families. The other five
+catalogue families are visible in the GUI but are not accepted for authoring or
 publication.
 
 ## Phase 5 profiles

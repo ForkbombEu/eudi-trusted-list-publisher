@@ -13,7 +13,9 @@ Direct import into Credimi's Go backend is not currently required.
 
 ## Approved first vertical slice
 
-Implement a TS 119 602 JSON LoTE publisher for the Wallet Provider profile.
+Historical first vertical slice: implement a TS 119 602 JSON LoTE publisher for
+the Wallet Provider profile. The current Phase 5 implementation supports Wallet
+Provider Annex E and PID Provider Annex D profiles.
 
 The core must compile, schema-validate, sign and verify deterministic LoTE
 artifacts. Signing keys are supplied through local files or CI secrets and
@@ -87,7 +89,8 @@ src/
   core/
     model/            — TypeScript types for LoTE data model
     profiles/
-      wallet-provider/ — Wallet Provider profile types and constants
+      wallet-provider/ — Wallet Provider Annex E profile types and constants
+      pid-provider/    — PID Provider Annex D profile types and constants
     compile/          — Compile authoring input -> LoTE
     validate/         — Schema validation (authoring + ETSI)
     signing/          — JAdES Compact signing
@@ -281,7 +284,7 @@ existing public catalogue and download functionality is retained.
 One authoritative catalogue at `src/core/authoring/list-family-catalogue.ts`
 defines the seven intended families:
 
-- PID Providers
+- PID Providers (enabled in Phase 5)
 - Non-qualified EAA Providers
 - QEAA Providers
 - Wallet Providers (enabled in Phase 3)
@@ -289,7 +292,8 @@ defines the seven intended families:
 - WRPRC Providers
 - Registrars
 
-Only Wallet Providers is enabled. Other six are displayed with "Not implemented yet".
+Wallet Providers and PID Providers are enabled. The remaining five families are
+displayed with "Not implemented yet".
 
 ### Application model
 
@@ -297,11 +301,13 @@ Defined in `src/core/authoring/application-model.ts`:
 
 ```
 ApplicationState = "submitted" | "approved" | "rejected" | "published"
-WalletProviderApplication { id, schemaVersion, family, state, submittedAt,
+TrustedEntityApplication { id, schemaVersion, family, state, submittedAt,
   applicantData { entityName, entityTradeName?, entityStreetAddress,
     entityLocality?, entityPostalCode?, entityCountry, entityInformationURI,
     services[{ serviceType, serviceName, certificatePem, serviceUniqueIdentifier }] },
   adminNote?, approvedAt?, rejectedAt?, publication? }
+
+PIDProviderApplication additionally requires `responsibleMemberState`.
 ```
 
 Lifecycle transitions:
@@ -338,6 +344,8 @@ Onboarding (public):
 - `GET /onboarding` — list-family catalogue
 - `GET /onboarding/wallet-provider` — Wallet Provider application form
 - `POST /onboarding/wallet-provider` — submit application
+- `GET /onboarding/pid-provider` — PID Provider application form
+- `POST /onboarding/pid-provider` — submit application
 - `GET /onboarding/submitted/{id}` — submission confirmation
 
 Administration (requires admin token via `?token=` query parameter):
@@ -377,10 +385,11 @@ The publishing integration calls the existing Phase 1/2 core functions directly:
 
 No CLI subprocess spawning. No duplicate compiler/signer/storage logic.
 
-## Phase 4: cumulative Wallet Provider publication
+## Historical Phase 4: cumulative Wallet Provider publication
 
 Phase 4 extends the administration service without adding another list family.
-Wallet Providers are still the only implemented family.
+The Phase 4 implementation was Wallet-only. The current Phase 5 cumulative
+publication path is profile-aware for Wallet and PID Providers.
 
 ### Per-list cumulative assembly
 
