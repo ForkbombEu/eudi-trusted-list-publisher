@@ -375,4 +375,24 @@ The publishing integration calls the existing Phase 1/2 core functions directly:
 7. `PublicationStore.store()` — immutable store
 
 No CLI subprocess spawning. No duplicate compiler/signer/storage logic.
+
+### Cumulative authoring publication
+
+Wallet Providers are the only implemented family. A publication is cumulative
+per list key: the next document contains all entities from the highest
+physically stored authenticated version plus the candidate. The physical
+highest sequence is authoritative and fail-closed; corrupt or non-losslessly
+representable data prevents preview and publication.
+
+Existing entities are semantically round-tripped through the authoring model
+or the operation is rejected before storage. Service unique identifiers are
+unique within one list key, not globally. The application service serializes
+work per list key in-process only; deployments with multiple processes require
+an external coordination mechanism.
+
+Preview reports existing/resulting entity counts and current/proposed sequence.
+When immutable storage commits but mutable application persistence fails,
+`publishApplication()` returns the public typed partial-commit outcome
+`PUBLICATION_COMMITTED_APPLICATION_STALE`; reconciliation updates only the
+application record and must not create another version.
 ```

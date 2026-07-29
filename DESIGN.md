@@ -50,3 +50,11 @@ directly — the GUI does not duplicate or reimplement Phase 1/2 logic.
 
 Testing-tool notices ("This is a test/debug fixture publisher") are displayed
 on all onboarding and administration pages.
+
+## Cumulative preview presentation
+
+The application detail page presents cumulative publication metadata for an
+approved application: existing entities, resulting entities, current sequence,
+and proposed sequence. This is display-only; immutable publication, semantic
+round-trip preservation, per-list process-local serialization, and typed
+partial-commit reconciliation remain core-library behaviour.

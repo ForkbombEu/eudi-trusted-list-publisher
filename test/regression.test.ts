@@ -146,6 +146,62 @@ beforeAll(async () => {
   );
 });
 
+interface Deferred<T = void> {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(reason?: unknown): void;
+}
+
+function deferred<T = void>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/** A test-only store gate: it blocks before immutable commit, never by timing. */
+class GatedPublicationStore extends PublicationStore {
+  readonly entered: number[] = [];
+  private gates = new Map<
+    number,
+    { entered: Deferred; release: Deferred; failure?: Error }
+  >();
+
+  block(sequenceNumber: number, failure?: Error): Deferred {
+    const entered = deferred();
+    this.gates.set(sequenceNumber, {
+      entered,
+      release: deferred(),
+      failure,
+    });
+    return entered;
+  }
+
+  release(sequenceNumber: number): void {
+    const gate = this.gates.get(sequenceNumber);
+    if (!gate) throw new Error(`No store gate for sequence ${sequenceNumber}`);
+    gate.release.resolve();
+  }
+
+  override async store(
+    ...args: Parameters<PublicationStore["store"]>
+  ): ReturnType<PublicationStore["store"]> {
+    const sequenceNumber = args[0].sequenceNumber;
+    this.entered.push(sequenceNumber);
+    const gate = this.gates.get(sequenceNumber);
+    if (gate) {
+      gate.entered.resolve();
+      await gate.release.promise;
+      this.gates.delete(sequenceNumber);
+      if (gate.failure) throw gate.failure;
+    }
+    return super.store(...args);
+  }
+}
+
 // ============================================================
 // 1. Read-only server
 // ============================================================
@@ -3963,7 +4019,7 @@ describe("Phase 4: third negative set", () => {
 // 32. LOCK-1: 20-iteration concurrency
 // ============================================================
 describe("LOCK-1: 20-iteration concurrency", () => {
-  it("three overlapping same-list produce 1,2,3 in order (20 iterations)", async () => {
+  it("serializes A, B and C at the immutable-store boundary (20 iterations)", async () => {
     for (let iter = 0; iter < 20; iter++) {
       const authDir = tmpDir();
       const pubDir = tmpDir();
@@ -3995,7 +4051,7 @@ describe("LOCK-1: 20-iteration concurrency", () => {
         await import("../src/core/authoring/signing-config.js")
       ).loadSigningConfig(cfgPath);
       const as = new AuthoringStore({ authoringDir: authDir });
-      const ps = new PublicationStore({ publicationDir: pubDir });
+      const ps = new GatedPublicationStore({ publicationDir: pubDir });
       const svc = new ApplicationService(as, ps, sc);
       try {
         const A = makeApp(as, "A", `https://lock.test/a/${iter}`);
@@ -4004,27 +4060,48 @@ describe("LOCK-1: 20-iteration concurrency", () => {
         as.save(A);
         as.save(B);
         as.save(C);
-        await svc.publishApplication(A.id);
-        const [rB, rC] = await Promise.all([
-          svc.publishApplication(B.id),
-          svc.publishApplication(C.id),
+        const aEntered = ps.block(1);
+        const publishA = svc.publishApplication(A.id);
+        await aEntered.promise;
+
+        const publishB = svc.publishApplication(B.id);
+        expect(ps.entered, `iter ${iter}: B must remain queued`).toEqual([1]);
+
+        const bEntered = ps.block(2);
+        ps.release(1);
+        const rA = await publishA;
+        expect(rA.success).toBe(true);
+
+        // B was queued before A released, so its store call now reaches gate 2.
+        await bEntered.promise;
+        const publishC = svc.publishApplication(C.id);
+        expect(ps.entered, `iter ${iter}: C must remain queued`).toEqual([
+          1, 2,
         ]);
-        expect(rB.success, "iter " + iter + " B").toBe(true);
-        expect(rC.success, "iter " + iter + " C").toBe(true);
-        const sB = (rB as any).data.publication.sequenceNumber;
-        const sC = (rC as any).data.publication.sequenceNumber;
-        expect(sB).not.toBe(sC);
-        const hi = Math.max(sB, sC);
-        const doc = JSON.parse(
-          (await ps.loadVersionBytes("eu_test_authority", hi, "lote"))!,
+        expect(
+          await ps.loadVersionBytes("eu_test_authority", 3, "lote"),
+        ).toBeNull();
+
+        ps.release(2);
+        const [rB, rC] = await Promise.all([publishB, publishC]);
+        expect(rB.success, `iter ${iter}: B`).toBe(true);
+        expect(rC.success, `iter ${iter}: C`).toBe(true);
+        const index = await ps.loadIndex("eu_test_authority");
+        expect(index!.versions.map((v) => v.sequenceNumber)).toEqual([1, 2, 3]);
+        for (const sequence of [1, 2, 3]) {
+          const doc = JSON.parse(
+            (await ps.loadVersionBytes("eu_test_authority", sequence, "lote"))!,
+          );
+          expect(doc.LoTE.TrustedEntitiesList.length).toBe(sequence);
+        }
+        const finalDoc = JSON.parse(
+          (await ps.loadVersionBytes("eu_test_authority", 3, "lote"))!,
         );
-        expect(doc.LoTE.TrustedEntitiesList.length).toBe(3);
-        const n = doc.LoTE.TrustedEntitiesList.map(
-          (e: any) => e.TrustedEntityInformation.TEName[0].value,
-        );
-        expect(n[0]).toBe("Entity A");
-        expect(n).toContain("Entity B");
-        expect(n).toContain("Entity C");
+        expect(
+          finalDoc.LoTE.TrustedEntitiesList.map(
+            (e: any) => e.TrustedEntityInformation.TEName[0].value,
+          ),
+        ).toEqual(["Entity A", "Entity B", "Entity C"]);
       } finally {
         try {
           rmSync(pubDir, { recursive: true, force: true });
@@ -4044,7 +4121,7 @@ describe("LOCK-1: 20-iteration concurrency", () => {
 // LOCK-2: Failed middle releases queue (20 iterations)
 // ============================================================
 describe("LOCK-2: Failed middle releases queue", () => {
-  it("20 iterations: C at seq 2 after B dup fails", async () => {
+  it("rejects a blocked middle store operation and releases C (20 iterations)", async () => {
     for (let iter = 0; iter < 20; iter++) {
       const authDir = tmpDir();
       const pubDir = tmpDir();
@@ -4076,24 +4153,41 @@ describe("LOCK-2: Failed middle releases queue", () => {
         await import("../src/core/authoring/signing-config.js")
       ).loadSigningConfig(cfgPath);
       const as = new AuthoringStore({ authoringDir: authDir });
-      const ps = new PublicationStore({ publicationDir: pubDir });
+      const ps = new GatedPublicationStore({ publicationDir: pubDir });
       const svc = new ApplicationService(as, ps, sc);
       try {
         const A = makeApp(as, "A", `https://lock2.test/a/${iter}`);
         as.save(A);
         await svc.publishApplication(A.id);
-        const B = makeApp(as, "B", `https://lock2.test/a/${iter}`); // dup
+        const B = makeApp(as, "B", `https://lock2.test/b/${iter}`);
         const C = makeApp(as, "C", `https://lock2.test/c/${iter}`);
         as.save(B);
         as.save(C);
-        const [rB, rC] = await Promise.all([
-          svc.publishApplication(B.id),
-          svc.publishApplication(C.id),
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", onUnhandled);
+        const bEntered = ps.block(
+          2,
+          new Error("injected middle store failure"),
+        );
+        const publishB = svc.publishApplication(B.id);
+        await bEntered.promise;
+        const publishC = svc.publishApplication(C.id);
+        expect(ps.entered, `iter ${iter}: C must remain queued`).toEqual([
+          1, 2,
         ]);
+        ps.release(2);
+        const rB = await publishB;
         expect(rB.success).toBe(false);
-        expect(rC.success).toBe(true);
         expect(B.state).toBe("approved");
+        expect(
+          await ps.loadVersionBytes("eu_test_authority", 2, "lote"),
+        ).toBeNull();
+        const rC = await publishC;
+        process.off("unhandledRejection", onUnhandled);
+        expect(rC.success).toBe(true);
         expect((rC as any).data.publication.sequenceNumber).toBe(2);
+        expect(unhandled).toEqual([]);
         const doc = JSON.parse(
           (await ps.loadVersionBytes("eu_test_authority", 2, "lote"))!,
         );
@@ -4273,14 +4367,28 @@ describe("PARTIAL-1: Structured partial-commit", () => {
       as.save = () => {
         throw new Error("injected");
       };
-      const r = await svc.publishApplication(A.id);
+      const result = await svc.publishApplication(A.id);
       as.save = orig;
-      expect(r.success).toBe(false);
-      const pc = r as any;
-      expect(pc.code).toBe("PUBLICATION_COMMITTED_APPLICATION_STALE");
-      expect(pc.publication).toBeDefined();
-      expect(pc.publication.listKey).toBe("eu_test_authority");
-      expect(pc.publication.sequenceNumber).toBe(1);
+      expect(result.success).toBe(false);
+      if (!result.success && "code" in result) {
+        const code: "PUBLICATION_COMMITTED_APPLICATION_STALE" = result.code;
+        expect(code).toBe("PUBLICATION_COMMITTED_APPLICATION_STALE");
+        expect(result.publication.sequenceNumber).toBe(1);
+        const manifest = await ps.loadManifest("eu_test_authority", 1);
+        expect(manifest).toBeTruthy();
+        const storedManifest = JSON.stringify(manifest, null, 2);
+        expect(result.publication.manifestSha256).toBe(
+          createHash("sha256").update(storedManifest).digest("hex"),
+        );
+        expect(result.publication.compactJadesSha256).toBe(
+          manifest!.compactJadesSha256,
+        );
+        expect(result.publication.publicationTimestamp).toBe(
+          manifest!.publicationTimestamp,
+        );
+      } else {
+        throw new Error("Expected typed partial-commit result");
+      }
       expect(as.load(A.id)!.state).toBe("approved");
       const rec = await svc.reconcileApplication(A.id);
       expect(rec.success).toBe(true);
@@ -4475,7 +4583,7 @@ describe("UNIQUE + FAILURE-1 + CORRUPT", () => {
     }
   });
 
-  it("FAILURE-1: real pre-commit failure with FsOps injection, lock released", async () => {
+  it("FAILURE-1: injected store failure before immutable commit leaves bytes unchanged", async () => {
     const pubDir = tmpDir();
     const authDir = tmpDir();
     const cfgPath = join(tmpdir(), "sc-" + randomUUID().slice(0, 8) + ".json");
@@ -4507,7 +4615,7 @@ describe("UNIQUE + FAILURE-1 + CORRUPT", () => {
       const A = makeApp(as, "A", "https://fc-a-domain.svc");
       as.save(A);
       // First publish with real store
-      const psReal = new PublicationStore({ publicationDir: pubDir });
+      const psReal = new GatedPublicationStore({ publicationDir: pubDir });
       const svcReal = new ApplicationService(as, psReal, sc);
       const rA = await svcReal.publishApplication(A.id);
       expect(rA.success).toBe(true);
@@ -4528,19 +4636,41 @@ describe("UNIQUE + FAILURE-1 + CORRUPT", () => {
         1,
         "manifest",
       ))!;
+      const i1 = readFileSync(psReal.indexPath("eu_test_authority"), "utf-8");
 
-      // B's duplicate-based rejection proves lock release after preparation failure
-      const B = makeApp(as, "B", "https://fc-a-domain.svc"); // duplicate
+      // Fail the actual immutable store operation before it calls super.store().
+      const B = makeApp(as, "B", "https://fc-b-domain.svc");
       as.save(B);
-      const rB = await svcReal.publishApplication(B.id);
+      const bEntered = psReal.block(
+        2,
+        new Error("injected pre-commit failure"),
+      );
+      const publishingB = svcReal.publishApplication(B.id);
+      await bEntered.promise;
+      psReal.release(2);
+      const rB = await publishingB;
       expect(rB.success).toBe(false);
       expect(B.state).toBe("approved");
       expect(
         await psReal.loadVersionBytes("eu_test_authority", 2, "lote"),
       ).toBeNull();
       expect(
+        (await psReal.loadIndex("eu_test_authority"))!.versions.map(
+          (version) => version.sequenceNumber,
+        ),
+      ).toEqual([1]);
+      expect(
         await psReal.loadVersionBytes("eu_test_authority", 1, "lote"),
       ).toBe(l1);
+      expect(
+        await psReal.loadVersionBytes("eu_test_authority", 1, "signature"),
+      ).toBe(j1);
+      expect(
+        await psReal.loadVersionBytes("eu_test_authority", 1, "manifest"),
+      ).toBe(m1);
+      expect(readFileSync(psReal.indexPath("eu_test_authority"), "utf-8")).toBe(
+        i1,
+      );
 
       // C publishes at seq 2 — proves lock released after B's failure
       const C = makeApp(as, "C", "https://fc-c-domain.svc");
@@ -4551,12 +4681,6 @@ describe("UNIQUE + FAILURE-1 + CORRUPT", () => {
       expect(
         await psReal.loadVersionBytes("eu_test_authority", 1, "lote"),
       ).toBe(l1);
-      expect(
-        await psReal.loadVersionBytes("eu_test_authority", 1, "signature"),
-      ).toBe(j1);
-      expect(
-        await psReal.loadVersionBytes("eu_test_authority", 1, "manifest"),
-      ).toBe(m1);
     } finally {
       try {
         rmSync(pubDir, { recursive: true, force: true });

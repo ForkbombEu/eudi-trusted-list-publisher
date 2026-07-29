@@ -98,5 +98,6 @@ export {
   type SubmissionParseResult,
   type ServiceResult,
   type PublishResult,
+  type PublishApplicationResult,
   type PartialCommitResult,
 } from "./authoring/index.js";

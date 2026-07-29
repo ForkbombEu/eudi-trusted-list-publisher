@@ -47,6 +47,10 @@ export interface PartialCommitResult {
   };
 }
 
+/** The complete public outcome of publishing an approved application. */
+export type PublishApplicationResult =
+  ServiceResult<WalletProviderApplication> | PartialCommitResult;
+
 export interface PublishResult {
   listKey: string;
   sequenceNumber: number;
@@ -236,7 +240,7 @@ export class ApplicationService {
   async publishApplication(
     id: string,
     clock?: Date,
-  ): Promise<ServiceResult<WalletProviderApplication>> {
+  ): Promise<PublishApplicationResult> {
     const app = this.getApplication(id);
     if (!app) return { success: false, error: "Application not found." };
     if (!canTransition(app.state, "published")) {
@@ -254,7 +258,7 @@ export class ApplicationService {
   private async doPublish(
     app: WalletProviderApplication,
     clock?: Date,
-  ): Promise<ServiceResult<WalletProviderApplication>> {
+  ): Promise<PublishApplicationResult> {
     const listEntry = this.resolveListConfig(app);
     if (!listEntry) {
       return {

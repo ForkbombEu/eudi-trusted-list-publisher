@@ -115,6 +115,31 @@ immutable publication store (`PUBLICATION_DIR`). Applications track their
 lifecycle state (`submitted` → `approved` → `published`) and record the
 resulting publication metadata.
 
+## Cumulative publication behaviour
+
+Each list key is an independent cumulative sequence: publishing an approved
+application creates the next immutable document containing every entity from
+the highest physically stored, authenticated version plus the new entity. The
+highest physical version is the fail-closed source of truth; a corrupt or
+unrepresentable highest version blocks both preview and publication.
+
+The publisher either preserves existing entity data semantically on the next
+compile or rejects the operation before a new version is written. Service
+unique identifiers are unique within a list key, including across services;
+the same identifier may occur in a different list key.
+
+Publication is serialized per list key within this process only. It does not
+coordinate multiple publisher processes. Preview exposes the current and
+proposed sequence numbers plus existing and resulting entity counts.
+
+If immutable storage succeeds but saving the mutable application record fails,
+`publishApplication()` returns the typed
+`PUBLICATION_COMMITTED_APPLICATION_STALE` result. Reconciliation verifies the
+stored entity and manifest and updates the application without creating a new
+version.
+
+Wallet Providers are the only implemented list family.
+
 ## Environment variables
 
 | Variable | Used by | Default |

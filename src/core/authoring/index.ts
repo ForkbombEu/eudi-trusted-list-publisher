@@ -39,6 +39,7 @@ export {
   ApplicationService,
   type ServiceResult,
   type PublishResult,
+  type PublishApplicationResult,
   type PreviewResult,
   type PartialCommitResult,
 } from "./application-service.js";
