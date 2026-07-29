@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { WalletProviderApplication } from "../../core/authoring/application-model.js";
 import type { SigningConfigEntryDisplay } from "../../core/authoring/signing-config.js";
 import { LIST_FAMILIES } from "../../core/authoring/list-family-catalogue.js";

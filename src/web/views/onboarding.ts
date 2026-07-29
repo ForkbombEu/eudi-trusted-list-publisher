@@ -194,6 +194,30 @@ export function walletProviderFormHtml(
 `;
 }
 
+export function pidProviderFormHtml(
+  values?: Record<string, string>,
+  errors?: Record<string, string>,
+  listOptions?: ListOption[],
+): string {
+  const v = values ?? {};
+  const fieldError = errors?.responsibleMemberState
+    ? `<span class="field-error">${escape(errors.responsibleMemberState)}</span>`
+    : "";
+  return walletProviderFormHtml(v, errors, listOptions)
+    .replace("Wallet Provider Application", "PID Provider Application")
+    .replace(/\/onboarding\/wallet-provider/g, "/onboarding/pid-provider")
+    .replace(
+      '<div class="card">\n    <h2>Entity Information</h2>',
+      `<div class="card">\n    <h2>Entity Information</h2>
+    <div class="form-group">
+      <label for="responsibleMemberState">Responsible Member State <span class="required">*</span></label>
+      <input type="text" id="responsibleMemberState" name="responsibleMemberState" required maxlength="2" pattern="[A-Z]{2}" value="${escape(v.responsibleMemberState ?? "")}">
+      <span class="field-help">ISO 3166-1 alpha-2 Member State responsible for this PID provider.</span>
+      ${fieldError}
+    </div>`,
+    );
+}
+
 function renderAllServices(
   v: Record<string, string>,
   errs?: Record<string, string>,

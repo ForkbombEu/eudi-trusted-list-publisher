@@ -74,6 +74,21 @@ Retrieval date: 2026-07-28. Tests must never fetch schemas from the network.
 - Next update maximum: 6 months from issue time
 - Signature: Compact JAdES Baseline B
 
+## PID Provider Profile (Annex D)
+
+ETSI TS 119 602 V1.1.1 Annex D is the normative PID source. Table D.1 fixes
+the LoTE type to `http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList`, the
+status-determination URI to
+`http://uri.etsi.org/19602/PIDProvidersList/StatusDetn/EU`, and the scheme
+rules URI to `http://uri.etsi.org/19602/PIDProviders/schemerules/EU`; it also
+sets EU territory, omits historical information, and limits NextUpdate to six
+months. Table D.3 exclusively permits `SvcType/PID/Issuance` and
+`SvcType/PID/Revocation`, requires X.509 service identity, and prohibits
+ServiceStatus and StatusStartingTime. Annex D.4 requires Compact JAdES Baseline
+B. This implementation uses the existing explicit authoring fields for the
+Annex D service semantics and requires a responsible Member State on PID
+applications; that latter form field is a project-local authoring choice.
+
 ## WE BUILD Compatibility Findings
 
 ### Divergence from claimed profile

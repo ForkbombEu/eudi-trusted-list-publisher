@@ -115,30 +115,49 @@ immutable publication store (`PUBLICATION_DIR`). Applications track their
 lifecycle state (`submitted` → `approved` → `published`) and record the
 resulting publication metadata.
 
-## Cumulative publication behaviour
+## Cumulative publication semantics
 
-Each list key is an independent cumulative sequence: publishing an approved
-application creates the next immutable document containing every entity from
-the highest physically stored, authenticated version plus the new entity. The
-highest physical version is the fail-closed source of truth; a corrupt or
-unrepresentable highest version blocks both preview and publication.
+Phase 4 publishes cumulative membership independently for each configured list
+key. A successful publication adds one approved Wallet Provider entity to the
+latest authenticated list and creates the next immutable sequence; it does not
+replace earlier entities.
 
-The publisher either preserves existing entity data semantically on the next
-compile or rejects the operation before a new version is written. Service
-unique identifiers are unique within a list key, including across services;
-the same identifier may occur in a different list key.
+- The highest physically stored sequence directory is authoritative. If that
+  sequence is corrupt or unauthenticated, preview and publication fail closed
+  instead of falling back to an older version.
+- Every existing authenticated entity is converted to the authoring model and
+  compiled back before reuse. The complete entity must survive that semantic
+  round trip, otherwise preview and publication reject the first differing
+  field path before signing or filesystem writes.
+- Service unique identifiers must be unique within one list key, across all
+  services and entities. The same identifier may be used in a different list
+  key, and display names are not uniqueness keys.
+- Publication is serialized by a process-local keyed lock. Different list keys
+  remain independent, but this lock does not coordinate multiple Node.js
+  processes or hosts sharing one publication directory.
+- Immutable publication commit and mutable application-state update are
+  separate boundaries. If the immutable commit succeeds but the application
+  save fails, `publishApplication()` returns the typed
+  `PUBLICATION_COMMITTED_APPLICATION_STALE` result with hashes, sequence and
+  timestamp. `reconcileApplication()` repairs the application record without
+  creating another list version.
+- The authenticated admin application-detail route renders existing/resulting
+  entity counts and current/proposed sequences before publication.
 
-Publication is serialized per list key within this process only. It does not
-coordinate multiple publisher processes. Preview exposes the current and
-proposed sequence numbers plus existing and resulting entity counts.
+Wallet Providers remain the only implemented list family. The other catalogue
+families are visible in the GUI but are not accepted for authoring or
+publication.
 
-If immutable storage succeeds but saving the mutable application record fails,
-`publishApplication()` returns the typed
-`PUBLICATION_COMMITTED_APPLICATION_STALE` result. Reconciliation verifies the
-stored entity and manifest and updates the application without creating a new
-version.
+## Phase 5 profiles
 
-Wallet Providers are the only implemented list family.
+The immutable profile registry explicitly selects profiles at compile,
+configuration, publication, and reconciliation boundaries. Wallet Providers and
+PID Providers are enabled; Non-qualified EAA, QEAA, WRPAC, WRPRC, and Registrars
+remain disabled. PID onboarding is available at `/onboarding/pid-provider`.
+Every configured list key declares `family`, and cumulative publication rejects
+an authenticated existing LoTE whose type conflicts with that family. Internal
+schema/signature checks are publication safety boundaries, not external trust
+or regulatory-conformance evaluation.
 
 ## Environment variables
 

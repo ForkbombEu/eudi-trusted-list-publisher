@@ -51,10 +51,24 @@ directly — the GUI does not duplicate or reimplement Phase 1/2 logic.
 Testing-tool notices ("This is a test/debug fixture publisher") are displayed
 on all onboarding and administration pages.
 
-## Cumulative preview presentation
+## Phase 4 cumulative preview
 
-The application detail page presents cumulative publication metadata for an
-approved application: existing entities, resulting entities, current sequence,
-and proposed sequence. This is display-only; immutable publication, semantic
-round-trip preservation, per-list process-local serialization, and typed
-partial-commit reconciliation remain core-library behaviour.
+The authenticated application-detail page presents cumulative publication
+metadata in a dedicated key/value card:
+
+- Existing Entities
+- Resulting Entities
+- Current Sequence
+- Proposed Sequence
+
+These values come from the same preparation operation used by publication. The
+preview card must remain visible for approved Wallet Provider applications and
+must report conversion or authentication failures instead of showing a
+plausible fallback sequence.
+
+## Phase 5 profile-aware administration
+
+PID Provider onboarding uses the existing application shell, form, preview, and
+administration patterns. The catalogue shows Wallet and PID Providers as
+available, while the five remaining families remain visibly disabled. No new
+visual system or canonical HITL asset is introduced.

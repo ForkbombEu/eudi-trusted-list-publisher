@@ -260,6 +260,7 @@ src/web/assets/credimi_logo.svg       — byte-for-byte copy of HITL/credimi_log
 src/web/assets/credimi_logo_negative.svg — byte-for-byte copy of HITL/credimi_logo_negative.svg
 src/web/assets/app.css                — application-specific layout
 src/web/assets/openapi.yaml           — OpenAPI 3.1 specification
+```
 
 ## Phase 3: Data collection and administration GUI
 
@@ -376,23 +377,79 @@ The publishing integration calls the existing Phase 1/2 core functions directly:
 
 No CLI subprocess spawning. No duplicate compiler/signer/storage logic.
 
-### Cumulative authoring publication
+## Phase 4: cumulative Wallet Provider publication
 
-Wallet Providers are the only implemented family. A publication is cumulative
-per list key: the next document contains all entities from the highest
-physically stored authenticated version plus the candidate. The physical
-highest sequence is authoritative and fail-closed; corrupt or non-losslessly
-representable data prevents preview and publication.
+Phase 4 extends the administration service without adding another list family.
+Wallet Providers are still the only implemented family.
 
-Existing entities are semantically round-tripped through the authoring model
-or the operation is rejected before storage. Service unique identifiers are
-unique within one list key, not globally. The application service serializes
-work per list key in-process only; deployments with multiple processes require
-an external coordination mechanism.
+### Per-list cumulative assembly
 
-Preview reports existing/resulting entity counts and current/proposed sequence.
-When immutable storage commits but mutable application persistence fails,
-`publishApplication()` returns the public typed partial-commit outcome
-`PUBLICATION_COMMITTED_APPLICATION_STALE`; reconciliation updates only the
-application record and must not create another version.
+`ApplicationService.preparePublishInput()` loads the highest physically stored
+sequence for the target list key, authenticates it, converts all existing
+entities and appends the approved candidate. Sequence numbers and membership
+are independent per list key.
+
+The highest stored sequence is fail-closed authority. A corrupt highest
+directory blocks preview and publication; the service never falls back to an
+older authenticated sequence.
+
+### Lossless conversion boundary
+
+Existing authenticated entities pass through one authoritative semantic
+round-trip check:
+
+1. convert the complete ETSI `TrustedEntity` to `AuthoringEntity`;
+2. compile it back to ETSI;
+3. deep-compare the complete original and recompiled entities;
+4. reject the first differing field path before signing or storage.
+
+Fields supported by the authoring/compiler model are preserved. Valid ETSI
+structures outside that model are rejected explicitly rather than silently
+deleted.
+
+### Concurrency and identifier scope
+
+`ApplicationService` uses a process-local keyed promise queue. Operations for
+one list key are serialized, including queue continuation after a failed store
+operation. Different keys may progress concurrently. This is not a distributed
+lock and does not protect multiple Node.js processes or hosts sharing the same
+publication directory.
+
+Service unique identifiers are unique within a list key across every service
+of every entity. Duplicate display names are permitted. An identifier may be
+reused in another list key.
+
+### Commit boundary and reconciliation
+
+The immutable `PublicationStore.store()` commit precedes the mutable
+`AuthoringStore.save()` transition to `published`. If the immutable commit
+succeeds and the mutable save fails, the public return type is:
+
+```ts
+type PublishApplicationResult =
+  | ServiceResult<WalletProviderApplication>
+  | PartialCommitResult;
 ```
+
+`PartialCommitResult` has code
+`PUBLICATION_COMMITTED_APPLICATION_STALE` and machine-readable list key,
+sequence number, manifest hash, Compact JAdES hash and publication timestamp.
+Reconciliation matches the application's complete service-identifier set to
+one published entity and updates only mutable application metadata; it does not
+create a new immutable version.
+
+### Rendered preview
+
+The authenticated admin detail route uses the same cumulative preparation
+operation to render existing/resulting entity counts and current/proposed
+sequence numbers.
+
+## Phase 5: profile registry and PID Providers
+
+`src/core/profiles/registry.ts` is the authoritative immutable mapping of list
+families, profile URIs, service types, and update intervals. Wallet and PID
+Providers are enabled; five families remain disabled. Every signing-config list
+requires `family`, which is never inferred or silently changed. PID uses
+`/onboarding/pid-provider` and the shared administration, cumulative
+publication, and partial-commit reconciliation paths. Schema and signature
+checks remain internal safety boundaries rather than external trust assessment.

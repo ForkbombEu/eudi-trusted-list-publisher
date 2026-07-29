@@ -16,12 +16,8 @@ import type {
   PostalAddress,
   PkiOb,
 } from "../model/types.js";
-import {
-  WALLET_PROVIDER_LOTE_TYPE,
-  WALLET_PROVIDER_STATUS_DETN,
-  WALLET_PROVIDER_SCHEME_RULES,
-  LOTE_VERSION_IDENTIFIER,
-} from "../profiles/wallet-provider/constants.js";
+import { LOTE_VERSION_IDENTIFIER } from "../profiles/wallet-provider/constants.js";
+import { getProfile, type ProfileFamily } from "../profiles/registry.js";
 
 export interface CompileResult {
   document: LoTEDocument;
@@ -116,11 +112,27 @@ function compileEntity(entity: AuthoringEntity): TrustedEntity {
   };
 }
 
-export function compile(input: AuthoringInput): CompileResult {
+export function compileForProfile(
+  family: ProfileFamily,
+  input: AuthoringInput,
+): CompileResult {
+  const profile = getProfile(family);
+  if (!profile.loTEType || !profile.statusDeterminationApproach || !profile.schemeRules) {
+    throw new Error(`Profile ${family} has incomplete compilation metadata.`);
+  }
+  for (const entity of input.entities) {
+    for (const service of entity.services) {
+      if (!profile.allowedServiceTypes.includes(service.serviceTypeIdentifier)) {
+        throw new Error(
+          `Service type '${service.serviceTypeIdentifier}' is not allowed for ${profile.label}.`,
+        );
+      }
+    }
+  }
   const schemeInfo: ListAndSchemeInformation = {
     LoTEVersionIdentifier: LOTE_VERSION_IDENTIFIER,
     LoTESequenceNumber: input.loTESequenceNumber,
-    LoTEType: WALLET_PROVIDER_LOTE_TYPE,
+    LoTEType: profile.loTEType,
     SchemeOperatorName: toMultiLang(input.schemeOperator.name),
     SchemeOperatorAddress: {
       SchemeOperatorPostalAddress: toPostalAddress(
@@ -131,9 +143,9 @@ export function compile(input: AuthoringInput): CompileResult {
       ),
     },
     SchemeName: toMultiLang(input.scheme.schemeName),
-    StatusDeterminationApproach: WALLET_PROVIDER_STATUS_DETN,
+    StatusDeterminationApproach: profile.statusDeterminationApproach,
     SchemeTypeCommunityRules: [
-      { lang: "en", uriValue: WALLET_PROVIDER_SCHEME_RULES },
+      { lang: "en", uriValue: profile.schemeRules },
     ],
     SchemeTerritory: input.scheme.schemeTerritory,
     ListIssueDateTime: input.listIssueDateTime,
@@ -161,4 +173,9 @@ export function compile(input: AuthoringInput): CompileResult {
   const document: LoTEDocument = { LoTE: lote };
 
   return { document };
+}
+
+/** Backward-compatible Wallet Provider compiler entry point. */
+export function compile(input: AuthoringInput): CompileResult {
+  return compileForProfile("wallet-providers", input);
 }
