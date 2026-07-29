@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   createServer,
   type IncomingMessage,
@@ -17,6 +16,8 @@ import {
   signingConfigDisplay,
   ApplicationService,
   type SigningConfig,
+  type PIDProviderApplicantData,
+  type WalletProviderApplicantData,
 } from "../core/authoring/index.js";
 
 const MIME: Record<string, string> = {
@@ -1223,17 +1224,22 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
                 {},
                 {},
                 signingConfig
-                  ? getFamilyConfigs(signingConfig, "pid-providers").map((entry) => ({
-                      key: entry.listKey,
-                      label: `${entry.schemeOperatorName} (${entry.listKey})`,
-                    }))
+                  ? getFamilyConfigs(signingConfig, "pid-providers").map(
+                      (entry) => ({
+                        key: entry.listKey,
+                        label: `${entry.schemeOperatorName} (${entry.listKey})`,
+                      }),
+                    )
                   : [],
               ),
             ),
           );
           logRequest("GET", path, 200, requestId);
         })
-        .catch(() => { send500(res, requestId); logRequest("GET", path, 500, requestId); });
+        .catch(() => {
+          send500(res, requestId);
+          logRequest("GET", path, 500, requestId);
+        });
       return;
     }
 
@@ -1399,14 +1405,20 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
   ): void {
     if (!appService) {
       send500(res, requestId);
-      logRequest("POST", `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`, 500, requestId);
+      logRequest(
+        "POST",
+        `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`,
+        500,
+        requestId,
+      );
       return;
     }
 
     const fields = parseFormBody(body);
 
     let targetListKey = fields["targetListKey"] ?? "";
-    const configuredLists = family === "pid-providers" ? pidProviderLists : walletProviderLists;
+    const configuredLists =
+      family === "pid-providers" ? pidProviderLists : walletProviderLists;
     if (!targetListKey && configuredLists.length === 1) {
       targetListKey = configuredLists[0]!;
     }
@@ -1426,8 +1438,12 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
             res,
             400,
             guiPage(
-              family === "pid-providers" ? "PID Provider Application" : "Wallet Provider Application",
-              (family === "pid-providers" ? mod.pidProviderFormHtml : mod.walletProviderFormHtml)(
+              family === "pid-providers"
+                ? "PID Provider Application"
+                : "Wallet Provider Application",
+              (family === "pid-providers"
+                ? mod.pidProviderFormHtml
+                : mod.walletProviderFormHtml)(
                 formValues,
                 errMap,
                 signingConfig
@@ -1439,20 +1455,67 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
               ),
             ),
           );
-          logRequest("POST", `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`, 400, requestId);
+          logRequest(
+            "POST",
+            `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`,
+            400,
+            requestId,
+          );
         })
         .catch(() => {
           send500(res, requestId);
-          logRequest("POST", `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`, 500, requestId);
+          logRequest(
+            "POST",
+            `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`,
+            500,
+            requestId,
+          );
         });
       return;
     }
 
-    const app = appService.createApp(targetListKey, result.applicantData!, family);
+    const applicantData = result.applicantData;
+    const app =
+      family === "pid-providers"
+        ? isPidApplicantData(applicantData)
+          ? appService.createApp(targetListKey, applicantData, "pid-providers")
+          : (() => {
+              throw new Error(
+                "PID Provider submission did not produce PID applicant data.",
+              );
+            })()
+        : isWalletApplicantData(applicantData)
+          ? appService.createApp(
+              targetListKey,
+              applicantData,
+              "wallet-providers",
+            )
+          : (() => {
+              throw new Error(
+                "Wallet Provider submission did not produce Wallet applicant data.",
+              );
+            })();
 
     res.writeHead(303, { Location: `/onboarding/submitted/${app.id}` });
     res.end();
-    logRequest("POST", `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`, 303, requestId);
+    logRequest(
+      "POST",
+      `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`,
+      303,
+      requestId,
+    );
+  }
+
+  function isPidApplicantData(
+    applicantData: WalletProviderApplicantData | PIDProviderApplicantData,
+  ): applicantData is PIDProviderApplicantData {
+    return "responsibleMemberState" in applicantData;
+  }
+
+  function isWalletApplicantData(
+    applicantData: WalletProviderApplicantData | PIDProviderApplicantData,
+  ): applicantData is WalletProviderApplicantData {
+    return !("responsibleMemberState" in applicantData);
   }
 
   function redirectWithParams(

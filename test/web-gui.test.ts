@@ -8,6 +8,14 @@ import type { ServerConfig } from "../src/web/server.js";
 import type { IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { LIST_FAMILIES } from "../src/core/authoring/list-family-catalogue.js";
+import type {
+  PIDProviderApplication,
+  WalletProviderApplication,
+} from "../src/core/authoring/application-model.js";
+import {
+  adminApplicationDetailHtml,
+  adminApplicationsHtml,
+} from "../src/web/views/admin.js";
 
 function extractCookie(setCookieHeaders: string[]): string {
   return setCookieHeaders.map((h) => h.split(";")[0]!).join("; ");
@@ -162,6 +170,86 @@ function encodeForm(data: Record<string, string>): string {
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join("&");
 }
+
+const walletAdminApplication: WalletProviderApplication = {
+  id: "wallet-admin-application",
+  schemaVersion: 1,
+  family: "wallet-providers",
+  targetListKey: "wallet-list",
+  state: "approved",
+  submittedAt: "2026-07-29T12:00:00Z",
+  applicantData: {
+    entityName: "Wallet Admin Ltd",
+    entityStreetAddress: "1 Wallet Way",
+    entityCountry: "DK",
+    entityInformationURI: "https://wallet.example",
+    services: [
+      {
+        serviceType: "issuance",
+        serviceName: "Wallet issuance",
+        certificatePem: TEST_CERT,
+        serviceUniqueIdentifier: "https://wallet.example/services/issuance",
+      },
+    ],
+  },
+};
+
+const pidAdminApplication: PIDProviderApplication = {
+  id: "pid-admin-application",
+  schemaVersion: 1,
+  family: "pid-providers",
+  targetListKey: "pid-list",
+  state: "approved",
+  submittedAt: "2026-07-29T12:00:00Z",
+  applicantData: {
+    entityName: "PID Admin Ltd",
+    entityStreetAddress: "2 PID Place",
+    entityCountry: "DK",
+    entityInformationURI: "https://pid.example",
+    responsibleMemberState: "<DK & Co",
+    services: [
+      {
+        serviceType: "issuance",
+        serviceName: "PID issuance",
+        certificatePem: TEST_CERT,
+        serviceUniqueIdentifier: "https://pid.example/services/issuance",
+      },
+    ],
+  },
+};
+
+describe("profile-aware admin rendering", () => {
+  it("renders Wallet and PID applications through the shared list and detail views", () => {
+    const list = adminApplicationsHtml([
+      walletAdminApplication,
+      pidAdminApplication,
+    ]);
+    const walletDetail = adminApplicationDetailHtml(walletAdminApplication);
+    const pidDetail = adminApplicationDetailHtml(
+      pidAdminApplication,
+      undefined,
+      undefined,
+      undefined,
+      {
+        existingEntityCount: 1,
+        resultingEntityCount: 2,
+        currentSequence: 3,
+        proposedSequence: 4,
+      },
+    );
+
+    expect(list).toContain("Wallet Providers");
+    expect(list).toContain("PID Providers");
+    expect(walletDetail).toContain("Wallet Providers");
+    expect(pidDetail).toContain("PID Providers");
+    expect(pidDetail).toContain("Responsible Member State");
+    expect(pidDetail).toContain("&lt;DK &amp; Co");
+    expect(walletDetail).not.toContain("Responsible Member State");
+    expect(pidDetail).toContain("Preview &mdash; Cumulative Publication");
+    expect(pidDetail).toContain("Publish");
+    expect(pidDetail).toContain("Reject");
+  });
+});
 
 describe("GUI disabled by default", () => {
   it("refuses to start GUI without admin token", () => {

@@ -1,5 +1,4 @@
-// @ts-nocheck
-import type { WalletProviderApplication } from "../../core/authoring/application-model.js";
+import type { TrustedEntityApplication } from "../../core/authoring/application-model.js";
 import type { SigningConfigEntryDisplay } from "../../core/authoring/signing-config.js";
 import { LIST_FAMILIES } from "../../core/authoring/list-family-catalogue.js";
 
@@ -26,7 +25,7 @@ export function adminIndexHtml(): string {
 }
 
 export function adminApplicationsHtml(
-  apps: WalletProviderApplication[],
+  apps: TrustedEntityApplication[],
   stateFilter?: string,
 ): string {
   const states = ["submitted", "approved", "rejected", "published"] as const;
@@ -56,8 +55,7 @@ export function adminApplicationsHtml(
 
   let rows = "";
   for (const a of filtered) {
-    const familyLabel =
-      LIST_FAMILIES.find((f) => f.key === a.family)?.label ?? a.family;
+    const familyLabel = familyLabelFor(a);
     rows += `
   <tr>
     <td>${escape(a.id.slice(0, 8))}...</td>
@@ -94,7 +92,7 @@ export interface EtsiStatus {
 }
 
 export function adminApplicationDetailHtml(
-  app: WalletProviderApplication,
+  app: TrustedEntityApplication,
   params?: DetailParams,
   etsiStatus?: EtsiStatus,
   compilerInputJson?: string,
@@ -162,7 +160,7 @@ ${messages}
   <h2>Status</h2>
   <table class="kv-table">
     <tr><th>ID</th><td><code>${escape(app.id)}</code></td></tr>
-    <tr><th>Family</th><td>Wallet Providers</td></tr>
+    <tr><th>Family</th><td>${escape(familyLabelFor(app))}</td></tr>
     <tr><th>Target List Key</th><td><code>${escape(app.targetListKey)}</code></td></tr>
     <tr><th>State</th><td><span class="badge ${stateBadge(app.state)}">${escape(app.state)}</span></td></tr>
     <tr><th>Schema Version</th><td>${app.schemaVersion}</td></tr>
@@ -185,6 +183,11 @@ ${pubInfo}
     ${data.entityPostalCode ? `<tr><th>Postal Code</th><td>${escape(data.entityPostalCode)}</td></tr>` : ""}
     <tr><th>Country</th><td>${escape(data.entityCountry)}</td></tr>
     <tr><th>Information URI</th><td><code>${escape(data.entityInformationURI)}</code></td></tr>
+    ${
+      app.family === "pid-providers"
+        ? `<tr><th>Responsible Member State</th><td>${escape(app.applicantData.responsibleMemberState)}</td></tr>`
+        : ""
+    }
   </table>
 </div>
 
@@ -228,7 +231,7 @@ ${
 `;
 }
 
-function actionsHtml(app: WalletProviderApplication): string {
+function actionsHtml(app: TrustedEntityApplication): string {
   const id = escape(app.id);
 
   switch (app.state) {
@@ -263,7 +266,7 @@ function actionsHtml(app: WalletProviderApplication): string {
   }
 }
 
-function publicationInfoHtml(app: WalletProviderApplication): string {
+function publicationInfoHtml(app: TrustedEntityApplication): string {
   if (!app.publication) return "";
   const p = app.publication;
   return `
@@ -278,6 +281,16 @@ function publicationInfoHtml(app: WalletProviderApplication): string {
     <tr><th>Version Page</th><td><a href="/lists/${escape(p.listKey)}/versions/${p.sequenceNumber}">View Publication</a></td></tr>
   </table>
 </div>`;
+}
+
+function familyLabelFor(app: TrustedEntityApplication): string {
+  const family = LIST_FAMILIES.find(
+    (candidate) => candidate.key === app.family,
+  );
+  if (!family) {
+    throw new Error(`Missing list-family catalogue entry for '${app.family}'.`);
+  }
+  return family.label;
 }
 
 function stateBadge(state: string): string {
