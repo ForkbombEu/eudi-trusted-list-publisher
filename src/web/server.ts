@@ -5,7 +5,7 @@ import {
 } from "node:http";
 import { readFileSync, existsSync, statSync, lstatSync } from "node:fs";
 import { resolve, extname } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 import { PublicationStore } from "../core/publication/store.js";
 import {
@@ -49,6 +49,11 @@ const APPLY_CSS = `
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 `;
 
+/** Nav entries shown on every page when the data-collection GUI is enabled. */
+const GUI_NAV = `
+        <li><a href="/onboarding">Onboarding</a></li>
+        <li><a href="/admin">Admin</a></li>`;
+
 function htmlPage(title: string, body: string, guiNav?: string): string {
   const extraNav = guiNav ?? "";
   return `<!DOCTYPE html>
@@ -60,31 +65,55 @@ function htmlPage(title: string, body: string, guiNav?: string): string {
 ${APPLY_CSS}
 </head>
 <body>
-<header class="topbar">
+<nav class="topbar">
   <div class="topbar-inner">
-    <a href="/" class="logo-link">
-      <img src="/assets/credimi_logo.svg" alt="Credimi" class="logo" height="32">
-      <span class="product-title">Trusted List Publisher</span>
+    <a href="/" class="topbar-logo" aria-label="Credimi Trusted List Publisher home">
+      <img src="/assets/credimi_logo.svg" alt="Credimi">
+      <span class="tlp-product-name">Trusted List Publisher</span>
     </a>
-    <nav class="topbar-nav">
-      <a href="/">Catalogue</a>
-${extraNav}
-      <a href="/docs">API Docs</a>
-      <a href="/openapi.yaml">OpenAPI</a>
-      <a href="https://github.com/ForkbombEu/eudi-trusted-list-publisher">Repository</a>
-    </nav>
+    <ul class="topbar-nav">
+      <li><a href="/">Catalogue</a></li>${extraNav}
+      <li><a href="/docs">API Docs</a></li>
+      <li><a href="/openapi.yaml">OpenAPI</a></li>
+      <li><a href="https://github.com/ForkbombEu/eudi-trusted-list-publisher">Repository</a></li>
+    </ul>
   </div>
-</header>
-<main class="content">
+</nav>
+<div class="page-shell">
+  <div class="page-shell-main">
+    <main class="content page-content">
+      <div class="container">
 ${body}
-</main>
-<footer class="site-footer dark">
+      </div>
+    </main>
+<footer class="footer">
   <div class="footer-inner">
-    <img src="/assets/credimi_logo_negative.svg" alt="Credimi" class="footer-logo" height="24">
-    <p>Credimi &mdash; read-only publication viewer</p>
-    <p>Signer trust status: not evaluated. This tool does not establish PKIX trust.</p>
+    <div class="footer-content">
+      <div class="footer-brand">
+        <img class="tlp-footer-logo" src="/assets/credimi_logo_negative.svg" alt="Credimi">
+        <p>Credimi Trusted List Publisher &mdash; a test/debug fixture publisher for
+        TS 119 602 Lists of Trusted Entities. Read-only publication viewer.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <h5>Explore</h5>
+          <a href="/">Catalogue</a>
+          <a href="/docs">API Docs</a>
+          <a href="/openapi.yaml">OpenAPI</a>
+        </div>
+        <div class="footer-col">
+          <h5>Resources</h5>
+          <a href="https://github.com/ForkbombEu/eudi-trusted-list-publisher">Repository</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer-sub-bar">
+    Signer trust status: not evaluated. This tool does not establish PKIX trust.
   </div>
 </footer>
+  </div>
+</div>
 <script>
 console.log(
   "%cCredimi %cTrusted List Publisher",
@@ -107,7 +136,21 @@ export interface ServerConfig {
   dataCollectionGui?: boolean;
   authoringDir?: string;
   adminToken?: string;
+  adminUser?: string;
+  adminPassword?: string;
   signingConfigPath?: string;
+}
+
+/** Constant-time string comparison that does not leak the compared length. */
+function secretEquals(a: string, b: string): boolean {
+  const ab = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ab.length !== bb.length) {
+    // Still perform a comparison so the timing does not depend on the length.
+    timingSafeEqual(ab, ab);
+    return false;
+  }
+  return timingSafeEqual(ab, bb);
 }
 
 function securityHeaders(): Record<string, string> {
@@ -348,6 +391,14 @@ export function createWebServer(config: ServerConfig) {
   const maxFileBytes = config.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
   const guiEnabled = config.dataCollectionGui === true;
   const adminToken = config.adminToken ?? "";
+  const adminUser = config.adminUser ?? "";
+  const adminPassword = config.adminPassword ?? "";
+  /**
+   * Username/password sign-in is offered only when both ADMIN_USER and
+   * ADMIN_PASSWORD are configured. Otherwise the admin area keeps its
+   * token-only behaviour.
+   */
+  const adminLoginEnabled = adminUser !== "" && adminPassword !== "";
 
   if (guiEnabled && !adminToken) {
     throw new Error(
@@ -380,11 +431,16 @@ export function createWebServer(config: ServerConfig) {
     appService = new ApplicationService(authoringStore, store, signingConfig);
   }
 
+  /**
+   * Every shell page goes through here so the Onboarding and Admin links are
+   * present on the Catalogue and API Docs pages too whenever the GUI is on.
+   */
+  function page(title: string, body: string): string {
+    return htmlPage(title, body, guiEnabled ? GUI_NAV : undefined);
+  }
+
   function guiPage(title: string, body: string): string {
-    const guiNav = `
-      <a href="/onboarding">Onboarding</a>
-      <a href="/admin">Admin</a>`;
-    return htmlPage(title, body, guiNav);
+    return page(title, body);
   }
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -492,6 +548,12 @@ export function createWebServer(config: ServerConfig) {
 
     if (path === "/docs") {
       serveDocs(res);
+      logRequest("GET", path, res.statusCode, requestId);
+      return;
+    }
+
+    if (path === "/docs/reference") {
+      serveDocsReference(res);
       logRequest("GET", path, res.statusCode, requestId);
       return;
     }
@@ -616,27 +678,92 @@ export function createWebServer(config: ServerConfig) {
     }
   }
 
+  /**
+   * The Credimi shell page. The reference itself lives in an isolated document
+   * at /docs/reference so Stoplight's stylesheet cannot reach this page's CSS.
+   */
   function serveDocs(res: ServerResponse): void {
-    const html = htmlPage(
+    const html = page(
       "API Documentation",
       `
-<div class="api-docs">
-  <h1>API Documentation</h1>
-  <p>This is a read-only API for published Wallet Provider LoTEs.</p>
-  <div id="stoplight-elements" style="min-height: 600px;"></div>
-  <script src="https://unpkg.com/@stoplight/elements@7.15.0/web-components.min.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/@stoplight/elements@7.15.0/styles.min.css">
-  <script>
-    StoplightElements.createElement("elements-api", {
-      apiDescriptionUrl: "/openapi.yaml",
-      router: "hash",
-      layout: "sidebar",
-    }, document.getElementById("stoplight-elements"));
-  </script>
+<h1>API Documentation</h1>
+<p class="lead">Wallet Provider and PID Provider LoTE API &mdash; a read-only HTTP API
+over the published Lists of Trusted Entities.</p>
+
+<div class="notice notice-info">
+  <strong>Embedded reference.</strong> The interactive reference is rendered in an
+  isolated frame. If Stoplight cannot load, open the raw specification directly:
+  <a href="/openapi.yaml">/openapi.yaml</a>.
 </div>
+
+<div class="card api-docs">
+  <iframe class="api-docs-frame" src="/docs/reference" title="API reference"
+    loading="lazy"></iframe>
+</div>
+
+<p><a class="btn btn-outline btn-md" href="/openapi.yaml">Download /openapi.yaml</a>
+<a class="btn btn-outline btn-md" href="/docs/reference">Open reference in a new page</a></p>
 `,
     );
     sendHtml(res, 200, html);
+  }
+
+  /**
+   * Isolated Stoplight document: no Credimi stylesheet is loaded here, and the
+   * page is framed only by this origin.
+   */
+  function serveDocsReference(res: ServerResponse): void {
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Reference</title>
+<link rel="stylesheet" href="https://unpkg.com/@stoplight/elements@7.15.0/styles.min.css">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; }
+  #stoplight-fallback {
+    display: none;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 1rem 1.25rem;
+    font-size: 14px;
+  }
+  #stoplight-fallback.visible { display: block; }
+</style>
+</head>
+<body>
+<div id="stoplight-fallback">
+  <p><strong>The interactive API reference could not be loaded.</strong></p>
+  <p>Open the specification directly: <a href="/openapi.yaml">/openapi.yaml</a></p>
+</div>
+<elements-api
+  apiDescriptionUrl="/openapi.yaml"
+  router="hash"
+  layout="sidebar">
+</elements-api>
+<noscript>
+  <p>JavaScript is required for the interactive reference.
+  Open <a href="/openapi.yaml">/openapi.yaml</a> instead.</p>
+</noscript>
+<script src="https://unpkg.com/@stoplight/elements@7.15.0/web-components.min.js"
+  onerror="document.getElementById('stoplight-fallback').classList.add('visible')"></script>
+<script>
+window.addEventListener("load", function () {
+  if (!window.customElements || !customElements.get("elements-api")) {
+    document.getElementById("stoplight-fallback").classList.add("visible");
+  }
+});
+</script>
+</body>
+</html>`;
+    const headers: Record<string, string> = {
+      ...securityHeaders(),
+      "X-Frame-Options": "SAMEORIGIN",
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    };
+    res.writeHead(200, headers);
+    res.end(html);
   }
 
   async function serveCatalogue(
@@ -649,7 +776,7 @@ export function createWebServer(config: ServerConfig) {
         sendHtml(
           res,
           200,
-          htmlPage(
+          page(
             "Catalogue",
             `<h1>Published Lists</h1><div class="card"><p>No lists have been published yet.</p><p>Use <code>trusted-list-publisher publish</code> to publish a LoTE.</p></div>`,
           ),
@@ -677,7 +804,7 @@ export function createWebServer(config: ServerConfig) {
       sendHtml(
         res,
         200,
-        htmlPage(
+        page(
           "Catalogue",
           `<h1>Published Lists</h1>
         <div class="trust-notice"><strong>&#x26A0; Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
@@ -717,7 +844,7 @@ export function createWebServer(config: ServerConfig) {
       sendHtml(
         res,
         200,
-        htmlPage(
+        page(
           `List: ${listKey}`,
           `<h1>List: <code>${escapeHtml(listKey)}</code></h1>
         <div class="trust-notice"><strong>&#x26A0; Trust not evaluated.</strong></div>
@@ -775,7 +902,7 @@ export function createWebServer(config: ServerConfig) {
       sendHtml(
         res,
         200,
-        htmlPage(
+        page(
           `Version ${sequence} — ${listKey}`,
           `<h1>Version ${sequence} — <code>${escapeHtml(listKey)}</code></h1>
 <div class="trust-notice"><strong>&#x26A0; Signer trust: not evaluated.</strong> Cryptographic signature is ${manifest.signatureValid ? "valid" : "INVALID"}.</div>
@@ -989,6 +1116,62 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
     return false;
   }
 
+  /**
+   * POST /admin/login — exchanges the configured ADMIN_USER/ADMIN_PASSWORD pair
+   * for the existing admin session cookie. The token flow is left untouched.
+   */
+  async function handleAdminLogin(
+    req: IncomingMessage,
+    res: ServerResponse,
+    requestId: string,
+  ): Promise<void> {
+    const { adminLoginHtml } = await import("../web/views/admin.js");
+
+    if (!adminLoginEnabled) {
+      sendResponse(
+        res,
+        403,
+        "Access Denied",
+        "text/plain; charset=utf-8",
+        "no-store",
+      );
+      logRequest("POST", "/admin/login", 403, requestId);
+      return;
+    }
+
+    const fields = parseFormBody(await readBody(req));
+    const next =
+      fields["next"] && fields["next"].startsWith("/admin")
+        ? fields["next"]
+        : "/admin";
+
+    const ok =
+      secretEquals(fields["username"] ?? "", adminUser) &&
+      secretEquals(fields["password"] ?? "", adminPassword);
+
+    if (!ok) {
+      sendHtml(
+        res,
+        403,
+        guiPage(
+          "Sign in",
+          adminLoginHtml(next, "Invalid username or password."),
+        ),
+      );
+      logRequest("POST", "/admin/login", 403, requestId);
+      return;
+    }
+
+    res.writeHead(303, {
+      ...securityHeaders(),
+      "Set-Cookie": `${ADMIN_COOKIE}=${encodeURIComponent(adminToken)}; Path=/; HttpOnly; SameSite=Lax`,
+      "Cache-Control": "no-store",
+      Location: next,
+    });
+    res.end();
+    logRequest("POST", "/admin/login", 303, requestId);
+  }
+
   async function handleAdmin(
     req: IncomingMessage,
     res: ServerResponse,
@@ -1012,8 +1195,12 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
 
     if (!checkAdminAuth(req, url)) {
       import("../web/views/admin.js")
-        .then(({ adminNoAccessHtml }) => {
-          sendHtml(res, 403, guiPage("Access Denied", adminNoAccessHtml()));
+        .then(({ adminNoAccessHtml, adminLoginHtml }) => {
+          const next = path === "/admin/login" ? "/admin" : path;
+          const html = adminLoginEnabled
+            ? guiPage("Sign in", adminLoginHtml(next))
+            : guiPage("Access Denied", adminNoAccessHtml());
+          sendHtml(res, 403, html);
           logRequest("GET", path, 403, requestId);
         })
         .catch(() => {
@@ -1026,6 +1213,14 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
           );
           logRequest("GET", path, 403, requestId);
         });
+      return;
+    }
+
+    // An already-signed-in visitor has no use for the sign-in form.
+    if (path === "/admin/login") {
+      res.writeHead(303, { ...securityHeaders(), Location: "/admin" });
+      res.end();
+      logRequest("GET", path, 303, requestId);
       return;
     }
 
@@ -1289,6 +1484,12 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
     requestId: string,
   ): Promise<void> {
     const path = url.pathname;
+
+    // Sign-in is the one admin POST that is reachable without a session.
+    if (path === "/admin/login") {
+      await handleAdminLogin(req, res, requestId);
+      return;
+    }
 
     if (path.startsWith("/admin") && !checkAdminAuth(req, url)) {
       sendResponse(

@@ -412,6 +412,16 @@ program
     process.env["TLP_ADMIN_TOKEN"] ?? "",
   )
   .option(
+    "--admin-user <user>",
+    "Administrator sign-in username (enables the /admin login form)",
+    process.env["ADMIN_USER"] ?? "",
+  )
+  .option(
+    "--admin-password <password>",
+    "Administrator sign-in password (enables the /admin login form)",
+    process.env["ADMIN_PASSWORD"] ?? "",
+  )
+  .option(
     "--signing-config <path>",
     "Signing configuration file",
     process.env["TLP_SIGNING_CONFIG"] ?? "",
@@ -444,6 +454,8 @@ program
       dataCollectionGui: guiEnabled,
       authoringDir: guiEnabled ? options.authoringDir : undefined,
       adminToken: guiEnabled ? options.adminToken : undefined,
+      adminUser: guiEnabled ? options.adminUser : undefined,
+      adminPassword: guiEnabled ? options.adminPassword : undefined,
       signingConfigPath: guiEnabled ? options.signingConfig : undefined,
     });
 

@@ -1,90 +1,558 @@
-.trust-notice {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
-  padding: 0.75rem 1rem;
-  margin: 1rem 0;
-  border-radius: 4px;
+/*
+  Trusted List Publisher — application styles.
+
+  Shared Credimi design tokens and components (topbar, footer, cards, buttons,
+  badges, page shell, responsive breakpoints) live in style.css, adapted from
+  the EUDI Conformance Atlas. Only publisher-specific surfaces are defined here:
+  the product lockup, catalogue/manifest tables, onboarding cards, forms,
+  notices and the embedded API reference.
+*/
+
+/* --- Product lockup (Atlas .atlas-product-name / .atlas-footer-logo) --- */
+.tlp-product-name {
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-.catalogue-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 1rem 0;
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-decoration: none;
 }
 
-.catalogue-table th,
-.catalogue-table td {
-  padding: 0.5rem 0.75rem;
-  text-align: left;
-  border-bottom: 1px solid #ddd;
+.tlp-footer-logo {
+  display: block;
+  width: 96px;
+  height: auto;
+  max-height: 42px;
+  object-fit: contain;
+  margin-bottom: var(--space-3);
 }
 
-.catalogue-table th {
-  background: #f5f5f5;
-  font-weight: 600;
+.footer-brand {
+  align-items: center;
 }
 
+.footer-brand p {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* --- Page rhythm --- */
+.content h1,
+.content h2 {
+  margin-bottom: var(--space-3);
+}
+
+/*
+  The Atlas heading scale is sized for page and section titles; headings that
+  label a card are one step down so they do not compete with the page title.
+*/
+.card h2 {
+  font-size: var(--fs-xl);
+  line-height: 1.364;
+  letter-spacing: normal;
+}
+
+.card h3 {
+  font-size: var(--fs-lg);
+  line-height: 1.5;
+  letter-spacing: normal;
+}
+
+.content p,
+.content ul,
+.content table,
+.content form {
+  margin-bottom: var(--space-4);
+}
+
+.content ul {
+  padding-left: var(--space-6);
+}
+
+.lead {
+  font-size: var(--fs-md);
+  color: var(--fg-muted);
+  max-width: 68ch;
+  line-height: 1.6;
+}
+
+/*
+  Stacked cards need breathing room, but cards laid out by a grid get their
+  spacing from the grid gap — the sibling margin would offset every cell but
+  the first and break the row alignment.
+*/
+.card + .card,
+.card + p,
+.card + .form-actions {
+  margin-top: var(--space-5);
+}
+
+.onboarding-grid .card + .card {
+  margin-top: 0;
+}
+
+/* --- Notices / alerts --- */
+.notice,
+.trust-notice,
+.test-notice,
+.error-msg,
+.success-msg,
+.warn-msg {
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-4) 0;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.notice-warning,
+.trust-notice,
+.test-notice,
+.warn-msg {
+  background: var(--warning-bg);
+  border-color: var(--warning);
+  color: var(--fg);
+}
+
+.notice-info {
+  background: var(--info-bg);
+  border-color: var(--info);
+  color: var(--fg);
+}
+
+.success-msg {
+  background: var(--success-bg);
+  border-color: var(--success);
+}
+
+.notice-error,
+.error-msg {
+  background: var(--destructive-bg);
+  border-color: var(--destructive);
+}
+
+/* --- Buttons: default size for bare .btn (style.css only sizes modifiers) --- */
+.btn {
+  height: 36px;
+  padding: 0 var(--space-4);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+.btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-muted);
+}
+
+/*
+  The bare .btn defaults above are declared after style.css, so the Atlas
+  variants must restate their fill to win the cascade.
+*/
+.btn.btn-primary {
+  background: var(--brand-primary);
+  border-color: transparent;
+  color: white;
+}
+
+.btn.btn-primary:hover {
+  background: var(--brand-primary-700);
+  border-color: transparent;
+  color: white;
+}
+
+.btn.btn-outline {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+.btn.btn-outline:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-muted);
+}
+
+.btn-danger {
+  background: var(--destructive);
+  border-color: transparent;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: oklch(0.42 0.2 25);
+  border-color: transparent;
+  color: white;
+}
+
+.btn-sm {
+  height: 28px;
+}
+
+/* --- Badges used by the publisher state machine --- */
+.badge.ok {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.badge.info {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.badge.error {
+  background: var(--destructive-bg);
+  color: var(--destructive);
+}
+
+.badge.muted {
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+}
+
+/* --- Tables --- */
+.catalogue-table,
 .kv-table {
   width: 100%;
   border-collapse: collapse;
+  font-size: var(--fs-sm);
+  background: var(--bg);
+  display: table;
+}
+
+.catalogue-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.catalogue-table th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 2px solid var(--border);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  background: var(--bg-muted);
+}
+
+.catalogue-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.catalogue-table tr:last-child td {
+  border-bottom: none;
+}
+
+.catalogue-table tr:hover td {
+  background: var(--bg-muted);
 }
 
 .kv-table th {
   text-align: left;
-  width: 200px;
-  padding: 0.35rem 0.5rem;
-  color: #555;
+  width: 220px;
+  padding: var(--space-2) var(--space-3);
+  color: var(--fg-muted);
   font-weight: 600;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   vertical-align: top;
+  border-bottom: 1px solid var(--border);
 }
 
 .kv-table td {
-  padding: 0.35rem 0.5rem;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
 }
 
+.kv-table tr:last-child th,
+.kv-table tr:last-child td {
+  border-bottom: none;
+}
+
+/*
+  Wide content scrolls inside its card instead of stretching the page. The
+  page width itself is owned by the Atlas .container inside .page-content.
+*/
 .card {
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  padding: 1.25rem;
-  margin: 1rem 0;
-}
-
-.card h2 {
-  margin-top: 0;
-  font-size: 1.1rem;
-}
-
-.api-docs {
   max-width: 100%;
 }
 
-.logo-link {
+/* --- Onboarding catalogue --- */
+.onboarding-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-5);
+  margin-bottom: var(--space-8);
+}
+
+.onboarding-card {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  text-decoration: none;
-  color: inherit;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.product-title {
+.onboarding-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.onboarding-card-head h3 {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.onboarding-card-key {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.onboarding-card-action {
+  margin-top: auto;
+}
+
+.onboarding-card-note {
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+}
+
+.card-disabled {
+  background: var(--bg-muted);
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.card-disabled:hover {
+  border-color: var(--border);
+}
+
+.card-disabled h3 {
+  color: var(--fg-muted);
+}
+
+/* --- Forms --- */
+.onboarding-form {
+  max-width: 760px;
+}
+
+.form-group {
+  margin-bottom: var(--space-4);
+}
+
+.form-group label,
+fieldset legend {
+  display: block;
+  font-size: var(--fs-sm);
   font-weight: 600;
-  font-size: 1.1rem;
+  margin-bottom: var(--space-1);
+  color: var(--fg);
 }
 
-footer.dark {
-  background: #153FB5;
-  color: #fff;
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin: var(--space-4) 0;
 }
 
-footer.dark .footer-inner {
-  color: #fff;
+fieldset legend {
+  padding: 0 var(--space-2);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
 }
 
-footer.dark p {
-  color: #ccc;
+input[type="text"],
+input[type="search"],
+input[type="url"],
+input[type="email"],
+input[type="password"],
+select,
+textarea {
+  font-family:
+    "Manrope",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-size: var(--fs-base);
+  padding: 0 var(--space-4);
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--fg);
+  width: 100%;
+  transition:
+    border-color 200ms ease-out,
+    box-shadow 200ms ease-out;
 }
 
-.footer-logo {
-  margin-bottom: 0.5rem;
+textarea {
+  height: auto;
+  padding: var(--space-3) var(--space-4);
+  line-height: 1.5;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: var(--fs-sm);
+  resize: vertical;
+}
+
+select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fg-muted) 50%),
+    linear-gradient(135deg, var(--fg-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 16px,
+    calc(100% - 13px) 16px;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  padding-right: var(--space-8);
+}
+
+input[type="url"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px oklch(0.2955 0.1659 277.31 / 0.18);
+}
+
+.field-help {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  margin-top: var(--space-1);
+  line-height: 1.5;
+}
+
+.field-error {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--destructive);
+  margin-top: var(--space-1);
+}
+
+.required {
+  color: var(--destructive);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: var(--space-6) 0 var(--space-10);
+}
+
+.service-block {
+  background: var(--bg-muted);
+  margin-bottom: var(--space-4);
+}
+
+.service-block h3 {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  margin-bottom: var(--space-3);
+}
+
+.cert-preview {
+  font-family: "JetBrains Mono", monospace;
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --- Administrator sign-in --- */
+.admin-login-card {
+  max-width: 28rem;
+}
+
+.admin-login-form .form-actions {
+  margin-bottom: 0;
+}
+
+/* --- API documentation --- */
+.api-docs {
+  padding: 0;
+  overflow: hidden;
+}
+
+.api-docs-frame {
+  display: block;
+  width: 100%;
+  height: 78vh;
+  min-height: 520px;
+  border: 0;
+  background: var(--bg);
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .onboarding-grid {
+    grid-template-columns: 1fr;
+  }
+  .kv-table th {
+    width: 40%;
+  }
+  .api-docs-frame {
+    height: 70vh;
+    min-height: 420px;
+  }
+  .catalogue-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .tlp-product-name {
+    display: none;
+  }
+
+  /*
+    Six nav entries do not fit a phone width. Rather than wrapping out of the
+    fixed-height topbar, the nav scrolls sideways and each label stays intact.
+  */
+  .topbar-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .topbar-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .topbar-nav a {
+    white-space: nowrap;
+  }
+
+  .form-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
 }

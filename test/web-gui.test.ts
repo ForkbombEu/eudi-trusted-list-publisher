@@ -423,6 +423,278 @@ describe("Onboarding catalogue from LIST_FAMILIES", () => {
   });
 });
 
+describe("Phase 5.1 GUI shell", () => {
+  async function guiServer() {
+    const pubDir = tmpDir();
+    const authDir = tmpDir();
+    const sigConfigPath = createSigningConfig(tmpDir());
+    const started = await startServer({
+      publicationDir: pubDir,
+      dataCollectionGui: true,
+      authoringDir: authDir,
+      adminToken: "shell",
+      signingConfigPath: sigConfigPath,
+    });
+    return {
+      ...started,
+      cleanup: async () => {
+        await started.stop();
+        for (const p of [pubDir, authDir, sigConfigPath]) {
+          try {
+            rmSync(p, { recursive: true, force: true });
+          } catch {}
+        }
+      },
+    };
+  }
+
+  it("shows the full GUI navigation on catalogue and API docs", async () => {
+    const { url, cleanup } = await guiServer();
+    try {
+      for (const path of ["/", "/docs"]) {
+        const r = await httpGet(`${url}${path}`);
+        expect(r.status).toBe(200);
+        for (const label of [
+          "Catalogue",
+          "Onboarding",
+          "Admin",
+          "API Docs",
+          "OpenAPI",
+          "Repository",
+        ]) {
+          expect(r.body).toContain(`>${label}</a>`);
+        }
+      }
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("links enabled onboarding families to the implemented singular routes", async () => {
+    const { url, cleanup } = await guiServer();
+    try {
+      const r = await httpGet(`${url}/onboarding`);
+      expect(r.status).toBe(200);
+      expect(r.body).toContain(
+        "Welcome to Credimi Trusted List onboarding tool",
+      );
+      expect(r.body).toContain('href="/onboarding/wallet-provider"');
+      expect(r.body).toContain('href="/onboarding/pid-provider"');
+      expect(r.body).toContain("card-disabled");
+
+      for (const path of [
+        "/onboarding/wallet-provider",
+        "/onboarding/pid-provider",
+      ]) {
+        expect((await httpGet(`${url}${path}`)).status).toBe(200);
+      }
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("renders a PID-specific form with no Wallet wording", async () => {
+    const { url, cleanup } = await guiServer();
+    try {
+      const r = await httpGet(`${url}/onboarding/pid-provider`);
+      expect(r.status).toBe(200);
+      expect(r.body).toContain("PID Provider Application");
+      expect(r.body).toContain("Responsible Member State");
+      expect(r.body).toContain("PID Issuance");
+      expect(r.body).toContain("PID Revocation");
+      expect(r.body).toContain("PID Providers list");
+      expect(r.body).not.toMatch(/Wallet/);
+
+      // Backend field names are unchanged.
+      expect(r.body).toContain('name="entityName"');
+      expect(r.body).toContain('name="service[0].serviceType"');
+      expect(r.body).toContain('value="issuance"');
+      expect(r.body).toContain('action="/onboarding/pid-provider"');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("isolates the Stoplight reference from the Credimi shell", async () => {
+    const { url, cleanup } = await guiServer();
+    try {
+      const docs = await httpGet(`${url}/docs`);
+      expect(docs.status).toBe(200);
+      expect(docs.body).toContain("API Documentation");
+      expect(docs.body).toContain("Wallet Provider and PID Provider LoTE API");
+      expect(docs.body).toContain('src="/docs/reference"');
+      expect(docs.body).toContain('href="/openapi.yaml"');
+      expect(docs.body).toContain("If Stoplight cannot load");
+      // The shell must not pull in any Stoplight asset.
+      expect(docs.body).not.toContain("@stoplight/elements");
+
+      const ref = await httpGet(`${url}/docs/reference`);
+      expect(ref.status).toBe(200);
+      expect(ref.body).toContain("<elements-api");
+      expect(ref.body).toContain('apiDescriptionUrl="/openapi.yaml"');
+      expect(ref.body).toContain('router="hash"');
+      expect(ref.body).toContain('layout="sidebar"');
+      // Isolated document: no Credimi stylesheet, framed by this origin only.
+      expect(ref.body).not.toContain("/assets/style.css");
+      expect(ref.body).not.toContain("/assets/app.css");
+      expect(ref.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+describe("Admin username/password sign-in", () => {
+  async function credentialServer() {
+    const pubDir = tmpDir();
+    const authDir = tmpDir();
+    const sigConfigPath = createSigningConfig(tmpDir());
+    const started = await startServer({
+      publicationDir: pubDir,
+      dataCollectionGui: true,
+      authoringDir: authDir,
+      adminToken: "shell",
+      adminUser: "user_user",
+      adminPassword: "admin_admin",
+      signingConfigPath: sigConfigPath,
+    });
+    return {
+      ...started,
+      cleanup: async () => {
+        await started.stop();
+        for (const p of [pubDir, authDir, sigConfigPath]) {
+          try {
+            rmSync(p, { recursive: true, force: true });
+          } catch {}
+        }
+      },
+    };
+  }
+
+  it("asks for a username and password on /admin", async () => {
+    const { url, cleanup } = await credentialServer();
+    try {
+      const r = await httpGet(`${url}/admin`);
+      expect(r.status).toBe(403);
+      expect(r.body).toContain("Username");
+      expect(r.body).toContain("Password");
+      expect(r.body).toContain('action="/admin/login"');
+      expect(r.body).toContain('name="username"');
+      expect(r.body).toContain('type="password"');
+      // The admin content itself must not leak into the sign-in page.
+      expect(r.body).not.toContain("Manage Applications");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("rejects wrong credentials and accepts the configured pair", async () => {
+    const { url, cleanup } = await credentialServer();
+    try {
+      const bad = await httpPost(
+        `${url}/admin/login`,
+        new URLSearchParams({
+          username: "user_user",
+          password: "wrong",
+        }).toString(),
+      );
+      expect(bad.status).toBe(403);
+      expect(bad.body).toContain("Invalid username or password.");
+      expect(bad.cookies.length).toBe(0);
+
+      const good = await httpPost(
+        `${url}/admin/login`,
+        new URLSearchParams({
+          username: "user_user",
+          password: "admin_admin",
+        }).toString(),
+      );
+      expect(good.status).toBe(303);
+      expect(good.headers.location).toBe("/admin");
+      const cookie = extractCookie(good.cookies);
+      expect(cookie).toContain("tlp_admin_token=");
+
+      const admin = await httpGet(`${url}/admin`, cookie);
+      expect(admin.status).toBe(200);
+      expect(admin.body).toContain("Manage Applications");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("returns to the originally requested admin page after sign-in", async () => {
+    const { url, cleanup } = await credentialServer();
+    try {
+      const form = await httpGet(`${url}/admin/signing`);
+      expect(form.body).toContain('value="/admin/signing"');
+
+      const good = await httpPost(
+        `${url}/admin/login`,
+        new URLSearchParams({
+          username: "user_user",
+          password: "admin_admin",
+          next: "/admin/signing",
+        }).toString(),
+      );
+      expect(good.status).toBe(303);
+      expect(good.headers.location).toBe("/admin/signing");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("does not honour an off-site next target", async () => {
+    const { url, cleanup } = await credentialServer();
+    try {
+      const good = await httpPost(
+        `${url}/admin/login`,
+        new URLSearchParams({
+          username: "user_user",
+          password: "admin_admin",
+          next: "https://evil.example/",
+        }).toString(),
+      );
+      expect(good.status).toBe(303);
+      expect(good.headers.location).toBe("/admin");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("keeps the token-only behaviour when no credentials are configured", async () => {
+    const pubDir = tmpDir();
+    const authDir = tmpDir();
+    const sigConfigPath = createSigningConfig(tmpDir());
+    const { url, stop } = await startServer({
+      publicationDir: pubDir,
+      dataCollectionGui: true,
+      authoringDir: authDir,
+      adminToken: "secret",
+      signingConfigPath: sigConfigPath,
+    });
+    try {
+      const r = await httpGet(`${url}/admin`);
+      expect(r.status).toBe(403);
+      expect(r.body).toContain("Access Denied");
+      expect(r.body).not.toContain('action="/admin/login"');
+
+      const login = await httpPost(
+        `${url}/admin/login`,
+        new URLSearchParams({ username: "x", password: "y" }).toString(),
+      );
+      expect(login.status).toBe(403);
+      expect(login.cookies.length).toBe(0);
+    } finally {
+      await stop();
+      for (const p of [pubDir, authDir, sigConfigPath]) {
+        try {
+          rmSync(p, { recursive: true, force: true });
+        } catch {}
+      }
+    }
+  });
+});
+
 describe("Form submission", () => {
   it("valid form creates a submitted application", async () => {
     const pubDir = tmpDir();

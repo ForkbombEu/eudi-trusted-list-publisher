@@ -318,6 +318,48 @@ export function adminNoAccessHtml(): string {
 `;
 }
 
+/**
+ * Sign-in form shown instead of the plain "Access Denied" page whenever
+ * ADMIN_USER and ADMIN_PASSWORD are configured. The credentials are checked
+ * against the .env values; a successful POST sets the existing admin cookie.
+ */
+export function adminLoginHtml(next?: string, error?: string): string {
+  const target = next && next.startsWith("/admin") ? next : "/admin";
+  return `
+<h1>Administration</h1>
+<p class="lead">Sign in with the administrator credentials configured for this
+instance to review and publish onboarding applications.</p>
+
+<div class="notice notice-warning">
+  <strong>&#x26A0; Testing tool.</strong> This is a test/debug fixture publisher.
+</div>
+
+<div class="card admin-login-card">
+  <h2>Sign in</h2>
+  ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
+  <form method="post" action="/admin/login" class="onboarding-form admin-login-form">
+    <input type="hidden" name="next" value="${escape(target)}">
+    <div class="form-group">
+      <label for="admin-username">Username <span class="required">*</span></label>
+      <input type="text" id="admin-username" name="username" required
+        autocomplete="username" autocapitalize="none" spellcheck="false">
+      <span class="field-help">The <code>ADMIN_USER</code> value from the root <code>.env</code>.</span>
+    </div>
+    <div class="form-group">
+      <label for="admin-password">Password <span class="required">*</span></label>
+      <input type="password" id="admin-password" name="password" required
+        autocomplete="current-password">
+      <span class="field-help">The <code>ADMIN_PASSWORD</code> value from the root <code>.env</code>.</span>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary btn-md">Sign in</button>
+      <a href="/" class="btn btn-outline btn-md">Back to Catalogue</a>
+    </div>
+  </form>
+</div>
+`;
+}
+
 export function adminSigningConfigHtml(
   entries: SigningConfigEntryDisplay[],
 ): string {

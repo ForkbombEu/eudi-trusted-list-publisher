@@ -453,7 +453,7 @@ describe("HTTP correctness", () => {
   it("negative logo used on dark footer", async () => {
     const res = await httpGet("/");
     expect(res.body).toContain("credimi_logo_negative.svg");
-    expect(res.body).toContain('class="site-footer dark"');
+    expect(res.body).toContain('<footer class="footer">');
   });
 
   it("negative logo is byte-for-byte HITL copy", async () => {
