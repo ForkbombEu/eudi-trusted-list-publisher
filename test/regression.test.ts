@@ -3427,3 +3427,534 @@ function makeAppMulti(
     },
   };
 }
+
+// ============================================================
+// 28. Real deep equality test (toEqual)
+// ============================================================
+describe("Phase 4: real deep equality", () => {
+  it("storedDoc toEqual compile(preview.compilerInput).document", async () => {
+    const pubDir = tmpDir(),
+      authDir = tmpDir();
+    const configPath = join(tmpdir(), "sc.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        lists: [
+          {
+            listKey: "eu_test_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Test Authority",
+            schemeOperatorStreet: "1 Test St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Test Wallet Providers",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:test@test.org",
+            distributionPointUri: "https://test.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+        ],
+      }),
+    );
+    const signingConfig = (
+      await import("../src/core/authoring/signing-config.js")
+    ).loadSigningConfig(configPath);
+    const pubStore = new PublicationStore({ publicationDir: pubDir });
+    const authoringStore = new AuthoringStore({ authoringDir: authDir });
+    const service = new ApplicationService(
+      authoringStore,
+      pubStore,
+      signingConfig,
+    );
+    const clock = new Date("2026-12-15T12:00:00Z");
+    const a = makeApp(authoringStore, "A", "https://de1.svc");
+    const b = makeApp(authoringStore, "B", "https://de2.svc");
+    authoringStore.save(a);
+    await service.publishApplication(a.id, clock);
+    authoringStore.save(b);
+    const preview = await service.preview(b, clock);
+    expect(preview.compilerInput).toBeTruthy();
+    const pubR = await service.publishApplication(b.id, clock);
+    expect(pubR.success).toBe(true);
+    const seq = pubR.success ? pubR.data.publication!.sequenceNumber : 0;
+    const storedDoc = JSON.parse(
+      (await pubStore.loadVersionBytes("eu_test_authority", seq, "lote"))!,
+    );
+    const { compile } = await import("../src/core/compile/compile.js");
+    expect(storedDoc).toEqual(compile(preview.compilerInput!).document);
+    try {
+      rmSync(pubDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      unlinkSync(configPath);
+    } catch {}
+  });
+});
+
+// ============================================================
+// 29. Concurrency and locking
+// ============================================================
+describe("Phase 4: concurrency", () => {
+  it("same-list concurrent publications produce distinct sequences", async () => {
+    const pubDir = tmpDir(),
+      authDir = tmpDir();
+    const configPath = join(tmpdir(), "sc.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        lists: [
+          {
+            listKey: "eu_test_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Test Authority",
+            schemeOperatorStreet: "1 Test St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Test Wallet Providers",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:test@test.org",
+            distributionPointUri: "https://test.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+        ],
+      }),
+    );
+    const signingConfig = (
+      await import("../src/core/authoring/signing-config.js")
+    ).loadSigningConfig(configPath);
+    const pubStore = new PublicationStore({ publicationDir: pubDir });
+    const authoringStore = new AuthoringStore({ authoringDir: authDir });
+    const service = new ApplicationService(
+      authoringStore,
+      pubStore,
+      signingConfig,
+    );
+    const apps = [
+      makeApp(authoringStore, "A", "https://c-a.svc"),
+      makeApp(authoringStore, "B", "https://c-b.svc"),
+      makeApp(authoringStore, "C", "https://c-c.svc"),
+    ];
+    for (const a of apps) authoringStore.save(a);
+    // Publish A first so both concurrent B and C see A as the base
+    await service.publishApplication(apps[0]!.id);
+    const [rB, rC] = await Promise.all([
+      service.publishApplication(apps[1]!.id),
+      service.publishApplication(apps[2]!.id),
+    ]);
+    expect(rB.success).toBe(true);
+    expect(rC.success).toBe(true);
+    const sB = rB.success ? rB.data.publication!.sequenceNumber : 0;
+    const sC = rC.success ? rC.data.publication!.sequenceNumber : 0;
+    expect(sB).not.toBe(sC);
+    const a1 = JSON.parse(
+      (await pubStore.loadVersionBytes("eu_test_authority", sB, "lote"))!,
+    );
+    const a2 = JSON.parse(
+      (await pubStore.loadVersionBytes("eu_test_authority", sC, "lote"))!,
+    );
+    expect(a1.LoTE.TrustedEntitiesList.length).toBe(2); // A + B
+    expect(a2.LoTE.TrustedEntitiesList.length).toBe(3); // A + B + C (lock serialized C after B)
+    try {
+      rmSync(pubDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      unlinkSync(configPath);
+    } catch {}
+  });
+
+  it("different-list concurrent publications remain independent", async () => {
+    const pubDir = tmpDir(),
+      authDir = tmpDir();
+    const configPath = join(tmpdir(), "sc.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        lists: [
+          {
+            listKey: "eu_test_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Test Authority",
+            schemeOperatorStreet: "1 Test St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Test Wallet Providers",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:test@test.org",
+            distributionPointUri: "https://test.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+          {
+            listKey: "eu_other_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Other Authority",
+            schemeOperatorStreet: "2 Other St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Other Test",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:other@test.org",
+            distributionPointUri: "https://other.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+        ],
+      }),
+    );
+    const signingConfig = (
+      await import("../src/core/authoring/signing-config.js")
+    ).loadSigningConfig(configPath);
+    const pubStore = new PublicationStore({ publicationDir: pubDir });
+    const authoringStore = new AuthoringStore({ authoringDir: authDir });
+    const service = new ApplicationService(
+      authoringStore,
+      pubStore,
+      signingConfig,
+    );
+    const a = makeApp(
+      authoringStore,
+      "A",
+      "https://ind-a.svc",
+      "eu_test_authority",
+    );
+    const b = makeApp(
+      authoringStore,
+      "B",
+      "https://ind-b.svc",
+      "eu_other_authority",
+    );
+    authoringStore.save(a);
+    authoringStore.save(b);
+    const [ra, rb] = await Promise.all([
+      service.publishApplication(a.id),
+      service.publishApplication(b.id),
+    ]);
+    expect(ra.success).toBe(true);
+    expect(rb.success).toBe(true);
+    expect(
+      JSON.parse(
+        (await pubStore.loadVersionBytes("eu_test_authority", 1, "lote"))!,
+      ).LoTE.TrustedEntitiesList.length,
+    ).toBe(1);
+    expect(
+      JSON.parse(
+        (await pubStore.loadVersionBytes("eu_other_authority", 1, "lote"))!,
+      ).LoTE.TrustedEntitiesList.length,
+    ).toBe(1);
+    try {
+      rmSync(pubDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      unlinkSync(configPath);
+    } catch {}
+  });
+});
+
+// ============================================================
+// 30. Second positive test set
+// ============================================================
+describe("Phase 4: second positive set", () => {
+  it("entity addresses survive cumulative publish", async () => {
+    const pubDir = tmpDir(),
+      authDir = tmpDir(),
+      configPath = join(tmpdir(), "sc.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        lists: [
+          {
+            listKey: "eu_test_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Test Authority",
+            schemeOperatorStreet: "1 Test St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Test Wallet Providers",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:test@test.org",
+            distributionPointUri: "https://test.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+        ],
+      }),
+    );
+    const signingConfig = (
+      await import("../src/core/authoring/signing-config.js")
+    ).loadSigningConfig(configPath);
+    const pubStore = new PublicationStore({ publicationDir: pubDir });
+    const authoringStore = new AuthoringStore({ authoringDir: authDir });
+    const service = new ApplicationService(
+      authoringStore,
+      pubStore,
+      signingConfig,
+    );
+    const a = makeApp(authoringStore, "AddrA", "https://adr-a.svc");
+    const b = makeApp(authoringStore, "AddrB", "https://adr-b.svc");
+    authoringStore.save(a);
+    await service.publishApplication(a.id);
+    authoringStore.save(b);
+    await service.publishApplication(b.id);
+    const doc = JSON.parse(
+      (await pubStore.loadVersionBytes("eu_test_authority", 2, "lote"))!,
+    );
+    const e = doc.LoTE.TrustedEntitiesList;
+    expect(e[0].TrustedEntityInformation.TEName[0].value).toBe("Entity AddrA");
+    expect(
+      e[0].TrustedEntityInformation.TEAddress.TEPostalAddress[0].Country,
+    ).toBe("IT");
+    expect(e[1].TrustedEntityInformation.TEName[0].value).toBe("Entity AddrB");
+    try {
+      rmSync(pubDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      unlinkSync(configPath);
+    } catch {}
+  });
+
+  it("sequences increment 1,2,3", async () => {
+    const pubDir = tmpDir(),
+      authDir = tmpDir(),
+      configPath = join(tmpdir(), "sc.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        lists: [
+          {
+            listKey: "eu_test_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Test Authority",
+            schemeOperatorStreet: "1 Test St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Test Wallet Providers",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:test@test.org",
+            distributionPointUri: "https://test.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+        ],
+      }),
+    );
+    const signingConfig = (
+      await import("../src/core/authoring/signing-config.js")
+    ).loadSigningConfig(configPath);
+    const pubStore = new PublicationStore({ publicationDir: pubDir });
+    const authoringStore = new AuthoringStore({ authoringDir: authDir });
+    const service = new ApplicationService(
+      authoringStore,
+      pubStore,
+      signingConfig,
+    );
+    const apps = [
+      makeApp(authoringStore, "S1", "https://sq1.svc"),
+      makeApp(authoringStore, "S2", "https://sq2.svc"),
+      makeApp(authoringStore, "S3", "https://sq3.svc"),
+    ];
+    for (const a of apps) authoringStore.save(a);
+    for (const a of apps)
+      expect((await service.publishApplication(a.id)).success).toBe(true);
+    const idx = await pubStore.loadIndex("eu_test_authority");
+    expect(idx!.versions.map((v) => v.sequenceNumber)).toEqual([1, 2, 3]);
+    try {
+      rmSync(pubDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      unlinkSync(configPath);
+    } catch {}
+  });
+});
+
+// ============================================================
+// 31. Third negative test set
+// ============================================================
+describe("Phase 4: third negative set", () => {
+  it("duplicate within candidate rejects", async () => {
+    const pubDir = tmpDir(),
+      authDir = tmpDir(),
+      configPath = join(tmpdir(), "sc.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        lists: [
+          {
+            listKey: "eu_test_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Test Authority",
+            schemeOperatorStreet: "1 Test St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Test Wallet Providers",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:test@test.org",
+            distributionPointUri: "https://test.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+        ],
+      }),
+    );
+    const signingConfig = (
+      await import("../src/core/authoring/signing-config.js")
+    ).loadSigningConfig(configPath);
+    const pubStore = new PublicationStore({ publicationDir: pubDir });
+    const authoringStore = new AuthoringStore({ authoringDir: authDir });
+    const service = new ApplicationService(
+      authoringStore,
+      pubStore,
+      signingConfig,
+    );
+    const app = makeAppMulti(authoringStore, "Dup", [
+      "https://dup.svc",
+      "https://dup.svc",
+    ]);
+    authoringStore.save(app);
+    const r = await service.publishApplication(app.id);
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error).toContain("DUPLICATE");
+    try {
+      rmSync(pubDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      unlinkSync(configPath);
+    } catch {}
+  });
+
+  it("reconciliation fails with IDs split across entities", async () => {
+    const pubDir = tmpDir(),
+      authDir = tmpDir(),
+      configPath = join(tmpdir(), "sc.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        lists: [
+          {
+            listKey: "eu_test_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Test Authority",
+            schemeOperatorStreet: "1 Test St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Test Wallet Providers",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:test@test.org",
+            distributionPointUri: "https://test.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+        ],
+      }),
+    );
+    const signingConfig = (
+      await import("../src/core/authoring/signing-config.js")
+    ).loadSigningConfig(configPath);
+    const pubStore = new PublicationStore({ publicationDir: pubDir });
+    const authoringStore = new AuthoringStore({ authoringDir: authDir });
+    const service = new ApplicationService(
+      authoringStore,
+      pubStore,
+      signingConfig,
+    );
+    const a = makeApp(authoringStore, "A", "https://sp-a.svc");
+    const b = makeApp(authoringStore, "B", "https://sp-b.svc");
+    authoringStore.save(a);
+    authoringStore.save(b);
+    await service.publishApplication(a.id);
+    await service.publishApplication(b.id);
+    const split = makeAppMulti(authoringStore, "Split", [
+      "https://sp-a.svc",
+      "https://sp-b.svc",
+    ]);
+    authoringStore.save(split);
+    expect((await service.reconcileApplication(split.id)).success).toBe(false);
+    try {
+      rmSync(pubDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      unlinkSync(configPath);
+    } catch {}
+  });
+
+  it("reconciliation fails with no published list", async () => {
+    const pubDir = tmpDir(),
+      authDir = tmpDir(),
+      configPath = join(tmpdir(), "sc.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        lists: [
+          {
+            listKey: "eu_test_authority",
+            family: "wallet-providers",
+            schemeOperatorName: "Test Authority",
+            schemeOperatorStreet: "1 Test St",
+            schemeOperatorCountry: "EU",
+            schemeName: "Test Wallet Providers",
+            schemeTerritory: "EU",
+            schemeOperatorContactUri: "mailto:test@test.org",
+            distributionPointUri: "https://test.org/lote.json",
+            keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
+            certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+          },
+        ],
+      }),
+    );
+    const signingConfig = (
+      await import("../src/core/authoring/signing-config.js")
+    ).loadSigningConfig(configPath);
+    const pubStore = new PublicationStore({ publicationDir: pubDir });
+    const authoringStore = new AuthoringStore({ authoringDir: authDir });
+    const service = new ApplicationService(
+      authoringStore,
+      pubStore,
+      signingConfig,
+    );
+    const a = makeApp(authoringStore, "A", "https://nopub.svc");
+    authoringStore.save(a);
+    expect((await service.reconcileApplication(a.id)).success).toBe(false);
+    try {
+      rmSync(pubDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      unlinkSync(configPath);
+    } catch {}
+  });
+
+  it("no signing config blocks publication", async () => {
+    const pubDir = tmpDir(),
+      authDir = tmpDir();
+    const pubStore = new PublicationStore({ publicationDir: pubDir });
+    const authoringStore = new AuthoringStore({ authoringDir: authDir });
+    const service = new ApplicationService(authoringStore, pubStore, null);
+    const a = makeApp(authoringStore, "A", "https://nosig.svc");
+    a.state = "approved";
+    a.approvedAt = new Date().toISOString();
+    authoringStore.save(a);
+    expect((await service.publishApplication(a.id)).success).toBe(false);
+    try {
+      rmSync(pubDir, { recursive: true, force: true });
+    } catch {}
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {}
+  });
+});
