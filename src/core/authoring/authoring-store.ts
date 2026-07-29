@@ -38,8 +38,38 @@ const STATES: readonly ApplicationState[] = [
 type RecordValue = Record<string, unknown>;
 const isRecord = (value: unknown): value is RecordValue =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-const isIso = (value: unknown): value is string =>
-  typeof value === "string" && !Number.isNaN(Date.parse(value));
+const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?Z$/;
+const isIso = (value: unknown): value is string => {
+  if (typeof value !== "string") return false;
+  const match = ISO_UTC.exec(value);
+  if (!match) return false;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] =
+    match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59)
+    return false;
+  const daysInMonth = [
+    31,
+    year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0) ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  const maximumDay = daysInMonth[month - 1];
+  return maximumDay !== undefined && day >= 1 && day <= maximumDay;
+};
 const isString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 const isApplicationState = (value: unknown): value is ApplicationState =>
@@ -247,7 +277,11 @@ export class AuthoringStore {
       });
       renameSync(temporary, path);
     } catch (error: unknown) {
-      if (existsSync(temporary)) unlinkSync(temporary);
+      try {
+        if (existsSync(temporary)) unlinkSync(temporary);
+      } catch {
+        // Preserve the original write or rename failure.
+      }
       throw error;
     }
   }

@@ -1,152 +1,265 @@
-// @ts-nocheck
-import { APPLICATION_SCHEMA_VERSION, } from "./application-model.js";
-import { getProfile } from "../profiles/registry.js";
-export function parseAndValidateSubmission(fields, targetListKey, family = "wallet-providers") {
-    const profile = getProfile(family);
-    const errors = [];
-    const preserved = {};
-    const allowedTopLevel = new Set([
-        "targetListKey", "entityName", "entityTradeName", "entityStreetAddress",
-        "entityLocality", "entityPostalCode", "entityCountry", "entityInformationURI",
-        ...(family === "pid-providers" ? ["responsibleMemberState"] : []),
-    ]);
-    for (const key of Object.keys(fields)) {
-        if (allowedTopLevel.has(key)) continue;
-        if (/^service\[\d+\]\.(serviceType|serviceName|certificatePem|serviceUniqueIdentifier)$/.test(key)) continue;
-        addError(key, "Unknown form field.");
+import {
+  APPLICATION_SCHEMA_VERSION,
+  type PIDProviderApplicantData,
+  type PIDProviderApplication,
+  type ProviderServiceInput,
+  type WalletProviderApplicantData,
+  type WalletProviderApplication,
+} from "./application-model.js";
+import {
+  getEnabledProfile,
+  type EnabledProfileFamily,
+} from "../profiles/registry.js";
+
+export type SubmissionFields = Record<string, string>;
+export interface SubmissionFieldError {
+  field: string;
+  message: string;
+}
+export interface SubmissionFailure {
+  valid: false;
+  errors: SubmissionFieldError[];
+  applicantData: null;
+  preservedFields: SubmissionFields;
+}
+export interface WalletSubmissionSuccess {
+  valid: true;
+  errors: [];
+  applicantData: WalletProviderApplicantData;
+  preservedFields: SubmissionFields;
+}
+export interface PIDSubmissionSuccess {
+  valid: true;
+  errors: [];
+  applicantData: PIDProviderApplicantData;
+  preservedFields: SubmissionFields;
+}
+export type SubmissionParseResult =
+  SubmissionFailure | WalletSubmissionSuccess | PIDSubmissionSuccess;
+
+const SERVICE_FIELD =
+  /^service\[(\d+)\]\.(serviceType|serviceName|certificatePem|serviceUniqueIdentifier)$/;
+
+function parseForFamily(
+  fields: SubmissionFields,
+  targetListKey: string,
+  family: "wallet-providers",
+): WalletSubmissionSuccess | SubmissionFailure;
+function parseForFamily(
+  fields: SubmissionFields,
+  targetListKey: string,
+  family: "pid-providers",
+): PIDSubmissionSuccess | SubmissionFailure;
+function parseForFamily(
+  fields: SubmissionFields,
+  targetListKey: string,
+  family: EnabledProfileFamily,
+): SubmissionParseResult {
+  getEnabledProfile(family);
+  const errors: SubmissionFieldError[] = [];
+  const preservedFields: SubmissionFields = {};
+  const allowed = new Set<string>([
+    "targetListKey",
+    "entityName",
+    "entityTradeName",
+    "entityStreetAddress",
+    "entityLocality",
+    "entityPostalCode",
+    "entityCountry",
+    "entityInformationURI",
+    ...(family === "pid-providers" ? ["responsibleMemberState"] : []),
+  ]);
+  const addError = (field: string, message: string): void => {
+    errors.push({ field, message });
+  };
+  const field = (name: string): string => {
+    const value = (fields[name] ?? "").trim();
+    preservedFields[name] = value;
+    return value;
+  };
+  for (const key of Object.keys(fields))
+    if (!allowed.has(key) && !SERVICE_FIELD.test(key))
+      addError(key, "Unknown form field.");
+  if (!targetListKey) addError("targetListKey", "Target list key is required.");
+  const entityName = field("entityName");
+  if (!entityName) addError("entityName", "Entity name is required.");
+  const entityTradeName = field("entityTradeName");
+  const entityStreetAddress = field("entityStreetAddress");
+  if (!entityStreetAddress)
+    addError("entityStreetAddress", "Street address is required.");
+  const entityLocality = field("entityLocality");
+  const entityPostalCode = field("entityPostalCode");
+  const entityCountry = field("entityCountry");
+  if (!entityCountry) addError("entityCountry", "Country is required.");
+  else if (!/^[A-Z]{2}$/.test(entityCountry))
+    addError("entityCountry", "Country must be a 2-letter ISO code (e.g. IT).");
+  const entityInformationURI = field("entityInformationURI");
+  if (!entityInformationURI)
+    addError("entityInformationURI", "Information URI is required.");
+  else {
+    try {
+      new URL(entityInformationURI);
+    } catch {
+      addError("entityInformationURI", "Information URI must be a valid URL.");
     }
-    function addError(field, msg) {
-        errors.push({ field, message: msg });
-    }
-    function get(field) {
-        const val = (fields[field] ?? "").trim();
-        preserved[field] = val;
-        return val;
-    }
-    if (!targetListKey) {
-        addError("targetListKey", "Target list key is required.");
-    }
-    const entityName = get("entityName");
-    if (!entityName) {
-        addError("entityName", "Entity name is required.");
-    }
-    const entityTradeName = get("entityTradeName");
-    preserved["entityTradeName"] = fields["entityTradeName"] ?? "";
-    const entityStreetAddress = get("entityStreetAddress");
-    if (!entityStreetAddress) {
-        addError("entityStreetAddress", "Street address is required.");
-    }
-    const entityLocality = get("entityLocality");
-    preserved["entityLocality"] = fields["entityLocality"] ?? "";
-    const entityPostalCode = get("entityPostalCode");
-    preserved["entityPostalCode"] = fields["entityPostalCode"] ?? "";
-    const entityCountry = get("entityCountry");
-    if (!entityCountry) {
-        addError("entityCountry", "Country is required.");
-    }
-    else if (!/^[A-Z]{2}$/.test(entityCountry)) {
-        addError("entityCountry", "Country must be a 2-letter ISO code (e.g. IT).");
-    }
-    const entityInformationURI = get("entityInformationURI");
-    if (!entityInformationURI) {
-        addError("entityInformationURI", "Information URI is required.");
-    }
+  }
+  const serviceIndices = new Set<number>();
+  for (const key of Object.keys(fields)) {
+    const match = SERVICE_FIELD.exec(key);
+    if (match) serviceIndices.add(Number(match[1]));
+  }
+  if (serviceIndices.size === 0)
+    addError("services", "At least one service is required.");
+  const services: ProviderServiceInput[] = [];
+  for (const index of [...serviceIndices].sort((left, right) => left - right)) {
+    const prefix = `service[${index}].`;
+    const serviceType = field(`${prefix}serviceType`);
+    if (!serviceType)
+      addError(`${prefix}serviceType`, "Service type is required.");
+    else if (serviceType !== "issuance" && serviceType !== "revocation")
+      addError(`${prefix}serviceType`, "Invalid service type.");
+    const serviceName = field(`${prefix}serviceName`);
+    if (!serviceName)
+      addError(`${prefix}serviceName`, "Service name is required.");
+    const certificatePem = field(`${prefix}certificatePem`);
+    if (!certificatePem)
+      addError(`${prefix}certificatePem`, "Certificate is required.");
+    else if (
+      !certificatePem.includes("-----BEGIN CERTIFICATE-----") ||
+      !certificatePem.includes("-----END CERTIFICATE-----")
+    )
+      addError(`${prefix}certificatePem`, "Certificate must be in PEM format.");
+    const serviceUniqueIdentifier = field(`${prefix}serviceUniqueIdentifier`);
+    if (!serviceUniqueIdentifier)
+      addError(
+        `${prefix}serviceUniqueIdentifier`,
+        "Service unique identifier is required.",
+      );
     else {
-        try {
-            new URL(entityInformationURI);
-        }
-        catch {
-            addError("entityInformationURI", "Information URI must be a valid URL.");
-        }
+      try {
+        new URL(serviceUniqueIdentifier);
+      } catch {
+        addError(
+          `${prefix}serviceUniqueIdentifier`,
+          "Service unique identifier must be a valid URL/URI.",
+        );
+      }
     }
-    const serviceFields = Object.keys(fields).filter((k) => k.startsWith("service["));
-    const serviceIndices = new Set();
-    for (const kf of serviceFields) {
-        const m = kf.match(/^service\[(\d+)\]\./);
-        if (m)
-            serviceIndices.add(parseInt(m[1], 10));
-    }
-    if (serviceIndices.size === 0) {
-        addError("services", "At least one service is required.");
-    }
-    const services = [];
-    for (const idx of Array.from(serviceIndices).sort((a, b) => a - b)) {
-        const prefix = `service[${idx}].`;
-        const svcType = get(`${prefix}serviceType`);
-        if (!svcType) {
-            addError(`${prefix}serviceType`, "Service type is required.");
-        }
-        else if (!["issuance", "revocation"].includes(svcType)) {
-            addError(`${prefix}serviceType`, "Invalid service type.");
-        }
-        const svcName = get(`${prefix}serviceName`);
-        if (!svcName) {
-            addError(`${prefix}serviceName`, "Service name is required.");
-        }
-        const cert = get(`${prefix}certificatePem`);
-        if (!cert) {
-            addError(`${prefix}certificatePem`, "Certificate is required.");
-        }
-        else if (!cert.includes("-----BEGIN CERTIFICATE-----") ||
-            !cert.includes("-----END CERTIFICATE-----")) {
-            addError(`${prefix}certificatePem`, "Certificate must be in PEM format.");
-        }
-        const svcId = get(`${prefix}serviceUniqueIdentifier`);
-        if (!svcId) {
-            addError(`${prefix}serviceUniqueIdentifier`, "Service unique identifier is required.");
-        }
-        else {
-            try {
-                new URL(svcId);
-            }
-            catch {
-                addError(`${prefix}serviceUniqueIdentifier`, "Service unique identifier must be a valid URL/URI.");
-            }
-        }
-        services.push({
-            serviceType: svcType,
-            serviceName: svcName,
-            certificatePem: cert,
-            serviceUniqueIdentifier: svcId,
-        });
-    }
-    if (errors.length > 0) {
-        return {
-            valid: false,
-            errors,
-            applicantData: null,
-            preservedFields: preserved,
-        };
-    }
-    const applicantData = {
-        entityName,
-        entityTradeName: entityTradeName || undefined,
-        entityStreetAddress,
-        entityLocality: entityLocality || undefined,
-        entityPostalCode: entityPostalCode || undefined,
-        entityCountry,
-        entityInformationURI,
-        services,
-    };
-    if (family === "pid-providers") {
-        const responsibleMemberState = get("responsibleMemberState");
-        if (!/^[A-Z]{2}$/.test(responsibleMemberState)) {
-            return { valid: false, errors: [{ field: "responsibleMemberState", message: "Responsible Member State must be a 2-letter ISO code." }], applicantData: null, preservedFields: preserved };
-        }
-        applicantData.responsibleMemberState = responsibleMemberState;
-    }
-    return { valid: true, errors: [], applicantData, preservedFields: preserved };
+    if (
+      (serviceType === "issuance" || serviceType === "revocation") &&
+      serviceName &&
+      certificatePem &&
+      serviceUniqueIdentifier
+    )
+      services.push({
+        serviceType,
+        serviceName,
+        certificatePem,
+        serviceUniqueIdentifier,
+      });
+  }
+  const responsibleMemberState =
+    family === "pid-providers" ? field("responsibleMemberState") : undefined;
+  if (
+    family === "pid-providers" &&
+    !/^[A-Z]{2}$/.test(responsibleMemberState ?? "")
+  )
+    addError(
+      "responsibleMemberState",
+      "Responsible Member State must be a 2-letter ISO code.",
+    );
+  if (errors.length > 0)
+    return { valid: false, errors, applicantData: null, preservedFields };
+  const common: WalletProviderApplicantData = {
+    entityName,
+    entityTradeName: entityTradeName || undefined,
+    entityStreetAddress,
+    entityLocality: entityLocality || undefined,
+    entityPostalCode: entityPostalCode || undefined,
+    entityCountry,
+    entityInformationURI,
+    services,
+  };
+  return family === "pid-providers"
+    ? {
+        valid: true,
+        errors: [],
+        applicantData: {
+          ...common,
+          responsibleMemberState: responsibleMemberState ?? "",
+        },
+        preservedFields,
+      }
+    : { valid: true, errors: [], applicantData: common, preservedFields };
 }
-export function createApplicationRecord(id, targetListKey, applicantData, family = "wallet-providers") {
-    getProfile(family);
+
+export function parseAndValidateSubmission(
+  fields: SubmissionFields,
+  targetListKey: string,
+  family?: "wallet-providers",
+): WalletSubmissionSuccess | SubmissionFailure;
+export function parseAndValidateSubmission(
+  fields: SubmissionFields,
+  targetListKey: string,
+  family: "pid-providers",
+): PIDSubmissionSuccess | SubmissionFailure;
+export function parseAndValidateSubmission(
+  fields: SubmissionFields,
+  targetListKey: string,
+  family: EnabledProfileFamily,
+): SubmissionParseResult;
+export function parseAndValidateSubmission(
+  fields: SubmissionFields,
+  targetListKey: string,
+  family: EnabledProfileFamily = "wallet-providers",
+): SubmissionParseResult {
+  return family === "pid-providers"
+    ? parseForFamily(fields, targetListKey, family)
+    : parseForFamily(fields, targetListKey, family);
+}
+
+export function createApplicationRecord(
+  id: string,
+  targetListKey: string,
+  applicantData: WalletProviderApplicantData,
+  family?: "wallet-providers",
+): WalletProviderApplication;
+export function createApplicationRecord(
+  id: string,
+  targetListKey: string,
+  applicantData: PIDProviderApplicantData,
+  family: "pid-providers",
+): PIDProviderApplication;
+export function createApplicationRecord(
+  id: string,
+  targetListKey: string,
+  applicantData: WalletProviderApplicantData | PIDProviderApplicantData,
+  family: EnabledProfileFamily = "wallet-providers",
+): WalletProviderApplication | PIDProviderApplication {
+  getEnabledProfile(family);
+  const submittedAt = new Date().toISOString();
+  if (family === "pid-providers") {
+    if (!("responsibleMemberState" in applicantData))
+      throw new Error(
+        "PID Provider applications require responsibleMemberState.",
+      );
     return {
-        id,
-        schemaVersion: APPLICATION_SCHEMA_VERSION,
-        family,
-        targetListKey,
-        state: "submitted",
-        submittedAt: new Date().toISOString(),
-        applicantData,
+      id,
+      schemaVersion: APPLICATION_SCHEMA_VERSION,
+      family,
+      targetListKey,
+      state: "submitted",
+      submittedAt,
+      applicantData,
     };
+  }
+  return {
+    id,
+    schemaVersion: APPLICATION_SCHEMA_VERSION,
+    family,
+    targetListKey,
+    state: "submitted",
+    submittedAt,
+    applicantData,
+  };
 }
-//# sourceMappingURL=submission-parser.js.map

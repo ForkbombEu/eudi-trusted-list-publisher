@@ -22,23 +22,17 @@ import type {
 import { AuthoringStore } from "./authoring-store.js";
 import { findSigningConfig } from "./signing-config.js";
 import type { SigningConfig, SigningConfigEntry } from "./signing-config.js";
-import { parseAndValidateSubmission } from "./submission-parser.js";
+import {
+  parseAndValidateSubmission,
+  type SubmissionFields,
+  type SubmissionParseResult,
+} from "./submission-parser.js";
 import {
   loadLatestPublication,
   checkServiceIdentifierUniqueness,
   assembleNextList,
 } from "./list-assembler.js";
 
-export interface SubmissionFieldError {
-  field: string;
-  message: string;
-}
-export interface SubmissionParseResult {
-  valid: boolean;
-  errors: SubmissionFieldError[];
-  applicantData: WalletProviderApplicantData | PIDProviderApplicantData | null;
-  preservedFields: Record<string, string>;
-}
 export type ServiceResult<T> =
   | { success: true; data: T; message?: string; warning?: string }
   | { success: false; error: string };
@@ -91,7 +85,7 @@ export class ApplicationService {
     this.signingConfig = signingConfig;
   }
   submitApplication(
-    formFields: Record<string, string>,
+    formFields: SubmissionFields,
     targetListKey: string,
     family: "wallet-providers" | "pid-providers" = "wallet-providers",
   ): SubmissionParseResult {

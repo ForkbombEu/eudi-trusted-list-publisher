@@ -48,6 +48,11 @@ export type { AuthoringStoreConfig } from "./authoring-store.js";
 export type { ProfileFamily as ListFamily } from "../profiles/registry.js";
 export type { PublicationRecord as PublishResult } from "./application-model.js";
 export type {
+  SubmissionFieldError,
+  SubmissionFields,
+  SubmissionParseResult,
+} from "./submission-parser.js";
+export type {
   PartialCommitResult,
   PreparedPublication,
   PreparedPublicationResult,
@@ -55,6 +60,4 @@ export type {
   ProfilePublishApplicationResult,
   PublishApplicationResult,
   ServiceResult,
-  SubmissionFieldError,
-  SubmissionParseResult,
 } from "./application-service.js";
