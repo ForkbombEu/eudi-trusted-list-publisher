@@ -136,6 +136,18 @@ mandated by the Responsible Member State, and losing the mandate removes the
 entity from the next version rather than marking it withdrawn. The profiles
 publish no service status, so the meaning of approval has to be stated in words.
 
+## Catalogue Open column
+
+The Catalogue's last column is **Open** and holds one small button per artifact
+the latest version actually has: **JSON** always, **XML** only when an
+`lote.xml` sits beside that version. The buttons open the artifact in place
+rather than downloading it — a reader scanning the Catalogue wants to look, and
+the version page is where downloading belongs.
+
+XML is not produced by this publisher, so the second button is normally absent.
+An absent button is the honest rendering: a disabled or dead XML link would
+promise an artifact that does not exist.
+
 ## Certificate input and guidance
 
 The onboarding certificate field is labelled **Service Digital Identity

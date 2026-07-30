@@ -135,6 +135,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Manifest"
+  /api/v1/lists/{listKey}/versions/{sequence}/xml:
+    get:
+      summary: Open the XML rendition of a version, when one exists
+      description: >-
+        This publisher produces the JSON LoTE and its Compact JAdES signature;
+        TS 119 612 XML and XAdES are out of scope, so a version normally has no
+        XML rendition and this returns 404. The Catalogue links XML only for
+        versions that actually have one. Add download=1 to save it instead of
+        opening it.
+      operationId: getLoteXml
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: download
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: XML rendition of the published LoTE
+          content:
+            application/xml: {}
+        "404":
+          description: No XML rendition is published for this version
+          content:
+            application/json: {}
   /api/v1/lists/{listKey}/versions/{sequence}/inspector:
     get:
       summary: Download the stored Trust Inspector evaluation

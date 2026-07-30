@@ -418,6 +418,12 @@ const API_ROUTES: ApiRoute[] = [
   },
   {
     method: "GET",
+    path: "/api/v1/lists/{listKey}/versions/{sequence}/xml",
+    matcher: /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/xml$/,
+    handler: "getLoteXml",
+  },
+  {
+    method: "GET",
     path: "/api/v1/lists/{listKey}/versions/{sequence}/inspector",
     matcher:
       /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/inspector$/,
@@ -966,6 +972,28 @@ over the published Lists of Trusted Entities.</p>
     res.end(html);
   }
 
+  /**
+   * Catalogue "Open" cell: the latest version's artifacts, opened in place
+   * rather than downloaded. XML is listed only when the version actually has an
+   * `lote.xml` beside it — this publisher does not produce one, so the link
+   * appears for an externally supplied rendition and is absent otherwise, never
+   * offered as a dead link.
+   */
+  function openLinks(
+    s: PublicationStore,
+    listKey: string,
+    sequenceNumber: number,
+  ): string {
+    const base = `/api/v1/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}`;
+    const links = [
+      `<a class="btn btn-sm" href="${base}/lote">JSON</a>`,
+      ...(s.hasLoteXml(listKey, sequenceNumber)
+        ? [`<a class="btn btn-sm" href="${base}/xml">XML</a>`]
+        : []),
+    ];
+    return links.join(" ");
+  }
+
   async function serveCatalogue(
     res: ServerResponse,
     s: PublicationStore,
@@ -1006,6 +1034,7 @@ over the published Lists of Trusted Entities.</p>
         <td>${escapeHtml(latest.nextUpdateDate)}</td>
         <td>${latest.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
         <td><strong>not evaluated</strong></td>
+        <td class="catalogue-open">${openLinks(s, key, latest.sequenceNumber)}</td>
       </tr>`;
       }
 
@@ -1017,7 +1046,7 @@ over the published Lists of Trusted Entities.</p>
           `<h1>Published Lists</h1>${lead}
         <div class="trust-notice"><strong>Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
         <table class="catalogue-table">
-        <thead><tr><th>Trusted List</th><th>Trusted List Family</th><th>Latest Seq</th><th>Issue Date</th><th>Next Update</th><th>Signature</th><th>Trust</th></tr></thead>
+        <thead><tr><th>Trusted List</th><th>Trusted List Family</th><th>Latest Seq</th><th>Issue Date</th><th>Next Update</th><th>Signature</th><th>Trust</th><th>Open</th></tr></thead>
         <tbody>${rows}</tbody>
         </table>`,
         ),
@@ -1306,6 +1335,45 @@ ${versionDownloadsHtml(listKey, sequence)}
     );
   }
 
+  /**
+   * `GET .../xml` — the version's XML rendition. This publisher does not produce
+   * XML, so the usual answer is 404 saying so rather than an empty document; the
+   * Catalogue only links this when the file is actually there.
+   */
+  function apiVersionXml(
+    res: ServerResponse,
+    listKey: string,
+    sequence: number,
+    download: boolean,
+  ): void {
+    let stored: string | null = null;
+    try {
+      stored = store.readLoteXml(listKey, sequence);
+    } catch {
+      stored = null;
+    }
+    if (stored === null) {
+      sendJson(res, 404, {
+        error: "not_found",
+        message:
+          "No XML rendition is published for this version. This publisher produces the JSON LoTE and its Compact JAdES signature; TS 119 612 XML and XAdES are out of scope.",
+      });
+      return;
+    }
+    sendResponse(
+      res,
+      200,
+      stored,
+      "application/xml",
+      "public, max-age=86400, immutable",
+      download
+        ? {
+            "Content-Disposition": `attachment; filename="${listKey}-v${sequence}-lote.xml"`,
+          }
+        : undefined,
+    );
+  }
+
   function handleApi(
     req: IncomingMessage,
     res: ServerResponse,
@@ -1342,6 +1410,19 @@ ${versionDownloadsHtml(listKey, sequence)}
           fileMatch[1]!,
           parseInt(fileMatch[2]!, 10),
           fileMatch[3]! as "lote" | "signature" | "manifest",
+          url.searchParams.get("download") === "1",
+        );
+        logRequest("GET", path, res.statusCode, requestId);
+        return;
+      }
+      const xmlMatch = path.match(
+        /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/xml$/,
+      );
+      if (xmlMatch) {
+        apiVersionXml(
+          res,
+          xmlMatch[1]!,
+          parseInt(xmlMatch[2]!, 10),
           url.searchParams.get("download") === "1",
         );
         logRequest("GET", path, res.statusCode, requestId);

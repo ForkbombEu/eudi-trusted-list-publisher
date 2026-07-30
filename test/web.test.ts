@@ -216,6 +216,45 @@ describe("Web UI", () => {
     expect(res.body).toContain("not evaluated");
   });
 
+  /*
+    The Open column offers the artifacts a version actually has. XML is not
+    produced by this publisher, so the link must be absent until an XML rendition
+    exists beside the version rather than offered as a dead link.
+  */
+  it("offers JSON in the catalogue Open column, and XML only when present", async () => {
+    const key = await storePublication();
+    const store = new PublicationStore({ publicationDir: pubDir });
+    const sequence = store.getHighestStoredSequence(key);
+    expect(sequence).not.toBeNull();
+    const jsonHref = `/api/v1/lists/${key}/versions/${sequence}/lote`;
+    const xmlHref = `/api/v1/lists/${key}/versions/${sequence}/xml`;
+
+    const before = await httpGet("/");
+    expect(before.body).toContain("<th>Open</th>");
+    expect(before.body).toContain(`href="${jsonHref}">JSON<`);
+    expect(before.body).not.toContain(`href="${xmlHref}"`);
+
+    const missing = await httpGet(xmlHref);
+    expect(missing.status).toBe(404);
+    expect(missing.body).toContain("out of scope");
+
+    writeFileSync(
+      store.loteXmlPath(key, sequence!),
+      '<?xml version="1.0"?><TrustServiceStatusList/>',
+      "utf-8",
+    );
+    try {
+      const after = await httpGet("/");
+      expect(after.body).toContain(`href="${xmlHref}">XML<`);
+      const served = await httpGet(xmlHref);
+      expect(served.status).toBe(200);
+      expect(served.contentType).toContain("application/xml");
+      expect(served.body).toContain("TrustServiceStatusList");
+    } finally {
+      unlinkSync(store.loteXmlPath(key, sequence!));
+    }
+  });
+
   it("serves list detail page", async () => {
     const key = await storePublication();
     const res = await httpGet(`/lists/${key}`);
@@ -700,7 +739,7 @@ describe("HTTP correctness", () => {
 
   it("API route registry is used and complete", async () => {
     const routes = getApiRoutes();
-    expect(routes.length).toBe(8);
+    expect(routes.length).toBe(9);
 
     const paths = routes.map((r) => r.path);
     expect(paths).toContain("/api/v1/lists");
@@ -708,6 +747,7 @@ describe("HTTP correctness", () => {
     expect(paths).toContain(
       "/api/v1/lists/{listKey}/versions/{sequence}/inspector",
     );
+    expect(paths).toContain("/api/v1/lists/{listKey}/versions/{sequence}/xml");
     expect(paths).toContain("/api/v1/admin/lists");
     expect(
       routes.filter((route) => route.method === "POST").map((r) => r.path),

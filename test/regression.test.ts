@@ -1695,6 +1695,7 @@ describe("OpenAPI route parity", () => {
         "/api/v1/lists/{listKey}/versions/{sequence}/lote": { get: {} },
         "/api/v1/lists/{listKey}/versions/{sequence}/signature": { get: {} },
         "/api/v1/lists/{listKey}/versions/{sequence}/manifest": { get: {} },
+        "/api/v1/lists/{listKey}/versions/{sequence}/xml": { get: {} },
         "/api/v1/lists/{listKey}/versions/{sequence}/inspector": { get: {} },
         "/api/v1/admin/lists": { post: {} },
       },

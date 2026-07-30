@@ -417,6 +417,21 @@ a .chip {
   border-bottom: none;
 }
 
+/*
+  The Open cell holds one small button per available artifact, on a single line
+  at the right edge, so the last column reads as actions rather than as data. It
+  stays a table cell — the responsive rule below scrolls the whole table, and a
+  flex cell would fall out of that.
+*/
+.catalogue-table td.catalogue-open {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.catalogue-open .btn + .btn {
+  margin-left: var(--space-2);
+}
+
 .catalogue-table tr:hover td {
   background: var(--bg-muted);
 }

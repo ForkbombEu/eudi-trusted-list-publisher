@@ -586,6 +586,41 @@ export class PublicationStore {
     return join(this.versionDir(listKey, sequenceNumber), "manifest.json");
   }
   /**
+   * XML rendition of a published version, if one exists.
+   *
+   * This publisher does not produce XML — TS 119 612 and XAdES are out of scope —
+   * so the file is normally absent. It is read, never written, and sits outside
+   * the integrity-checked set: the manifest hashes cover `lote.json` and
+   * `lote.jades` only, so an XML rendition placed here is an additional artifact
+   * and never evidence about the signed ones.
+   */
+  loteXmlPath(listKey: string, sequenceNumber: number): string {
+    return join(this.versionDir(listKey, sequenceNumber), "lote.xml");
+  }
+
+  /** True when a version has an XML rendition beside its JSON artifacts. */
+  hasLoteXml(listKey: string, sequenceNumber: number): boolean {
+    try {
+      return this.fs.existsSync(this.loteXmlPath(listKey, sequenceNumber));
+    } catch {
+      return false;
+    }
+  }
+
+  /** Returns the XML rendition, or null when the version has none. */
+  readLoteXml(listKey: string, sequenceNumber: number): string | null {
+    if (!this.hasLoteXml(listKey, sequenceNumber)) return null;
+    try {
+      return this.fs.readFileSync(
+        this.loteXmlPath(listKey, sequenceNumber),
+        "utf-8",
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * External assessment of a published version. It sits beside the version's
    * artifacts but is deliberately outside the integrity-checked set: it is
    * evidence *about* the version, produced after publication and re-runnable,

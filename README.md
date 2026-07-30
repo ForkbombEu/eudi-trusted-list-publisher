@@ -120,6 +120,12 @@ family or list on every other page. Click a list to see its version history, and
 a version to see its manifest, entities, certificate details, its Trust Inspector
 result and its downloads.
 
+The last column, **Open**, opens the latest version's artifacts directly: a
+**JSON** button for the LoTE, and an **XML** button only for versions that
+actually have an `lote.xml` beside them. This publisher does not produce XML —
+TS 119 612 and XAdES are out of scope — so the XML button is normally absent
+rather than dead.
+
 ### Version pages and the Trust Inspector
 
 Every published version is submitted to the
@@ -226,6 +232,7 @@ specification is available at `/openapi.yaml` and `/openapi.json`.
 | Download decoded LoTE JSON | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/lote` |
 | Download Compact JAdES | `curl -o lote.jades http://localhost:8080/api/v1/lists/eu_credimi/versions/1/signature` |
 | Download publication manifest | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/manifest` |
+| Open the XML rendition, when a version has one | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/xml` — 404 unless an `lote.xml` was placed beside the version; this publisher does not produce XML |
 | Download the Trust Inspector evaluation | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/inspector` |
 | Create a Trusted List (admin token) | `curl -X POST http://localhost:8080/api/v1/admin/lists -H "Authorization: Bearer $TLP_ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"family":"wrpac-providers","schemeName":"EU WRPAC Providers List","schemeOperatorName":"Example Scheme","schemeTerritory":"EU","schemeOperatorStreet":"1 Example St","schemeOperatorCountry":"IT","schemeOperatorEmail":"trustedlists@example.eu","baseUrl":"https://example.eu/wrpac-providers","keyFile":"/etc/tlp/signer-key.pem","certFile":"/etc/tlp/signer-cert.pem"}'` — `family` is one of `pid-providers`, `wallet-providers`, `wrpac-providers`, `wrprc-providers` |
 | Health check | `curl http://localhost:8080/healthz` |
