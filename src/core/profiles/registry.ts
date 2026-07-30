@@ -31,6 +31,17 @@ import {
   WRPRC_SERVICE_TYPE_ISSUANCE,
   WRPRC_SERVICE_TYPE_REVOCATION,
 } from "./wrprc-provider/constants.js";
+import {
+  PUB_EAA_HISTORICAL_INFORMATION_PERIOD,
+  PUB_EAA_PROVIDER_LOTE_TYPE,
+  PUB_EAA_PROVIDER_ROLE_URI_PREFIX,
+  PUB_EAA_PROVIDER_SCHEME_RULES,
+  PUB_EAA_PROVIDER_STATUS_DETN,
+  PUB_EAA_SERVICE_TYPE_ISSUANCE,
+  PUB_EAA_SERVICE_TYPE_REVOCATION,
+  PUB_EAA_SVC_STATUS_NOTIFIED,
+  PUB_EAA_SVC_STATUS_WITHDRAWN,
+} from "./pub-eaa-provider/constants.js";
 
 /**
  * The six families of List of Trusted Entities that TS 119 602 profiles. The
@@ -44,7 +55,11 @@ export type ProfileFamily =
   | "pub-eaa-providers"
   | "registrars";
 export type EnabledProfileFamily =
-  "pid-providers" | "wallet-providers" | "wrpac-providers" | "wrprc-providers";
+  | "pid-providers"
+  | "wallet-providers"
+  | "wrpac-providers"
+  | "wrprc-providers"
+  | "pub-eaa-providers";
 
 export interface TrustedEntityProfile {
   readonly family: ProfileFamily;
@@ -54,21 +69,75 @@ export interface TrustedEntityProfile {
   readonly statusDeterminationApproach?: string;
   readonly schemeRules?: string;
   readonly allowedServiceTypes: readonly string[];
-  /** `<prefix>/<country code>` identifies the entity role; Annex D/E/F/G. */
+  /** `<prefix>/<country code>` identifies the entity role; Annex D–H. */
   readonly roleUriPrefix?: string;
   readonly maxNextUpdateMonths?: number;
   /**
-   * Annex D and Annex E require the ServiceUniqueIdentifier extension; Annex F
-   * and Annex G do not use it, so the onboarding forms of those families do not
-   * ask for one and the compiler emits no extension container.
+   * Annex D and Annex E require the ServiceUniqueIdentifier extension; Annex F,
+   * G and H do not use it, so the onboarding forms of those families do not ask
+   * for one and the compiler emits no extension container.
    */
   readonly requiresServiceUniqueIdentifier: boolean;
   /**
    * The country the entity role URI names. `entity` is the entity's own
    * country (Annex E); `responsible-member-state` is the Member State that
-   * supervises or mandates it (Annex D, F, G).
+   * supervises, mandates or notifies it (Annex D, F, G, H).
    */
   readonly roleCountrySource: "entity" | "responsible-member-state";
+  /**
+   * Annex H publishes a ServiceStatus and a StatusStartingTime per service, and
+   * keeps the previous state in ServiceHistory. Annex D–G publish neither:
+   * presence in the current version is the whole statement there.
+   */
+  readonly usesServiceStatus: boolean;
+  /** The two status URIs, present only where `usesServiceStatus` is true. */
+  readonly serviceStatuses?: {
+    readonly notified: string;
+    readonly withdrawn: string;
+  };
+  /** Annex H fixes HistoricalInformationPeriod; the others omit the component. */
+  readonly historicalInformationPeriod?: number;
+  /**
+   * Annex D–G require the list to point at itself. Annex H requires
+   * PointersToOtherLoTE to be absent, so the component is emitted per profile
+   * rather than whenever signing certificates happen to be available.
+   */
+  readonly publishesSelfPointer: boolean;
+  /**
+   * Annex D–G require an X.509 service digital identity. Annex H makes it
+   * optional: a notified provider may be listed before its attestation-signing
+   * certificate is known.
+   */
+  readonly requiresServiceCertificate: boolean;
+  /**
+   * Annex H requires the Union or national act under which the attestations are
+   * issued, as an `OJ:` URI.
+   */
+  readonly requiresLegalBasisReference: boolean;
+  /** Collected "where available" by Annex F, G and H; never published. */
+  readonly collectsRegistrationIdentifier: boolean;
+  /** Annex F/G publish a further information page beside the policies URL. */
+  readonly collectsAdditionalInformationUri: boolean;
+  /**
+   * Whether the entity role URI and the legal-basis reference are also
+   * published in `TEElectronicAddress`.
+   *
+   * Annex D–G readers find the role URI in `TEInformationURI`, which is where
+   * this publisher has always put it. The live Trust Inspector's Annex H entity
+   * check reads the entity's URIs from `TEElectronicAddress` instead and reports
+   * `countryRoleUriPresent: false` when the role URI appears only in
+   * `TEInformationURI` — established by probing the running Inspector, the same
+   * way the Annex G `WRPRCrovidersList` literal was. Annex H therefore publishes
+   * both members; neither is wrong, and duplicating a URI costs a reader
+   * nothing.
+   */
+  readonly entityUrisInElectronicAddress: boolean;
+  /**
+   * Annex F, G and H collect the provider's policies and terms URL where
+   * Annex D/E collect an information page. Both occupy the same position in the
+   * published list, so only the wording differs.
+   */
+  readonly informationUriIsPolicyUrl: boolean;
   readonly signatureProfile: "JAdES-Compact-B";
   readonly notImplementedNote?: string;
 }
@@ -81,6 +150,14 @@ const disabled = (family: ProfileFamily, label: string): TrustedEntityProfile =>
     allowedServiceTypes: Object.freeze([]),
     requiresServiceUniqueIdentifier: false,
     roleCountrySource: "entity" as const,
+    usesServiceStatus: false,
+    publishesSelfPointer: false,
+    requiresServiceCertificate: false,
+    requiresLegalBasisReference: false,
+    collectsRegistrationIdentifier: false,
+    collectsAdditionalInformationUri: false,
+    entityUrisInElectronicAddress: false,
+    informationUriIsPolicyUrl: false,
     signatureProfile: "JAdES-Compact-B",
     notImplementedNote: "Not implemented yet",
   });
@@ -103,6 +180,14 @@ export const PROFILE_REGISTRY: Readonly<
     maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
     requiresServiceUniqueIdentifier: true,
     roleCountrySource: "responsible-member-state",
+    usesServiceStatus: false,
+    publishesSelfPointer: true,
+    requiresServiceCertificate: true,
+    requiresLegalBasisReference: false,
+    collectsRegistrationIdentifier: false,
+    collectsAdditionalInformationUri: false,
+    entityUrisInElectronicAddress: false,
+    informationUriIsPolicyUrl: false,
     signatureProfile: "JAdES-Compact-B",
   }),
   "wallet-providers": Object.freeze({
@@ -120,6 +205,14 @@ export const PROFILE_REGISTRY: Readonly<
     maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
     requiresServiceUniqueIdentifier: true,
     roleCountrySource: "entity",
+    usesServiceStatus: false,
+    publishesSelfPointer: true,
+    requiresServiceCertificate: true,
+    requiresLegalBasisReference: false,
+    collectsRegistrationIdentifier: false,
+    collectsAdditionalInformationUri: false,
+    entityUrisInElectronicAddress: false,
+    informationUriIsPolicyUrl: false,
     signatureProfile: "JAdES-Compact-B",
   }),
   "wrpac-providers": Object.freeze({
@@ -137,6 +230,14 @@ export const PROFILE_REGISTRY: Readonly<
     maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
     requiresServiceUniqueIdentifier: false,
     roleCountrySource: "responsible-member-state",
+    usesServiceStatus: false,
+    publishesSelfPointer: true,
+    requiresServiceCertificate: true,
+    requiresLegalBasisReference: false,
+    collectsRegistrationIdentifier: true,
+    collectsAdditionalInformationUri: true,
+    entityUrisInElectronicAddress: false,
+    informationUriIsPolicyUrl: true,
     signatureProfile: "JAdES-Compact-B",
   }),
   "wrprc-providers": Object.freeze({
@@ -154,9 +255,46 @@ export const PROFILE_REGISTRY: Readonly<
     maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
     requiresServiceUniqueIdentifier: false,
     roleCountrySource: "responsible-member-state",
+    usesServiceStatus: false,
+    publishesSelfPointer: true,
+    requiresServiceCertificate: true,
+    requiresLegalBasisReference: false,
+    collectsRegistrationIdentifier: true,
+    collectsAdditionalInformationUri: true,
+    entityUrisInElectronicAddress: false,
+    informationUriIsPolicyUrl: true,
     signatureProfile: "JAdES-Compact-B",
   }),
-  "pub-eaa-providers": disabled("pub-eaa-providers", "Pub-EAA Providers"),
+  "pub-eaa-providers": Object.freeze({
+    family: "pub-eaa-providers",
+    label: "Pub-EAA Providers",
+    enabled: true,
+    loTEType: PUB_EAA_PROVIDER_LOTE_TYPE,
+    statusDeterminationApproach: PUB_EAA_PROVIDER_STATUS_DETN,
+    schemeRules: PUB_EAA_PROVIDER_SCHEME_RULES,
+    allowedServiceTypes: Object.freeze([
+      PUB_EAA_SERVICE_TYPE_ISSUANCE,
+      PUB_EAA_SERVICE_TYPE_REVOCATION,
+    ]),
+    roleUriPrefix: PUB_EAA_PROVIDER_ROLE_URI_PREFIX,
+    maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
+    requiresServiceUniqueIdentifier: false,
+    roleCountrySource: "responsible-member-state",
+    usesServiceStatus: true,
+    serviceStatuses: Object.freeze({
+      notified: PUB_EAA_SVC_STATUS_NOTIFIED,
+      withdrawn: PUB_EAA_SVC_STATUS_WITHDRAWN,
+    }),
+    historicalInformationPeriod: PUB_EAA_HISTORICAL_INFORMATION_PERIOD,
+    publishesSelfPointer: false,
+    requiresServiceCertificate: false,
+    requiresLegalBasisReference: true,
+    collectsRegistrationIdentifier: true,
+    collectsAdditionalInformationUri: false,
+    entityUrisInElectronicAddress: true,
+    informationUriIsPolicyUrl: true,
+    signatureProfile: "JAdES-Compact-B",
+  }),
   registrars: disabled("registrars", "Registrars and Registers"),
 });
 
@@ -165,6 +303,7 @@ const ENABLED_FAMILIES: readonly EnabledProfileFamily[] = Object.freeze([
   "wallet-providers",
   "wrpac-providers",
   "wrprc-providers",
+  "pub-eaa-providers",
 ]);
 
 export function isEnabledProfileFamily(

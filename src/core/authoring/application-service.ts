@@ -6,7 +6,13 @@ import {
   profileForLoTEType,
   type EnabledProfileFamily,
 } from "../profiles/registry.js";
-import type { AuthoringEntity, AuthoringInput } from "../model/authoring.js";
+import type {
+  AuthoringEntity,
+  AuthoringInput,
+  AuthoringServiceHistoryInstance,
+} from "../model/authoring.js";
+import { subjectKeyIdentifierBase64 } from "../model/x509-ski.js";
+import { toUtcDateTime } from "../model/lexical.js";
 import type { LoTEDocument } from "../model/types.js";
 import {
   InspectorClient,
@@ -17,7 +23,11 @@ import { validateEtsiStruct } from "../validate/validate.js";
 import { sign as signLote } from "../signing/signing.js";
 import { verify } from "../verification/verification.js";
 import { publish, PublicationError } from "../publication/manifest.js";
-import { canTransition, buildAuthoringEntity } from "./application-model.js";
+import {
+  canTransition,
+  buildAuthoringEntity,
+  normalizeToAuthoringInput,
+} from "./application-model.js";
 import type {
   ApplicantDataByFamily,
   ApplicationByFamily,
@@ -39,6 +49,8 @@ import {
   loadLatestPublication,
   checkServiceIdentifierUniqueness,
   assembleNextList,
+  restateServiceStatusTimes,
+  schemeDescriptorFor,
 } from "./list-assembler.js";
 
 export type ServiceResult<T> =
@@ -56,6 +68,16 @@ export type PublishApplicationResult =
 /** Profile-aware publication result used by the multi-profile service implementation. */
 export type ProfilePublishApplicationResult =
   ServiceResult<TrustedEntityApplication> | PartialCommitResult;
+/** Outcome of the shared compile/sign/verify/publish/store path. */
+type CommitOutcome =
+  | {
+      success: true;
+      pubResult: Awaited<ReturnType<typeof publish>>;
+      storeResult: Awaited<ReturnType<PublicationStore["store"]>>;
+      manifestHash: string;
+    }
+  | { success: false; error: string };
+
 export interface PreparedPublication {
   success: true;
   data: AuthoringInput;
@@ -196,7 +218,7 @@ export class ApplicationService {
   deleteApplication(id: string): ServiceResult<undefined> {
     const app = this.getApplication(id);
     if (!app) return { success: false, error: "Application not found." };
-    if (app.state === "published") {
+    if (app.state === "published" || app.state === "withdrawn") {
       return {
         success: false,
         error: "Cannot delete a published application.",
@@ -257,7 +279,7 @@ export class ApplicationService {
         error: `Cannot load latest publication: ${e instanceof Error ? e.message : "unknown"}`,
       };
     }
-    const candidateEntity = buildCandidateEntity(app);
+    const candidateEntity = buildCandidateEntity(app, listIssueDateTime);
     // Check duplicates
     const dupCheck = checkServiceIdentifierUniqueness(
       existingEntities,
@@ -270,7 +292,12 @@ export class ApplicationService {
       };
     }
     const input = assembleNextList(
-      existingEntities,
+      /* clause 6.6.5: a carried-over service is restamped with this issue time. */
+      restateServiceStatusTimes(
+        existingEntities,
+        listIssueDateTime,
+        app.family,
+      ),
       candidateEntity,
       app,
       entry,
@@ -335,69 +362,14 @@ export class ApplicationService {
       return { success: false, error: prepare.error };
     }
     try {
-      const compileResult = compileForProfile(app.family, prepare.data);
-      const etsiResult = await validateEtsiStruct(compileResult.document);
-      if (!etsiResult.valid) {
-        const reasons = etsiResult.findings
-          .map((f) => `${f.path}: ${f.message}`)
-          .join("; ");
-        return { success: false, error: `ETSI validation failed: ${reasons}` };
-      }
-      const keyPem = readFileString(listEntry.keyFile);
-      const certPem = readFileString(listEntry.certFile);
-      const privateKey = createPrivateKey(keyPem);
-      const jwk = privateKey.export({ format: "jwk" });
-      const signingKey = await crypto.subtle.importKey(
-        "jwk",
-        jwk,
-        { name: "ECDSA", namedCurve: "P-256" },
-        false,
-        ["sign"],
+      const committed = await this.compileSignAndStore(
+        app.family,
+        prepare.data,
+        listEntry,
+        app.targetListKey,
       );
-      const signed = await signLote({
-        document: compileResult.document,
-        key: signingKey,
-        certificatePem: certPem,
-      });
-      const verifyResult = await verify({
-        compactJws: signed.compact,
-        certificatePem: certPem,
-      });
-      if (!verifyResult.valid) {
-        return { success: false, error: "Post-sign verification failed." };
-      }
-      const pubResult = await publish({
-        compactJws: signed.compact,
-        certificatePem: certPem,
-      });
-      if (pubResult.listKey !== app.targetListKey) {
-        return {
-          success: false,
-          error: `Derived publication list key "${pubResult.listKey}" does not match target list key "${app.targetListKey}".`,
-        };
-      }
-      const manifestJson = JSON.stringify(pubResult.manifest, null, 2);
-      const storeResult = await this.publicationStore.store(
-        pubResult,
-        signed.compact,
-        pubResult.loteJson,
-        manifestJson,
-      );
-      /*
-        Every new or updated version is assessed by the Trust Inspector and the
-        complete evaluation is stored next to it. An Inspector that cannot be
-        reached does not fail the publication — it is recorded as unavailable,
-        which the version page reports as such rather than as conformance.
-      */
-      await this.evaluateWithInspector(
-        pubResult.listKey,
-        pubResult.sequenceNumber,
-        signed.compact,
-        compileResult.document,
-      );
-      const manifestHash = createHash("sha256")
-        .update(manifestJson)
-        .digest("hex");
+      if (!committed.success) return committed;
+      const { pubResult, manifestHash, storeResult } = committed;
       app.state = "published";
       app.publication = {
         listKey: pubResult.listKey,
@@ -439,6 +411,285 @@ export class ApplicationService {
       return { success: false, error: msg };
     }
   }
+  /**
+   * Compiles, validates, signs, verifies, publishes, stores and assesses one
+   * assembled list. Publication and withdrawal differ only in how the entities
+   * were assembled, so the commit boundary itself is written once.
+   */
+  private async compileSignAndStore(
+    family: EnabledProfileFamily,
+    input: AuthoringInput,
+    listEntry: SigningConfigEntry,
+    targetListKey: string,
+  ): Promise<CommitOutcome> {
+    const compileResult = compileForProfile(family, input);
+    const etsiResult = await validateEtsiStruct(compileResult.document);
+    if (!etsiResult.valid) {
+      const reasons = etsiResult.findings
+        .map((f) => `${f.path}: ${f.message}`)
+        .join("; ");
+      return { success: false, error: `ETSI validation failed: ${reasons}` };
+    }
+    const keyPem = readFileString(listEntry.keyFile);
+    const certPem = readFileString(listEntry.certFile);
+    const privateKey = createPrivateKey(keyPem);
+    const jwk = privateKey.export({ format: "jwk" });
+    const signingKey = await crypto.subtle.importKey(
+      "jwk",
+      jwk,
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["sign"],
+    );
+    const signed = await signLote({
+      document: compileResult.document,
+      key: signingKey,
+      certificatePem: certPem,
+    });
+    const verifyResult = await verify({
+      compactJws: signed.compact,
+      certificatePem: certPem,
+    });
+    if (!verifyResult.valid) {
+      return { success: false, error: "Post-sign verification failed." };
+    }
+    const pubResult = await publish({
+      compactJws: signed.compact,
+      certificatePem: certPem,
+    });
+    if (pubResult.listKey !== targetListKey) {
+      return {
+        success: false,
+        error: `Derived publication list key "${pubResult.listKey}" does not match target list key "${targetListKey}".`,
+      };
+    }
+    const manifestJson = JSON.stringify(pubResult.manifest, null, 2);
+    const storeResult = await this.publicationStore.store(
+      pubResult,
+      signed.compact,
+      pubResult.loteJson,
+      manifestJson,
+    );
+    /*
+      Every new or updated version is assessed by the Trust Inspector and the
+      complete evaluation is stored next to it. An Inspector that cannot be
+      reached does not fail the publication — it is recorded as unavailable,
+      which the version page reports as such rather than as conformance.
+    */
+    await this.evaluateWithInspector(
+      pubResult.listKey,
+      pubResult.sequenceNumber,
+      signed.compact,
+      compileResult.document,
+    );
+    return {
+      success: true,
+      pubResult,
+      storeResult,
+      manifestHash: createHash("sha256").update(manifestJson).digest("hex"),
+    };
+  }
+
+  /**
+   * Withdraws a published Pub-EAA notification. The published version is never
+   * rewritten: a new immutable version is added in which every service of this
+   * provider reads `withdrawn` and its previous state is kept in ServiceHistory.
+   */
+  async withdrawApplication(
+    id: string,
+    clock: Date | undefined = undefined,
+  ): Promise<ProfilePublishApplicationResult> {
+    const app = this.getApplication(id);
+    if (!app) return { success: false, error: "Application not found." };
+    if (!getProfile(app.family).usesServiceStatus)
+      return {
+        success: false,
+        error: `${getProfile(app.family).label} publish no service status, so an entity cannot be withdrawn. Remove it from the next version of the list instead.`,
+      };
+    if (!canTransition(app.state, "withdrawn"))
+      return {
+        success: false,
+        error: `Cannot withdraw application in state: ${app.state}`,
+      };
+    return this.withListLock(app.targetListKey, () =>
+      this.doWithdraw(app, clock),
+    );
+  }
+
+  private async doWithdraw(
+    app: TrustedEntityApplication,
+    clock: Date | undefined,
+  ): Promise<ProfilePublishApplicationResult> {
+    const listEntry = this.resolveListConfig(app);
+    if (!listEntry)
+      return {
+        success: false,
+        error: `No signing configuration found for list key '${app.targetListKey}'. Check signing-config.`,
+      };
+    const profile = getProfile(app.family);
+    const withdrawnStatus = profile.serviceStatuses?.withdrawn;
+    if (!withdrawnStatus)
+      return {
+        success: false,
+        error: `${profile.label} declare no withdrawn service status.`,
+      };
+    let latest;
+    try {
+      latest = await loadLatestPublication(
+        this.publicationStore,
+        app.targetListKey,
+        app.family,
+      );
+    } catch (e) {
+      return {
+        success: false,
+        error: `Cannot load latest publication: ${e instanceof Error ? e.message : "unknown"}`,
+      };
+    }
+    if (!latest.exists)
+      return { success: false, error: "No publications exist for this list." };
+
+    /*
+      The entity is identified by its Trusted Entity Name. Annex H services carry
+      no unique identifier, and the name is the published identity the profile
+      already ties the certificates to, so an ambiguous name is refused rather
+      than resolved by position.
+    */
+    const name = app.applicantData.entityName;
+    const matches = latest.entities.filter(
+      (entity) => entity.teName[0]?.value === name,
+    );
+    if (matches.length === 0)
+      return {
+        success: false,
+        error: `No published entity is named "${name}" in the latest version of this list.`,
+      };
+    if (matches.length > 1)
+      return {
+        success: false,
+        error: `The latest version of this list has ${matches.length} entities named "${name}", so the one to withdraw cannot be identified.`,
+      };
+    const target = matches[0]!;
+
+    const now = clock ?? new Date();
+    const listIssueDateTime = now.toISOString();
+    const statusStartingTime = toUtcDateTime(now);
+    const nextUpdate = new Date(
+      now.getTime() + 180 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    let withoutIdentity = 0;
+    let withdrawn: AuthoringEntity;
+    try {
+      withdrawn = {
+        ...target,
+        services: target.services.map((service) => {
+          /*
+            The superseded state is published by key identifier only. A service
+            with no certificate has no key to identify, so it changes status
+            without a history instance rather than publishing one that states no
+            X509SKI — which Annex H does not allow.
+          */
+          const skis = service.serviceDigitalIdentity.x509Certificates.map(
+            (certificate) => subjectKeyIdentifierBase64(certificate),
+          );
+          if (skis.length === 0) withoutIdentity += 1;
+          const previous: AuthoringServiceHistoryInstance[] =
+            skis.length > 0 &&
+            service.serviceStatus &&
+            service.statusStartingTime
+              ? [
+                  {
+                    serviceTypeIdentifier: service.serviceTypeIdentifier,
+                    serviceName: service.serviceName,
+                    x509Skis: skis,
+                    serviceStatus: service.serviceStatus,
+                    statusStartingTime: service.statusStartingTime,
+                  },
+                ]
+              : [];
+          /* Most recent superseded state first. */
+          const history = [...previous, ...(service.serviceHistory ?? [])];
+          return {
+            ...service,
+            serviceStatus: withdrawnStatus,
+            statusStartingTime,
+            ...(history.length > 0 ? { serviceHistory: history } : {}),
+          };
+        }),
+      };
+    } catch (e) {
+      return {
+        success: false,
+        error: `Cannot derive the service key identifiers to publish in ServiceHistory: ${e instanceof Error ? e.message : "unknown"}`,
+      };
+    }
+
+    const entities = restateServiceStatusTimes(
+      latest.entities,
+      listIssueDateTime,
+      app.family,
+    ).map((entity, index) =>
+      latest.entities[index] === target ? withdrawn : entity,
+    );
+    const input = normalizeToAuthoringInput(
+      app,
+      schemeDescriptorFor(listEntry),
+      listIssueDateTime,
+      nextUpdate,
+      latest.sequenceNumber + 1,
+      entities,
+    );
+
+    try {
+      const committed = await this.compileSignAndStore(
+        app.family,
+        input,
+        listEntry,
+        app.targetListKey,
+      );
+      if (!committed.success) return committed;
+      const { pubResult, manifestHash, storeResult } = committed;
+      const record: PublicationRecord = {
+        listKey: pubResult.listKey,
+        sequenceNumber: pubResult.sequenceNumber,
+        manifestSha256: manifestHash,
+        compactJadesSha256: pubResult.manifest.compactJadesSha256,
+        publicationTimestamp: pubResult.manifest.publicationTimestamp,
+      };
+      app.state = "withdrawn";
+      app.withdrawnAt = new Date().toISOString();
+      app.withdrawal = record;
+      try {
+        this.authoringStore.save(app);
+      } catch {
+        return {
+          success: false,
+          code: "PUBLICATION_COMMITTED_APPLICATION_STALE",
+          error: `The withdrawal was published for list key "${pubResult.listKey}" sequence ${pubResult.sequenceNumber} but the application record could not be updated.`,
+          publication: record,
+        };
+      }
+      const warnings = [
+        storeResult.indexWarning,
+        withoutIdentity > 0
+          ? `${withoutIdentity} service${withoutIdentity > 1 ? "s" : ""} carried no certificate, so no ServiceHistory instance could state a key identifier for ${withoutIdentity > 1 ? "them" : "it"}.`
+          : undefined,
+      ].filter((warning): warning is string => Boolean(warning));
+      return {
+        success: true,
+        data: app,
+        message: `Notification withdrawn. Version ${pubResult.sequenceNumber} publishes every service of "${name}" as withdrawn and keeps the previous state in ServiceHistory.`,
+        ...(warnings.length > 0 ? { warning: warnings.join(" ") } : {}),
+      };
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : "Withdrawal publication failed",
+      };
+    }
+  }
+
   async reconcileApplication(
     id: string,
   ): Promise<ServiceResult<TrustedEntityApplication>> {
@@ -659,8 +910,13 @@ export class ApplicationService {
  * Only the entity is wanted here, so the scheme description is irrelevant and
  * left empty; the caller supplies the real one when the list is assembled.
  */
-function buildCandidateEntity(app: TrustedEntityApplication): AuthoringEntity {
-  return buildAuthoringEntity(app.applicantData, app.family);
+function buildCandidateEntity(
+  app: TrustedEntityApplication,
+  statusStartingTime: string,
+): AuthoringEntity {
+  return buildAuthoringEntity(app.applicantData, app.family, {
+    statusStartingTime,
+  });
 }
 function readFileString(path: string): string {
   return readFileSync(path, "utf-8");

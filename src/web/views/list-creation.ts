@@ -89,7 +89,7 @@ ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
       <label for="schemeTerritory">Scheme Territory <span class="required">*</span></label>
       <input type="text" id="schemeTerritory" name="schemeTerritory" required
         maxlength="2" pattern="[A-Z]{2}" value="${escape(v.schemeTerritory ?? "EU")}">
-      <span class="field-help">Two-letter code. The Annex D, E, F and G profiles
+      <span class="field-help">Two-letter code. The Annex D to H profiles
         use <code>EU</code>.</span>
     </div>
   </div>
@@ -154,7 +154,7 @@ ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
         Inspector reports a signer subject mismatch: organisation
         (<code>O</code>) exactly the operator name above, and country
         (<code>C</code>) the scheme territory — <code>EU</code> for the
-        Annex D, E, F and G profiles.</span>
+        Annex D to H profiles.</span>
     </div>
   </div>
 
@@ -164,7 +164,7 @@ ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
       <label class="tl-broken-option">
         <input type="radio" name="health" value="healthy" checked>
         <span><strong>Healthy</strong>
-        <span class="field-help">Conformant with the Annex D/E/F/G rules this
+        <span class="field-help">Conformant with the Annex D to H rules this
         publisher implements.</span></span>
       </label>
     </div>

@@ -22,21 +22,37 @@ import {
   WRPRC_SERVICE_TYPE_REVOCATION,
 } from "../profiles/wrprc-provider/constants.js";
 import {
+  PUB_EAA_SERVICE_TYPE_ISSUANCE,
+  PUB_EAA_SERVICE_TYPE_REVOCATION,
+} from "../profiles/pub-eaa-provider/constants.js";
+import {
   certificateDerBase64,
+  legalBasisUri,
   mailtoUri,
   roleUri,
   telUri,
 } from "../model/lexical.js";
+import { splitPemCertificates } from "./certificate-input.js";
 
 export const APPLICATION_SCHEMA_VERSION = 1;
 export type ApplicationState =
-  "submitted" | "approved" | "rejected" | "published";
+  | "submitted"
+  | "approved"
+  | "rejected"
+  | "published"
+  /** Annex H only: the notification was withdrawn in a later list version. */
+  | "withdrawn";
 export type ServiceKind = "issuance" | "revocation";
 export interface ProviderServiceInput {
   serviceType: ServiceKind;
   serviceName: string;
-  certificatePem: string;
-  /** Annex D/E only; Annex F/G services carry no unique identifier. */
+  /**
+   * One or more concatenated PEM certificates. Annex D–G require exactly one;
+   * Annex H makes the service digital identity optional and permits several
+   * renditions of the same identity, so the field may be absent there.
+   */
+  certificatePem?: string;
+  /** Annex D/E only; Annex F/G/H services carry no unique identifier. */
   serviceUniqueIdentifier?: string;
 }
 export interface CommonApplicantData {
@@ -53,7 +69,7 @@ export interface CommonApplicantData {
    */
   entityInformationURI: string;
   /**
-   * Annex D/E/F/G require a trusted entity to be contactable by email and
+   * Annex D to H require a trusted entity to be contactable by email and
    * telephone as well as by its information page.
    */
   entityEmail: string;
@@ -81,6 +97,17 @@ export interface WalletRelyingPartyApplicantData extends SupervisedApplicantData
   /** Optional additional information page, published beside the policies URL. */
   additionalInformationURI?: string;
 }
+/**
+ * Annex H (Pub-EAA) providers. The exact registered provider name is the
+ * `entityName`, the policies and terms URL occupies `entityInformationURI`, and
+ * the legal basis is the Union or national act the notification rests on.
+ */
+export interface PubEAAProviderApplicantData extends SupervisedApplicantData {
+  /** Official registration identifier, when available. */
+  registrationIdentifier?: string;
+  /** Official Journal reference, published as an `OJ:` URI. */
+  legalBasisReference: string;
+}
 export interface PublicationRecord {
   listKey: string;
   sequenceNumber: number;
@@ -103,6 +130,14 @@ interface ApplicationBase<
   approvedAt?: string;
   rejectedAt?: string;
   publication?: PublicationRecord;
+  /** Annex H only: when the notification was withdrawn. */
+  withdrawnAt?: string;
+  /**
+   * Annex H only: the immutable version that published the withdrawal. The
+   * original `publication` is kept, because that version is still authentic and
+   * downloadable — withdrawal adds a version, it never rewrites one.
+   */
+  withdrawal?: PublicationRecord;
 }
 export type WalletProviderApplication = ApplicationBase<
   "wallet-providers",
@@ -120,22 +155,28 @@ export type WRPRCProviderApplication = ApplicationBase<
   "wrprc-providers",
   WalletRelyingPartyApplicantData
 >;
+export type PubEAAProviderApplication = ApplicationBase<
+  "pub-eaa-providers",
+  PubEAAProviderApplicantData
+>;
 export type TrustedEntityApplication =
   | WalletProviderApplication
   | PIDProviderApplication
   | WRPACProviderApplication
-  | WRPRCProviderApplication;
+  | WRPRCProviderApplication
+  | PubEAAProviderApplication;
 export type WalletProviderServiceInput = ProviderServiceInput;
 
 /** Applicant data shapes any enabled family can produce. */
 export type AnyApplicantData =
   | WalletProviderApplicantData
   | PIDProviderApplicantData
-  | WalletRelyingPartyApplicantData;
+  | WalletRelyingPartyApplicantData
+  | PubEAAProviderApplicantData;
 
 /**
  * The applicant data and application type each family works with. Keying them
- * by family lets one generic parse-and-create path serve all four families
+ * by family lets one generic parse-and-create path serve every family
  * while callers keep the precise type of the family they asked for.
  */
 export interface ApplicantDataByFamily {
@@ -143,12 +184,14 @@ export interface ApplicantDataByFamily {
   "pid-providers": PIDProviderApplicantData;
   "wrpac-providers": WalletRelyingPartyApplicantData;
   "wrprc-providers": WalletRelyingPartyApplicantData;
+  "pub-eaa-providers": PubEAAProviderApplicantData;
 }
 export interface ApplicationByFamily {
   "wallet-providers": WalletProviderApplication;
   "pid-providers": PIDProviderApplication;
   "wrpac-providers": WRPACProviderApplication;
   "wrprc-providers": WRPRCProviderApplication;
+  "pub-eaa-providers": PubEAAProviderApplication;
 }
 
 /** The two service type URIs each family permits, by service kind. */
@@ -171,6 +214,10 @@ const SERVICE_TYPE_URIS: Readonly<
     issuance: WRPRC_SERVICE_TYPE_ISSUANCE,
     revocation: WRPRC_SERVICE_TYPE_REVOCATION,
   }),
+  "pub-eaa-providers": Object.freeze({
+    issuance: PUB_EAA_SERVICE_TYPE_ISSUANCE,
+    revocation: PUB_EAA_SERVICE_TYPE_REVOCATION,
+  }),
 });
 
 export function serviceTypeUri(
@@ -186,7 +233,9 @@ const TRANSITIONS: Readonly<
   submitted: ["approved", "rejected"],
   approved: ["published", "rejected"],
   rejected: [],
-  published: [],
+  /* Only Annex H can leave `published`, and only by withdrawal. */
+  published: ["withdrawn"],
+  withdrawn: [],
 });
 export function canTransition(
   from: ApplicationState,
@@ -195,9 +244,19 @@ export function canTransition(
   return TRANSITIONS[from].includes(to);
 }
 
+export interface BuildEntityOptions {
+  /**
+   * The publication event this entity is being written for. Annex H publishes
+   * it as StatusStartingTime, so the caller supplies the same instant the list
+   * is issued with rather than letting the entity read the clock itself.
+   */
+  statusStartingTime?: string;
+}
+
 export function buildAuthoringEntity(
   data: CommonApplicantData,
   family: EnabledProfileFamily,
+  options: BuildEntityOptions = {},
 ): AuthoringEntity {
   const profile = getProfile(family);
   /*
@@ -215,6 +274,34 @@ export function buildAuthoringEntity(
     "additionalInformationURI" in data
       ? (data as WalletRelyingPartyApplicantData).additionalInformationURI
       : undefined;
+  /*
+    Annex H requires the Union or national act the notification rests on. It is
+    published beside the role URI: TEInformationURI is the collection of URIs
+    that describe the entity, and the legal basis is one of them.
+  */
+  let legalBasis: string | undefined;
+  if (profile.requiresLegalBasisReference) {
+    if (!("legalBasisReference" in data))
+      throw new Error(`${profile.label} require a legal basis reference.`);
+    legalBasis = legalBasisUri(
+      (data as PubEAAProviderApplicantData).legalBasisReference,
+    );
+  }
+  /*
+    Annex H publishes every service as notified from the publication event that
+    listed it; the withdrawal path replaces the status and moves this state into
+    ServiceHistory.
+  */
+  const status = profile.usesServiceStatus
+    ? {
+        serviceStatus: profile.serviceStatuses?.notified,
+        statusStartingTime: options.statusStartingTime,
+      }
+    : undefined;
+  if (status && (!status.serviceStatus || !status.statusStartingTime))
+    throw new Error(
+      `${profile.label} require a status starting time for every service.`,
+    );
   return {
     teName: [{ lang: "en", value: data.entityName }],
     teTradeName: data.entityTradeName
@@ -229,11 +316,24 @@ export function buildAuthoringEntity(
         Country: data.entityCountry,
       },
     ],
-    /* Annex D/E/F/G ask for an email address, a telephone number and a page. */
+    /* Annex D to H ask for an email address, a telephone number and a page. */
     teElectronicAddress: [
       { lang: "en", uriValue: mailtoUri(data.entityEmail) },
       { lang: "en", uriValue: data.entityInformationURI },
       { lang: "en", uriValue: telUri(data.entityTelephone) },
+      /*
+        Annex H readers look for the role URI and the legal basis among the
+        entity's electronic addresses; see `entityUrisInElectronicAddress`.
+      */
+      ...(profile.entityUrisInElectronicAddress
+        ? [
+            {
+              lang: "en",
+              uriValue: roleUri(profile.roleUriPrefix ?? "", roleCountry),
+            },
+            ...(legalBasis ? [{ lang: "en", uriValue: legalBasis }] : []),
+          ]
+        : []),
     ],
     teInformationURI: [
       { lang: "en", uriValue: data.entityInformationURI },
@@ -244,6 +344,7 @@ export function buildAuthoringEntity(
       ...(additionalInformationURI
         ? [{ lang: "en", uriValue: additionalInformationURI }]
         : []),
+      ...(legalBasis ? [{ lang: "en", uriValue: legalBasis }] : []),
     ],
     services: data.services.map((service) => {
       const serviceTypeIdentifier = serviceTypeUri(family, service.serviceType);
@@ -251,23 +352,35 @@ export function buildAuthoringEntity(
         throw new Error(
           `Service type '${serviceTypeIdentifier}' is not allowed for ${profile.label}.`,
         );
+      /*
+        The applicant supplies PEM; the published list carries Base64 DER
+        (clause 6.6.3), so the conversion happens once, here at the authoring
+        boundary, and every later stage sees the published form. Annex H accepts
+        several concatenated certificates for one service and no certificate at
+        all; the other profiles require exactly one.
+      */
+      const pem = service.certificatePem ?? "";
+      const blocks = splitPemCertificates(pem);
+      const supplied = blocks.length > 0 ? blocks : pem.trim() ? [pem] : [];
+      if (supplied.length === 0 && profile.requiresServiceCertificate)
+        throw new Error(
+          `${profile.label} require a service digital identity certificate.`,
+        );
       return {
         serviceTypeIdentifier,
         serviceName: [{ lang: "en", value: service.serviceName }],
-        /*
-          The applicant supplies PEM; the published list carries Base64 DER
-          (clause 6.6.3), so the conversion happens once, here at the authoring
-          boundary, and every later stage sees the published form.
-        */
         serviceDigitalIdentity: {
-          x509Certificates: [certificateDerBase64(service.certificatePem)],
+          x509Certificates: supplied.map((block) =>
+            certificateDerBase64(block),
+          ),
         },
         /*
-          ServiceStatus and StatusStartingTime are never emitted: in these
-          profiles presence in the current list version is itself the statement
-          that the provider is mandated, and losing the mandate removes the
-          entity from the next version.
+          Annex D–G emit no ServiceStatus and no StatusStartingTime: presence in
+          the current list version is itself the statement that the provider is
+          supervised or mandated, and losing that removes the entity from the
+          next version. Annex H states it explicitly instead.
         */
+        ...(status ?? {}),
         ...(profile.requiresServiceUniqueIdentifier
           ? { serviceUniqueIdentifier: service.serviceUniqueIdentifier }
           : {}),
@@ -288,7 +401,7 @@ export interface SchemeDescriptor {
   schemeOperatorWebsite: string;
   schemeName: string;
   schemeTerritory: string;
-  /** At least two, per Annex D/E/F/G. */
+  /** At least two, per Annex D to G; Annex H needs at least one. */
   schemeInformationUris: string[];
   policyUri: string;
   distributionPointUri: string;
@@ -333,12 +446,24 @@ export function normalizeToAuthoringInput(
       distributionPoints: [scheme.distributionPointUri],
       policyUri: scheme.policyUri,
       selfPointerCertificates: scheme.signerCertificates,
+      /*
+        Annex H fixes the period; the other profiles publish no such component,
+        so the value is taken from the profile rather than from configuration.
+      */
+      ...(getProfile(app.family).historicalInformationPeriod !== undefined
+        ? {
+            historicalInformationPeriod: getProfile(app.family)
+              .historicalInformationPeriod,
+          }
+        : {}),
     },
     listIssueDateTime,
     nextUpdate,
     loTESequenceNumber,
     entities: existingEntities ?? [
-      buildAuthoringEntity(app.applicantData, app.family),
+      buildAuthoringEntity(app.applicantData, app.family, {
+        statusStartingTime: listIssueDateTime,
+      }),
     ],
   };
 }
@@ -357,8 +482,5 @@ export function isEnabledApplicationFamily(
   return isEnabledProfileFamily(value);
 }
 export function isProfileFamily(value: string): value is ProfileFamily {
-  return (
-    isEnabledApplicationFamily(value) ||
-    ["pub-eaa-providers", "registrars"].includes(value)
-  );
+  return isEnabledApplicationFamily(value) || ["registrars"].includes(value);
 }

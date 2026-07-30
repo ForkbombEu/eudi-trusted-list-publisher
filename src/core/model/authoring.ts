@@ -37,6 +37,26 @@ export interface AuthoringScheme {
   selfPointerCertificates?: string[];
   /** Media type of the artifact the self pointer addresses. */
   selfPointerMimeType?: string;
+  /**
+   * Months of service history the scheme keeps. Annex H fixes it at 65535; the
+   * other implemented profiles omit the component entirely.
+   */
+  historicalInformationPeriod?: number;
+}
+
+/**
+ * A superseded state of one service, kept in ServiceHistory. Annex H publishes
+ * the previous state by subject key identifier only: the certificate itself
+ * belongs to the current entry, and repeating it in history would suggest the
+ * key is still the service's published identity.
+ */
+export interface AuthoringServiceHistoryInstance {
+  serviceTypeIdentifier?: string;
+  serviceName: AuthoringMultiLang[];
+  /** Base64 subject key identifiers; never certificates. */
+  x509Skis: string[];
+  serviceStatus: string;
+  statusStartingTime: string;
 }
 
 export interface AuthoringService {
@@ -52,6 +72,15 @@ export interface AuthoringService {
    */
   serviceUniqueIdentifier?: string;
   serviceSupplyPoints?: { uriValue: string }[];
+  /**
+   * Annex H only. `serviceStatus` is one of the profile's two status URIs and
+   * `statusStartingTime` is the instant that status began — the publication
+   * event that notified or withdrew the service.
+   */
+  serviceStatus?: string;
+  statusStartingTime?: string;
+  /** Annex H only, most recent superseded state first. */
+  serviceHistory?: AuthoringServiceHistoryInstance[];
 }
 
 export interface AuthoringEntity {

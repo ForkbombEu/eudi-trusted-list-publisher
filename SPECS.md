@@ -14,9 +14,9 @@ Direct import into Credimi's Go backend is not currently required.
 ## Approved first vertical slice
 
 Historical first vertical slice: implement a TS 119 602 JSON LoTE publisher for
-the Wallet Provider profile. The current implementation supports four profiles:
-PID Providers (Annex D), Wallet Providers (Annex E), WRPAC Providers (Annex F)
-and WRPRC Providers (Annex G).
+the Wallet Provider profile. The current implementation supports five profiles:
+PID Providers (Annex D), Wallet Providers (Annex E), WRPAC Providers (Annex F),
+WRPRC Providers (Annex G) and Pub-EAA Providers (Annex H).
 
 The core must compile, schema-validate, sign and verify deterministic LoTE
 artifacts. Signing keys are supplied through local files or CI secrets and
@@ -94,6 +94,7 @@ src/
       pid-provider/    — PID Provider Annex D profile constants
       wrpac-provider/  — WRPAC Provider Annex F profile constants
       wrprc-provider/  — WRPRC Provider Annex G profile constants
+      pub-eaa-provider/ — Pub-EAA Provider Annex H profile constants
     compile/          — Compile authoring input -> LoTE
     validate/         — Schema validation (authoring + ETSI)
     signing/          — JAdES Compact signing
@@ -296,10 +297,10 @@ families, in annex order:
 - Wallet Providers — enabled (Annex E)
 - WRPAC Providers — enabled (Annex F)
 - WRPRC Providers — enabled (Annex G)
-- Pub-EAA Providers — disabled
+- Pub-EAA Providers — enabled (Annex H)
 - Registrars and Registers — disabled
 
-The two disabled families are displayed with "Not implemented yet". The
+The one disabled family is displayed with "Not implemented yet". The
 Non-qualified EAA and QEAA entries were removed: TS 119 602 does not profile
 them as separate lists of trusted entities.
 
@@ -309,6 +310,7 @@ Defined in `src/core/authoring/application-model.ts`:
 
 ```
 ApplicationState = "submitted" | "approved" | "rejected" | "published"
+                 | "withdrawn"   // Annex H only
 TrustedEntityApplication { id, schemaVersion, family, state, submittedAt,
   applicantData { entityName, entityTradeName?, entityStreetAddress,
     entityLocality?, entityPostalCode?, entityCountry, entityInformationURI,
@@ -323,7 +325,8 @@ Lifecycle transitions:
 - submitted → approved, rejected
 - approved → published, rejected
 - rejected → (terminal)
-- published → (terminal)
+- published → withdrawn (Annex H only)
+- withdrawn → (terminal)
 
 Normalization: `normalizeToAuthoringInput()` maps an application to the existing
 `AuthoringInput` type. Scheme operator and scheme metadata come from trusted
@@ -359,6 +362,8 @@ Onboarding (public):
 - `POST /onboarding/wrpac-provider` — submit application
 - `GET /onboarding/wrprc-provider` — WRPRC Provider application form
 - `POST /onboarding/wrprc-provider` — submit application
+- `GET /onboarding/pub-eaa-provider` — Pub-EAA Provider application form
+- `POST /onboarding/pub-eaa-provider` — submit application
 - `GET /onboarding/submitted/{id}` — submission confirmation
 
 Administration (requires admin token via `?token=` query parameter):
@@ -368,6 +373,8 @@ Administration (requires admin token via `?token=` query parameter):
 - `POST /admin/applications/{id}/approve` — approve application
 - `POST /admin/applications/{id}/reject` — reject with note
 - `POST /admin/applications/{id}/publish` — compile, sign, verify, store
+- `POST /admin/applications/{id}/withdraw` — Pub-EAA only: publish a new version
+  with every service withdrawn
 - `POST /admin/applications/{id}/delete` — delete (unpublished only)
 - `GET /admin/signing` — signing configuration status
 - `GET /admin/settings` — auto-approval settings
@@ -657,3 +664,44 @@ Reconciliation after a partial commit identifies a published entity by its
 complete service-identifier set. Annex F/G services have none, so the operation
 is refused with a message saying why rather than matching the first entity that
 also has none.
+
+## Phase 9: Pub-EAA Providers (Annex H)
+
+`pub-eaa-providers` is the fifth enabled family. The registry grew the members
+the rest of the code reads instead of switching on family names:
+`usesServiceStatus`, `serviceStatuses`, `historicalInformationPeriod`,
+`publishesSelfPointer`, `requiresServiceCertificate`,
+`requiresLegalBasisReference`, `collectsRegistrationIdentifier`,
+`collectsAdditionalInformationUri` and `informationUriIsPolicyUrl`. The last
+three replaced the parser's `relyingParty` flag, so a fourth field layout did not
+mean a fourth branch.
+
+### Model and compiler
+
+`AuthoringService` gained `serviceStatus`, `statusStartingTime` and
+`serviceHistory`; `AuthoringScheme` gained `historicalInformationPeriod`.
+`compileForProfile()` emits each of them only where the profile declares them and
+refuses them elsewhere, so a stray status cannot reach an Annex D–G list.
+
+`src/core/model/x509-ski.ts` produces the `X509SKI` values a history instance
+publishes. Node's `X509Certificate` exposes neither the SubjectKeyIdentifier
+extension nor a derived identifier, so the module walks the certificate DER for
+extension 2.5.29.14 and falls back to RFC 5280 method (1).
+
+### Withdrawal
+
+`ApplicationService.withdrawApplication()` runs under the same per-list lock as
+publication and through the same commit path — `compileSignAndStore()` was
+extracted so publication and withdrawal share it exactly. It loads the
+authenticated latest version, finds the entity by Trusted Entity Name, moves each
+service's current state into `ServiceHistory` by key identifier, sets the
+withdrawn status, and publishes sequence + 1. The application keeps its original
+`publication` record and gains `withdrawal` and `withdrawnAt`.
+
+### Storage
+
+`AuthoringStore` validates a stored record against the family it claims: only a
+family whose profile publishes a service status may carry `withdrawn`,
+`withdrawnAt` or `withdrawal`; Annex H must carry a legal basis reference and no
+family that does not collect one may; and a certificate field may be absent only
+where the profile allows it, while every PEM block present must still parse.

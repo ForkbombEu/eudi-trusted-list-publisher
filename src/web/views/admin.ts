@@ -1,4 +1,7 @@
-import type { TrustedEntityApplication } from "../../core/authoring/application-model.js";
+import type {
+  PublicationRecord,
+  TrustedEntityApplication,
+} from "../../core/authoring/application-model.js";
 import type { SigningConfigEntryDisplay } from "../../core/authoring/signing-config.js";
 import type { PublisherSettings } from "../../core/authoring/settings-store.js";
 import { LIST_FAMILIES } from "../../core/authoring/list-family-catalogue.js";
@@ -29,7 +32,13 @@ export function adminApplicationsHtml(
   apps: TrustedEntityApplication[],
   stateFilter?: string,
 ): string {
-  const states = ["submitted", "approved", "rejected", "published"] as const;
+  const states = [
+    "submitted",
+    "approved",
+    "rejected",
+    "published",
+    "withdrawn",
+  ] as const;
 
   let filterHtml = "";
   for (const s of states) {
@@ -113,6 +122,17 @@ export function adminApplicationDetailHtml(
       ? app.applicantData
       : null;
   const relyingParty = relyingPartyData !== null;
+  /*
+    Annex H carries a legal basis and an optional registration identifier, and
+    its public URI is the policies and terms URL, like Annex F/G.
+  */
+  const pubEaaData =
+    app.family === "pub-eaa-providers" ? app.applicantData : null;
+  const policyUrl = relyingParty || pubEaaData !== null;
+  const registrationIdentifier =
+    relyingPartyData?.registrationIdentifier ??
+    pubEaaData?.registrationIdentifier ??
+    null;
   const responsibleMemberState =
     "responsibleMemberState" in data ? data.responsibleMemberState : null;
 
@@ -137,7 +157,11 @@ export function adminApplicationDetailHtml(
           ? `<tr><th>Unique Identifier</th><td><code>${escape(svc.serviceUniqueIdentifier)}</code></td></tr>`
           : ""
       }
-      <tr><th>Certificate</th><td><pre class="cert-preview">${escape(svc.certificatePem)}</pre></td></tr>
+      <tr><th>Certificate</th><td>${
+        svc.certificatePem
+          ? `<pre class="cert-preview">${escape(svc.certificatePem)}</pre>`
+          : '<span class="badge muted">none supplied</span>'
+      }</td></tr>
     </table>
   </div>`,
     )
@@ -180,6 +204,7 @@ ${messages}
     <tr><th>Submitted</th><td>${escape(app.submittedAt)}</td></tr>
     ${app.approvedAt ? `<tr><th>Approved</th><td>${escape(app.approvedAt)}</td></tr>` : ""}
     ${app.rejectedAt ? `<tr><th>Rejected</th><td>${escape(app.rejectedAt)}</td></tr>` : ""}
+    ${app.withdrawnAt ? `<tr><th>Withdrawn</th><td>${escape(app.withdrawnAt)}</td></tr>` : ""}
     ${app.adminNote ? `<tr><th>Admin Note</th><td>${escape(app.adminNote)}</td></tr>` : ""}
   </table>
 </div>
@@ -195,7 +220,7 @@ ${pubInfo}
     ${data.entityLocality ? `<tr><th>Locality</th><td>${escape(data.entityLocality)}</td></tr>` : ""}
     ${data.entityPostalCode ? `<tr><th>Postal Code</th><td>${escape(data.entityPostalCode)}</td></tr>` : ""}
     <tr><th>Country</th><td>${escape(data.entityCountry)}</td></tr>
-    <tr><th>${relyingParty ? "Policies and Terms URL" : "Information URI"}</th><td><code>${escape(data.entityInformationURI)}</code></td></tr>
+    <tr><th>${policyUrl ? "Policies and Terms URL" : "Information URI"}</th><td><code>${escape(data.entityInformationURI)}</code></td></tr>
     ${
       relyingPartyData?.additionalInformationURI
         ? `<tr><th>Additional Information URL</th><td><code>${escape(relyingPartyData.additionalInformationURI)}</code></td></tr>`
@@ -204,8 +229,13 @@ ${pubInfo}
     <tr><th>Email</th><td><code>${escape(data.entityEmail)}</code></td></tr>
     <tr><th>Telephone</th><td><code>${escape(data.entityTelephone)}</code></td></tr>
     ${
-      relyingPartyData?.registrationIdentifier
-        ? `<tr><th>Official Registration Identifier</th><td><code>${escape(relyingPartyData.registrationIdentifier)}</code></td></tr>`
+      registrationIdentifier
+        ? `<tr><th>Official Registration Identifier</th><td><code>${escape(registrationIdentifier)}</code></td></tr>`
+        : ""
+    }
+    ${
+      pubEaaData
+        ? `<tr><th>Legal Basis Reference</th><td><code>${escape(pubEaaData.legalBasisReference)}</code></td></tr>`
         : ""
     }
     ${
@@ -249,6 +279,17 @@ ${
 
 <div class="card">
   <h2>Actions</h2>
+  ${
+    pubEaaData
+      ? `<p class="field-help">Approving this application publishes every service
+         as <strong>notified</strong> by the Responsible Member State
+         (${escape(responsibleMemberState ?? "—")}), with a StatusStartingTime
+         taken from the publication event. Withdrawing the notification later
+         publishes a new immutable version in which every service reads
+         <strong>withdrawn</strong> and the previous notified state is kept in
+         ServiceHistory.</p>`
+      : ""
+  }
   ${
     relyingParty
       ? `<p class="field-help">Approving this application states that the provider
@@ -297,16 +338,36 @@ function actionsHtml(app: TrustedEntityApplication): string {
   <button type="submit" class="btn btn-danger">Delete</button>
 </form>`;
     case "published":
-      return `<p>&#x2705; This application has been published and cannot be modified or deleted.</p>`;
+      /*
+        Annex H is the only profile that can say a provider is no longer listed,
+        because it is the only one that publishes a service status.
+      */
+      return app.family === "pub-eaa-providers"
+        ? `<p>&#x2705; This application has been published and cannot be modified or deleted.</p>
+<form method="post" action="/admin/applications/${id}/withdraw" style="display:inline;"
+  onsubmit="return confirm('Withdraw this Pub-EAA notification? A new immutable list version will be published with every service withdrawn.');">
+  <button type="submit" class="btn btn-danger">Withdraw notification</button>
+</form>`
+        : `<p>&#x2705; This application has been published and cannot be modified or deleted.</p>`;
+    case "withdrawn":
+      return `<p>This Pub-EAA notification has been withdrawn. Both the notified
+        and the withdrawn versions remain published and downloadable.</p>`;
   }
 }
 
 function publicationInfoHtml(app: TrustedEntityApplication): string {
-  if (!app.publication) return "";
-  const p = app.publication;
+  return `${publicationRecordCard(app.publication, "Publication Record")}${publicationRecordCard(app.withdrawal, "Withdrawal Record")}`;
+}
+
+function publicationRecordCard(
+  record: PublicationRecord | undefined,
+  title: string,
+): string {
+  if (!record) return "";
+  const p = record;
   return `
 <div class="card">
-  <h2>Publication Record</h2>
+  <h2>${title}</h2>
   <table class="kv-table">
     <tr><th>Trusted List</th><td>${listChip(p.listKey)}</td></tr>
     <tr><th>Sequence Number</th><td>${p.sequenceNumber}</td></tr>
@@ -338,6 +399,8 @@ function stateBadge(state: string): string {
       return "error";
     case "published":
       return "ok";
+    case "withdrawn":
+      return "muted";
     default:
       return "muted";
   }

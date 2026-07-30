@@ -1,4 +1,5 @@
 import { X509Certificate } from "node:crypto";
+import { publicKeyFingerprint } from "../model/x509-ski.js";
 
 /**
  * Classification of whatever the applicant pasted into the Service Digital
@@ -172,6 +173,49 @@ export function classifyCertificateInput(
     message: CERTIFICATE_INPUT_MESSAGES.unknown,
     certificate: null,
   };
+}
+
+const PEM_CERTIFICATE_BLOCK =
+  /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+
+/**
+ * Splits the field value into its PEM certificate blocks. Annex H lets one
+ * service publish more than one certificate — typically the attestation-signing
+ * certificate and the CA certificate that issued it — so the field accepts
+ * several concatenated blocks and each is validated on its own.
+ */
+export function splitPemCertificates(text: string): string[] {
+  return [...text.matchAll(PEM_CERTIFICATE_BLOCK)].map((match) => match[0]);
+}
+
+/**
+ * Annex H requires every certificate published for one service to represent the
+ * same key and the same subject: they are renditions of one identity, not a
+ * certification path. Returns null when the set is consistent, otherwise a
+ * message naming what differs.
+ */
+export function checkCertificateSetConsistency(
+  certificates: readonly X509Certificate[],
+): string | null {
+  const [first, ...rest] = certificates;
+  if (!first) return null;
+  const key = publicKeyFingerprint(first);
+  const subject = first.subject;
+  for (const certificate of rest) {
+    if (publicKeyFingerprint(certificate) !== key)
+      return (
+        "All certificates supplied for one service must represent the same " +
+        "public key. Supply the attestation-signing certificate, or the CA " +
+        "certificate that issued it, but not two different keys."
+      );
+    if (certificate.subject !== subject)
+      return (
+        "All certificates supplied for one service must have an identical " +
+        `subject. Found "${subject.split("\n").join(", ")}" and ` +
+        `"${certificate.subject.split("\n").join(", ")}".`
+      );
+  }
+  return null;
 }
 
 /** Reads one relative distinguished name from a Node subject/issuer string. */

@@ -15,6 +15,7 @@ const ONBOARDING_ROUTES: Partial<Record<ProfileFamily, string>> = {
   "pid-providers": "/onboarding/pid-provider",
   "wrpac-providers": "/onboarding/wrpac-provider",
   "wrprc-providers": "/onboarding/wrprc-provider",
+  "pub-eaa-providers": "/onboarding/pub-eaa-provider",
 };
 
 export function onboardingCatalogueHtml(): string {
@@ -87,12 +88,19 @@ interface FormProfile {
   informationField: { name: string; label: string; help: string };
   /** Rendered directly after the information field. */
   extraUriFields: string;
-  /** Annex D/E only; Annex F/G services carry no unique identifier. */
+  /** Annex D/E only; Annex F/G/H services carry no unique identifier. */
   requiresServiceUniqueIdentifier: boolean;
+  /** Annex H makes the service digital identity optional. */
+  requiresServiceCertificate: boolean;
   /** What this profile's service certificate is used for. */
   certificatePurpose: string;
-  /** Shown above the actions when the profile publishes no service status. */
+  /**
+   * Shown in a closing card: what being listed means in this profile, said in
+   * words because the artifact cannot say it in every family.
+   */
   mandateNote: string;
+  /** Heading of that closing card. */
+  mandateTitle: string;
 }
 
 /** The Responsible Member State field, shared by Annex D, F and G. */
@@ -139,7 +147,9 @@ const WALLET_PROFILE: FormProfile = {
   certificatePurpose:
     "The certificate used to authenticate and validate components of the " +
     "wallet unit supplied under the wallet solution.",
+  requiresServiceCertificate: true,
   mandateNote: "",
+  mandateTitle: "",
 };
 
 const PID_PROFILE = (
@@ -167,7 +177,9 @@ const PID_PROFILE = (
   certificatePurpose:
     "The certificate used to verify signatures or seals created by the PID " +
     "Provider on issued PID.",
+  requiresServiceCertificate: true,
   mandateNote: "",
+  mandateTitle: "",
   extraEntityFields: memberStateField(
     v,
     errors,
@@ -209,6 +221,7 @@ function relyingPartyProfile(
     issuanceLabel: `${options.serviceKindLabel} Issuance`,
     revocationLabel: `${options.serviceKindLabel} Revocation`,
     requiresServiceUniqueIdentifier: false,
+    requiresServiceCertificate: true,
     certificatePurpose: `The certificate used to verify signatures or seals created by the ${options.serviceKindLabel} Provider on issued ${options.certificateKind}.`,
     informationField: {
       name: "entityPolicyURI",
@@ -225,6 +238,7 @@ function relyingPartyProfile(
       <span class="field-help">Optional. Published beside the policies URL when supplied.</span>
       ${fieldError("additionalInformationURI")}
     </div>`,
+    mandateTitle: "Mandate",
     mandateNote:
       "Being listed states that this provider is currently mandated by the " +
       "Responsible Member State. These profiles publish no service status and " +
@@ -246,6 +260,100 @@ function relyingPartyProfile(
       ${fieldError("registrationIdentifier")}
     </div>`,
   };
+}
+
+/**
+ * Annex H (Pub-EAA). Two fields exist only here: the legal basis the
+ * notification rests on, which is published as an `OJ:` URI, and an optional
+ * certificate — Annex H is the only implemented profile whose service digital
+ * identity may be absent, and the only one that publishes a service status.
+ */
+function pubEaaProfile(
+  v: Record<string, string>,
+  errors?: Record<string, string>,
+): FormProfile {
+  const fieldError = (name: string): string =>
+    errors?.[name]
+      ? `<span class="field-error">${escape(errors[name] ?? "")}</span>`
+      : "";
+  return {
+    title: "Pub-EAA Provider Application",
+    action: "/onboarding/pub-eaa-provider",
+    entityHelp:
+      "The legal entity applying to be listed as a provider of publicly " +
+      "issued electronic attestations of attributes (Pub-EAA). Enter the " +
+      "exact registered provider name.",
+    listHelp:
+      "Choose the Pub-EAA Providers list of the Member State that notified this provider.",
+    noListsMessage:
+      "No Pub-EAA Provider lists are configured. Add entries to your signing-config.",
+    serviceTypeHelp:
+      "Select the Pub-EAA service type. Register issuance, revocation, or both.",
+    issuanceLabel: "Pub-EAA Issuance",
+    revocationLabel: "Pub-EAA Revocation",
+    requiresServiceUniqueIdentifier: false,
+    requiresServiceCertificate: false,
+    certificatePurpose:
+      "Optional. The certificate used to verify signatures or seals created " +
+      "by the Pub-EAA Provider on issued attestations, or the certificate of " +
+      "the CA that issues those attestation-signing certificates. More than " +
+      "one may be supplied, provided they carry the same public key and an " +
+      "identical subject.",
+    informationField: {
+      name: "entityPolicyURI",
+      label: "Policies and Terms URL",
+      help:
+        "Public URL of the policies and terms under which the provider issues " +
+        "attestations. Published as the entity's information URI.",
+    },
+    extraUriFields: "",
+    mandateTitle: "Notification",
+    mandateNote:
+      "Being listed states that this provider is currently notified by the " +
+      "Responsible Member State. Every service is published with the status " +
+      "notified and a status starting time taken from the publication event. " +
+      "If the notification is withdrawn, a new immutable list version is " +
+      "published in which every service reads withdrawn and the previous " +
+      "notified state is kept in the service history.",
+    extraEntityFields: `${memberStateField(
+      v,
+      errors,
+      "ISO 3166-1 alpha-2 code of the Member State that notified this provider. It is published in the entity role URI.",
+      "IT",
+    )}
+    <div class="form-group">
+      <label for="registrationIdentifier">Official Registration Identifier</label>
+      <input type="text" id="registrationIdentifier" name="registrationIdentifier"
+        value="${escape(v.registrationIdentifier ?? "")}" maxlength="120">
+      <span class="field-help">When available: the identifier under which the
+        entity is registered in an official register. Recorded with the
+        application for review.</span>
+      ${fieldError("registrationIdentifier")}
+    </div>
+    <div class="form-group">
+      <label for="legalBasisReference">Legal Basis Reference <span class="required">*</span></label>
+      <input type="text" id="legalBasisReference" name="legalBasisReference" required
+        value="${escape(v.legalBasisReference ?? "")}" maxlength="200"
+        placeholder="e.g. OJ:L_202401183">
+      <span class="field-help">The Union or national act under which the
+        attestations are issued, as an Official Journal reference. Published as
+        an <code>OJ:</code> URI; the prefix is added for you.</span>
+      ${fieldError("legalBasisReference")}
+    </div>`,
+  };
+}
+
+export function pubEaaProviderFormHtml(
+  values?: Record<string, string>,
+  errors?: Record<string, string>,
+  listOptions?: ListOption[],
+): string {
+  return providerFormHtml(
+    pubEaaProfile(values ?? {}, errors),
+    values,
+    errors,
+    listOptions,
+  );
 }
 
 export function walletProviderFormHtml(
@@ -474,7 +582,7 @@ ${profile.extraUriFields}
   ${
     profile.mandateNote
       ? `<div class="card">
-    <h2>Mandate</h2>
+    <h2>${escape(profile.mandateTitle)}</h2>
     <p class="field-help">${escape(profile.mandateNote)}</p>
   </div>`
       : ""
@@ -604,8 +712,14 @@ function serviceBlockHtml(
     ${e("serviceName")}
   </div>
   <div class="form-group">
-    <label>${escape(CERTIFICATE_FIELD_LABEL)} <span class="required">*</span></label>
-    <textarea name="${escape(f("certificatePem"))}" required rows="8"
+    <label>${escape(CERTIFICATE_FIELD_LABEL)}${
+      profile.requiresServiceCertificate
+        ? ' <span class="required">*</span>'
+        : ""
+    }</label>
+    <textarea name="${escape(f("certificatePem"))}"${
+      profile.requiresServiceCertificate ? " required" : ""
+    } rows="8"
       placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----">${escape(v[f("certificatePem")] ?? "")}</textarea>
     <span class="field-help">${escape(profile.certificatePurpose)}
       Upload an X.509 certificate beginning with

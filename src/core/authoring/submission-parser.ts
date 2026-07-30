@@ -3,6 +3,7 @@ import {
   type ApplicantDataByFamily,
   type ApplicationByFamily,
   type ProviderServiceInput,
+  type PubEAAProviderApplicantData,
   type SupervisedApplicantData,
   type WalletProviderApplicantData,
   type WalletRelyingPartyApplicantData,
@@ -12,9 +13,13 @@ import {
   type EnabledProfileFamily,
 } from "../profiles/registry.js";
 import {
+  checkCertificateSetConsistency,
   checkCertificateSubjectOrganisation,
   classifyCertificateInput,
+  splitPemCertificates,
 } from "./certificate-input.js";
+import { isLegalBasisReference } from "../model/lexical.js";
+import { X509Certificate } from "node:crypto";
 
 export type SubmissionFields = Record<string, string>;
 export interface SubmissionFieldError {
@@ -41,12 +46,14 @@ export type SubmissionParseResult =
 /**
  * Families whose applicant declares the Member State responsible for it. For
  * PID Providers that Member State supervises the provider; for WRPAC and WRPRC
- * Providers it is the Member State whose mandate the provider currently holds.
+ * Providers it is the Member State whose mandate the provider currently holds;
+ * for Pub-EAA Providers it is the Member State that notified it.
  */
 const SUPERVISED_FAMILIES: readonly EnabledProfileFamily[] = [
   "pid-providers",
   "wrpac-providers",
   "wrprc-providers",
+  "pub-eaa-providers",
 ];
 
 /**
@@ -85,6 +92,7 @@ export function parseAndValidateSubmission<
   const profile = getEnabledProfile(resolved);
   const supervised = SUPERVISED_FAMILIES.includes(resolved);
   const relyingParty = WALLET_RELYING_PARTY_FAMILIES.includes(resolved);
+  const pubEaa = resolved === "pub-eaa-providers";
 
   const errors: SubmissionFieldError[] = [];
   const preservedFields: SubmissionFields = {};
@@ -99,13 +107,16 @@ export function parseAndValidateSubmission<
     "entityEmail",
     "entityTelephone",
     ...(supervised ? ["responsibleMemberState"] : []),
-    ...(relyingParty
-      ? [
-          "registrationIdentifier",
-          "entityPolicyURI",
-          "additionalInformationURI",
-        ]
+    ...(profile.informationUriIsPolicyUrl
+      ? ["entityPolicyURI"]
       : ["entityInformationURI"]),
+    ...(profile.collectsRegistrationIdentifier
+      ? ["registrationIdentifier"]
+      : []),
+    ...(profile.collectsAdditionalInformationUri
+      ? ["additionalInformationURI"]
+      : []),
+    ...(profile.requiresLegalBasisReference ? ["legalBasisReference"] : []),
   ]);
   const serviceSubfields = [
     "serviceType",
@@ -149,29 +160,29 @@ export function parseAndValidateSubmission<
     call it the information URI; Annex F/G collect the policies and terms URL,
     which the published list uses in the same place.
   */
-  const informationFieldName = relyingParty
+  const informationFieldName = profile.informationUriIsPolicyUrl
     ? "entityPolicyURI"
     : "entityInformationURI";
   const entityInformationURI = field(informationFieldName);
   if (!entityInformationURI)
     addError(
       informationFieldName,
-      relyingParty
+      profile.informationUriIsPolicyUrl
         ? "Policies and terms URL is required."
         : "Information URI is required.",
     );
   else if (!isUrl(entityInformationURI))
     addError(
       informationFieldName,
-      relyingParty
+      profile.informationUriIsPolicyUrl
         ? "Policies and terms URL must be a valid URL."
         : "Information URI must be a valid URL.",
     );
 
-  const registrationIdentifier = relyingParty
+  const registrationIdentifier = profile.collectsRegistrationIdentifier
     ? field("registrationIdentifier")
     : "";
-  const additionalInformationURI = relyingParty
+  const additionalInformationURI = profile.collectsAdditionalInformationUri
     ? field("additionalInformationURI")
     : "";
   if (additionalInformationURI && !isUrl(additionalInformationURI))
@@ -181,8 +192,25 @@ export function parseAndValidateSubmission<
     );
 
   /*
-    Annex D/E/F/G require a contactable entity: the published list carries the
-    email as a mailto URI and the telephone number as a tel URI.
+    Annex H requires the Union or national act the notification rests on. It is
+    published as an `OJ:` URI, so the reference has to be expressible as one.
+  */
+  const legalBasisReference = profile.requiresLegalBasisReference
+    ? field("legalBasisReference")
+    : "";
+  if (profile.requiresLegalBasisReference) {
+    if (!legalBasisReference)
+      addError("legalBasisReference", "Legal basis reference is required.");
+    else if (!isLegalBasisReference(legalBasisReference))
+      addError(
+        "legalBasisReference",
+        "Legal basis reference must be an Official Journal reference, e.g. OJ:L_202401183 or C/2024/1234.",
+      );
+  }
+
+  /*
+    Annex D–H require a contactable entity: the published list carries the email
+    as a mailto URI and the telephone number as a tel URI.
   */
   const entityEmail = field("entityEmail");
   if (!entityEmail) addError("entityEmail", "Email address is required.");
@@ -222,16 +250,37 @@ export function parseAndValidateSubmission<
       applicant knows which object they supplied. The subject organisation must
       be the Trusted Entity Name, because the service digital identity has to
       identify the entity the list vouches for.
+
+      Annex H makes the certificate optional and lets one service publish more
+      than one — the attestation-signing certificate or the CA certificate that
+      issued it — so each block is classified on its own and the set must then
+      represent one key and one subject.
     */
-    const certificate = classifyCertificateInput(certificatePem);
-    if (certificate.message !== null)
-      addError(`${prefix}certificatePem`, certificate.message);
-    else if (certificate.certificate) {
-      const mismatch = checkCertificateSubjectOrganisation(
-        certificate.certificate,
-        entityName,
-      );
-      if (mismatch) addError(`${prefix}certificatePem`, mismatch);
+    if (!certificatePem && profile.requiresServiceCertificate)
+      addError(`${prefix}certificatePem`, "Certificate is required.");
+    else if (certificatePem) {
+      const blocks = splitPemCertificates(certificatePem);
+      const parsed: X509Certificate[] = [];
+      for (const block of blocks.length > 0 ? blocks : [certificatePem]) {
+        const certificate = classifyCertificateInput(block);
+        if (certificate.message !== null) {
+          addError(`${prefix}certificatePem`, certificate.message);
+          break;
+        }
+        if (certificate.certificate) parsed.push(certificate.certificate);
+      }
+      for (const certificate of parsed) {
+        const mismatch = checkCertificateSubjectOrganisation(
+          certificate,
+          entityName,
+        );
+        if (mismatch) {
+          addError(`${prefix}certificatePem`, mismatch);
+          break;
+        }
+      }
+      const inconsistent = checkCertificateSetConsistency(parsed);
+      if (inconsistent) addError(`${prefix}certificatePem`, inconsistent);
     }
     let serviceUniqueIdentifier: string | undefined;
     if (profile.requiresServiceUniqueIdentifier) {
@@ -250,13 +299,13 @@ export function parseAndValidateSubmission<
     if (
       (serviceType === "issuance" || serviceType === "revocation") &&
       serviceName &&
-      certificatePem &&
+      (certificatePem || !profile.requiresServiceCertificate) &&
       (!profile.requiresServiceUniqueIdentifier || serviceUniqueIdentifier)
     )
       services.push({
         serviceType,
         serviceName,
-        certificatePem,
+        ...(certificatePem ? { certificatePem } : {}),
         ...(profile.requiresServiceUniqueIdentifier
           ? { serviceUniqueIdentifier }
           : {}),
@@ -287,6 +336,20 @@ export function parseAndValidateSubmission<
     entityTelephone,
     services,
   };
+  if (pubEaa) {
+    const pubEaaData: PubEAAProviderApplicantData = {
+      ...common,
+      responsibleMemberState: responsibleMemberState ?? "",
+      registrationIdentifier: registrationIdentifier || undefined,
+      legalBasisReference,
+    };
+    return {
+      valid: true,
+      errors: [],
+      applicantData: pubEaaData as ApplicantDataByFamily[F],
+      preservedFields,
+    };
+  }
   if (relyingParty) {
     const relyingPartyData: WalletRelyingPartyApplicantData = {
       ...common,

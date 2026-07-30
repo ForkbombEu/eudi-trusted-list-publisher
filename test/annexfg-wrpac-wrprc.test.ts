@@ -226,14 +226,15 @@ describe("TS 119 602 family catalogue", () => {
     expect(Object.keys(PROFILE_REGISTRY)).not.toContain("qeaa-providers");
   });
 
-  it("enables four families and disables Pub-EAA and Registrars", () => {
+  it("enables five families and disables Registrars", () => {
     expect(getEnabledFamilies().map((family) => family.key)).toEqual([
       "pid-providers",
       "wallet-providers",
       "wrpac-providers",
       "wrprc-providers",
+      "pub-eaa-providers",
     ]);
-    for (const family of ["pub-eaa-providers", "registrars"]) {
+    for (const family of ["registrars"]) {
       expect(PROFILE_REGISTRY[family as "registrars"].enabled).toBe(false);
       expect(() => getProfile(family)).toThrow(/not implemented/);
     }
@@ -662,16 +663,16 @@ describe("Annex F/G views", () => {
     expect(html).toContain("must be a 2-letter ISO code");
   });
 
-  it("offers all four enabled families on the Create Trusted List form", () => {
+  it("offers all enabled families on the Create Trusted List form", () => {
     const html = createListFormHtml();
     for (const family of [
       "pid-providers",
       "wallet-providers",
       "wrpac-providers",
       "wrprc-providers",
+      "pub-eaa-providers",
     ])
       expect(html).toContain(`value="${family}"`);
-    expect(html).not.toContain('value="pub-eaa-providers"');
     expect(html).not.toContain('value="registrars"');
   });
 

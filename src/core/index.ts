@@ -18,6 +18,21 @@ export {
   PID_SERVICE_TYPE_REVOCATION,
 } from "./profiles/pid-provider/constants.js";
 export {
+  PUB_EAA_PROVIDER_LOTE_TYPE,
+  PUB_EAA_PROVIDER_STATUS_DETN,
+  PUB_EAA_PROVIDER_SCHEME_RULES,
+  PUB_EAA_PROVIDER_ROLE_URI_PREFIX,
+  PUB_EAA_SERVICE_TYPE_ISSUANCE,
+  PUB_EAA_SERVICE_TYPE_REVOCATION,
+  PUB_EAA_SVC_STATUS_NOTIFIED,
+  PUB_EAA_SVC_STATUS_WITHDRAWN,
+  PUB_EAA_HISTORICAL_INFORMATION_PERIOD,
+} from "./profiles/pub-eaa-provider/constants.js";
+export {
+  subjectKeyIdentifierBase64,
+  publicKeyFingerprint,
+} from "./model/x509-ski.js";
+export {
   validateAuthoring,
   validateEtsiStruct,
   resetValidators,
@@ -45,6 +60,7 @@ export {
   type PkiOb,
   type ServiceDigitalIdentity,
   type ServiceInformation,
+  type ServiceHistoryInstance,
   type TrustedEntity,
   type TrustedEntityService,
   type LoTE,
@@ -57,6 +73,7 @@ export {
   type AuthoringScheme,
   type AuthoringSchemeOperator,
   type AuthoringService,
+  type AuthoringServiceHistoryInstance,
   type AuthoringMultiLang,
 } from "./model/authoring.js";
 export {
@@ -107,6 +124,8 @@ export {
   type WalletProviderServiceInput,
   type WalletProviderApplicantData,
   type WalletProviderApplication,
+  type PubEAAProviderApplicantData,
+  type PubEAAProviderApplication,
   type PublicationRecord,
   type AuthoringStoreConfig,
   type SigningConfig,

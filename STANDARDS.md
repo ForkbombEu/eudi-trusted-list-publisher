@@ -3,8 +3,8 @@
 ## Project scope
 
 This project implements a **TS 119 602 JSON List of Trusted Entities (LoTE) publisher**
-for four profiles: PID Providers (Annex D), Wallet Providers (Annex E), WRPAC
-Providers (Annex F) and WRPRC Providers (Annex G).
+for five profiles: PID Providers (Annex D), Wallet Providers (Annex E), WRPAC
+Providers (Annex F), WRPRC Providers (Annex G) and Pub-EAA Providers (Annex H).
 
 ### Normative definitions
 
@@ -23,14 +23,14 @@ Providers (Annex F) and WRPRC Providers (Annex G).
 - Defines the abstract data model for LoTE with JSON and XML bindings
 - Profile-based approach for six entity families: PID Providers (Annex D),
   Wallet Providers (Annex E), WRPAC Providers (Annex F), WRPRC Providers
-  (Annex G), Pub-EAA Providers and Registrars and Registers. The last two are
-  catalogued and disabled.
+  (Annex G), Pub-EAA Providers (Annex H) and Registrars and Registers. The last
+  is catalogued and disabled.
 - References ETSI TS 119 182-1 (JAdES) for JSON signatures
 
 ### ETSI TS 119 182-1 (JAdES)
 
 - Defines Compact JAdES Baseline B profile for JSON Advanced Electronic Signatures
-- All four implemented profiles require Compact JAdES Baseline B
+- All five implemented profiles require Compact JAdES Baseline B
 - JAdES Compact Serialization: BASE64URL(UTF8(JWS Protected Header)).BASE64URL(JWS Payload).BASE64URL(JWS Signature)
 - Required header parameters: `alg`, `x5c` (certificate chain), `typ` (optional, value "JAdES")
 
@@ -168,6 +168,165 @@ project cannot check — the ETSI PDF is unreachable (etsi.org returns HTTP 403)
 and the live Inspector reports no check about it. If a future Inspector check
 asks for one, the field is already collected.
 
+## Pub-EAA Provider Profile (Annex H)
+
+Providers of publicly issued electronic attestations of attributes. Constants in
+`src/core/profiles/pub-eaa-provider/constants.ts`:
+
+- LoTE Type: `http://uri.etsi.org/19602/LoTEType/EUPubEAAProvidersList`
+- Status Determination Approach: `http://uri.etsi.org/19602/PubEAAProvidersList/StatusDetn/EU`
+- Scheme Type/Community Rules: `http://uri.etsi.org/19602/PubEAAProvidersList/schemerules/EU`
+- Entity role URI prefix: `http://uri.etsi.org/19602/ListOfTrustedEntities/PubEAAProvider`
+- Service Types:
+  - `http://uri.etsi.org/19602/SvcType/PubEAA/Issuance`
+  - `http://uri.etsi.org/19602/SvcType/PubEAA/Revocation`
+- Service Statuses:
+  - `http://uri.etsi.org/19602/PubEAAProvidersList/SvcStatus/notified`
+  - `http://uri.etsi.org/19602/PubEAAProvidersList/SvcStatus/withdrawn`
+
+### How Annex H was established
+
+The ETSI PDF is unreachable (etsi.org returns HTTP 403). The locally decidable
+Annex H rules were read from the Trust Inspector's own evidence in
+`HITL/WP4-LoTE_evaluation.json`, which evaluates the WE BUILD WP4 LoTL and
+carries the complete `ts119602.profile.pub_eaa_providers.*` check set, and were
+then confirmed empirically against the live Inspector on a generated list.
+
+### Annex H profile constraints
+
+- JSON LoTE, `LoTEVersionIdentifier: 1`, `SchemeTerritory: EU`
+- `HistoricalInformationPeriod` **shall** be present and equal **65535** — the
+  only implemented profile that publishes the component at all
+- `PointersToOtherLoTE` **shall be absent** — the only implemented profile with
+  no self pointer. `publishesSelfPointer` in the registry decides this, so the
+  component is not emitted merely because signing certificates are available
+- `ServiceStatus` and `StatusStartingTime` **shall** be published for every
+  service — again the only implemented profile that does
+- The **ServiceUniqueIdentifier extension is not used**, as in Annex F/G, so no
+  `ServiceInformationExtensions` container is emitted
+- The service digital identity is **optional** (`optional_pub_eaa` in the
+  Inspector's evidence)
+- `NextUpdate` at most six months after the issue time
+- Signature: Compact JAdES Baseline B
+- Entity role URI `<prefix>/<CC>`, where `<CC>` is the **Responsible Member
+  State** that notified the provider
+
+### The legal-basis reference
+
+Annex H requires the Union or national act under which the attestations are
+issued (`pubEaaLawReferencePresent` in the Inspector's evidence), expressed as an
+`OJ:` URI. This publisher collects the Official Journal reference on the
+onboarding form and publishes it in `TEInformationURI`, beside the country role
+URI: that member is the collection of URIs describing the entity, and `OJ:...` is
+a syntactically valid absolute URI. `legalBasisUri()` adds the scheme prefix;
+`isLegalBasisReference()` rejects a value with whitespace in it, because such a
+value is prose rather than a citation.
+
+### Certificates
+
+Annex H makes the certificate optional and permits more than one for a single
+service — the attestation-signing certificate or the CA certificate that issues
+those certificates (`certificatePurpose.purpose` reads
+`attestation_signature_or_issuing_ca_verification`). This publisher therefore:
+
+- publishes each supplied certificate as Base64 DER, as in every other profile;
+- keeps the project-local rule that the subject `O` equals `TEName`;
+- requires every certificate supplied for one service to carry the **same public
+  key** and an **identical subject** (`pubEaaCertificateConstraints`), because
+  they are renditions of one identity rather than a certification path;
+- emits `ServiceDigitalIdentity: {}` when no certificate is supplied. The
+  identity arrays have `minItems: 1`, so an empty `X509Certificates` array would
+  be invalid; an absent identity is the honest encoding of an absent certificate.
+
+### Notification, withdrawal and service history
+
+Initial approval publishes every service as `notified`, with a
+`StatusStartingTime` taken from the publication event — the same instant the list
+is issued with, not a separate clock reading.
+
+The administration Withdraw action publishes a **new immutable version**: every
+service of that provider reads `withdrawn` from the withdrawal instant, and the
+previous state is moved into `ServiceHistory`, most recent superseded state
+first. The already-published version is never rewritten, so both remain
+authentic and downloadable.
+
+A history instance carries **at least one `X509SKI` and no `X509Certificate`**
+(`pubEaaSkiOnlyRule`). The identifier is read from the certificate's
+SubjectKeyIdentifier extension where it has one, and otherwise derived by
+RFC 5280 clause 4.2.1.2 method (1) — SHA-1 of the subject public key.
+`src/core/model/x509-ski.ts` does both, because Node's `X509Certificate` exposes
+neither.
+
+Two Annex H rules meet where a service carries no certificate: there is no key to
+identify, and a history instance stating no `X509SKI` is not allowed. Such a
+service changes status **without** a history instance, and the administrator is
+told so in the result message. Publishing an invented identity, or refusing the
+withdrawal outright, would both be worse than saying what happened.
+
+### Where Annex H entity URIs are published
+
+Established by probing the live Inspector, the same way the Annex G
+`WRPRCrovidersList` literal was: the Annex H entity check reads the entity's URIs
+from **`TEAddress.TEElectronicAddress`**, not from `TEInformationURI`, and reports
+`countryRoleUriPresent: false` when the role URI appears only in the latter — even
+though the Annex F check accepts exactly that placement. Annex H therefore
+publishes the role URI and the legal basis in **both** members
+(`entityUrisInElectronicAddress` in the registry). Neither placement is wrong and
+a duplicated URI costs a reader nothing, so publishing both is preferable to
+choosing one and failing a reader that looks in the other.
+
+### Status starting times are restated on every version
+
+clause 6.6.5, as the Inspector enforces it (`ts119602.service.status_start`),
+requires a current service's `StatusStartingTime` not to precede the list's
+`ListIssueDateTime`. An entity carried into a new version therefore cannot keep
+the timestamp of the version that first listed it:
+`restateServiceStatusTimes()` restamps every current Annex H service with the
+issue time of the version being published. The status itself does not change, and
+the instant a status actually began is what `ServiceHistory` records once that
+status is superseded.
+
+### Unresolved: pubEaaLawReferencePresent
+
+One locally decidable Annex H sub-rule is **not** satisfied by generated lists.
+The Inspector's `ts119602.profile.pub_eaa_providers.trusted_entity` check reports
+`pubEaaLawReferencePresent: false`, which fails the entity check as a whole, so a
+clean Pub-EAA list reaches 68 passed / 1 failed where a clean Annex F/G list
+reaches 69 / 0.
+
+Where the Inspector expects the reference is undetermined. The following were
+probed against the live Inspector and all reported `false`:
+
+- `TEInformationURI` and `TEAddress.TEElectronicAddress`, with
+  `OJ:L_202401183`, `OJ:L:2024:1183`, `OJ:C/2024/1234`, `OJ:JOL_2024_1183_R_0001`,
+  `OJ:32024R1183`, `OJ://L_202401183`, `oj:L_202401183`, `OJ:L 183/1`,
+  `OJ:eli/reg/2024/1183/oj`, `http://data.europa.eu/eli/reg/2024/1183/oj`,
+  `https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=OJ:L_202401183`,
+  `http://publications.europa.eu/resource/oj/JOL_2024_1183_R_0001` and
+  `urn:lex:eu:regulation:2024-04-11;1183`, in first and last positions;
+- `TEInformationExtensions` as plain strings and as `{Critical, <name>}` objects
+  under `LawReference`, `LegalBasis`, `LegalBasisReference`, `PubEAALawReference`,
+  `TELawReference`, `LawReferenceURI`, `OfficialJournalReference`,
+  `NationalLawReference`, `LoTELegalNotice` and `PolicyOrLegalNotice`;
+- service-level `SchemeServiceDefinitionURI`, `ServiceDefinitionURI` and
+  `ServiceSupplyPoints`; scheme-level `SchemeInformationURI` and
+  `PolicyOrLegalNotice`.
+
+The same field reads `true` for a WE BUILD **WRPAC** entity that carries no
+Official Journal reference at all, which suggests it is a shared result member
+that only Annex H evaluates — so the Inspector is the only available oracle and it
+has not revealed the expected location. The reference is published where this
+project can defend it (`TEInformationURI` and `TEElectronicAddress`, in the `OJ:`
+URI form the profile asks for) and the residual failure is reported rather than
+hidden. The ETSI PDF would settle it; etsi.org returns HTTP 403.
+
+### Identifying the entity to withdraw
+
+Annex H services carry no unique identifier, so the entity is matched by its
+Trusted Entity Name — the published identity the certificate subject rule already
+ties the certificates to. A name that matches no entity, or more than one, is
+refused with a message saying which, rather than resolved by position.
+
 ## Service digital identity (clause 6.6.3)
 
 Confirmed against `schemas/etsi/1960201_json_schema.json` (the vendored ETSI
@@ -176,10 +335,12 @@ schema listed above), the two profile constant modules and a published artefact.
 `ServiceDigitalIdentity` is a set of optional identity arrays —
 `X509Certificates`, `X509SubjectNames`, `PublicKeyValues`, `X509SKIs`,
 `OtherIds` — each with `minItems: 1`. This publisher populates
-`X509Certificates` only, from the single `certificatePem` field per service.
+`X509Certificates` in the current service entry, and `X509SKIs` — and only
+`X509SKIs` — in an Annex H `ServiceHistory` instance.
 
 - **Annex E (Wallet Provider)**, **Annex D (PID Provider), Table D.3**, and the
-  Annex F/G profiles all require an X.509 service digital identity. Neither requires the certificate to be
+  Annex F/G profiles all require an X.509 service digital identity; Annex H
+  makes it optional. None of them requires the certificate to be
   issued by a CA, and neither requires a verifiable certification path. The
   publisher never builds or verifies one, so a **self-signed** certificate is
   conformant input and is supported as the simplest testing option; a CA-issued
@@ -200,13 +361,13 @@ normalises legacy PEM values on read, which upgrades an older list on its next
 version; `checkLosslessPreservation()` normalises the stored original the same
 way so the upgrade is not mistaken for data loss.
 
-## Locally decidable Annex D/E rules implemented
+## Locally decidable rules implemented
 
 Established empirically against the Trust Inspector
 (`https://trust-inspector.credimi.io`, `POST /api/audit/artifact`) and recorded
 here because several are lexical or structural rules that the pinned JSON schema
 does not enforce. Except where a row says otherwise, each rule applies to all
-four implemented profiles.
+five implemented profiles.
 
 | Rule | Where it is applied |
 |------|--------------------|
@@ -215,13 +376,17 @@ four implemented profiles.
 | Table 1 presence matrix: `SchemeInformationURI` mandatory; Annex D/E minimum two | `SigningConfigEntry.schemeInformationUris` |
 | clauses 6.3.5.1/6.3.5.2 operator reachable by `mailto:` and HTTP(S) | `normalizeToAuthoringInput()` |
 | clause 6.3.11 `PolicyOrLegalNotice` mandatory for explicit scheme information | `SigningConfigEntry.policyUri` |
-| Annex D/E self pointer in `PointersToOtherLoTE`, carrying the signing certificate and `MimeType: application/jose` | `compileForProfile()` |
+| Annex D–G self pointer in `PointersToOtherLoTE`, carrying the signing certificate and `MimeType: application/jose`; Annex H omits it | `publishesSelfPointer` in `src/core/profiles/registry.ts`, applied in `compileForProfile()` |
+| Annex H `HistoricalInformationPeriod` = 65535 | `historicalInformationPeriod` in the registry, applied in `compileForProfile()` |
+| Annex H `ServiceStatus` and `StatusStartingTime` on every service; `ServiceHistory` by `X509SKI` only | `usesServiceStatus` in the registry, applied in `buildAuthoringEntity()`, `compileForProfile()` and `ApplicationService.withdrawApplication()` |
+| Annex H legal basis as an `OJ:` URI in `TEInformationURI` | `legalBasisUri()` in `src/core/model/lexical.ts`, applied in `buildAuthoringEntity()` |
+| Annex H certificates for one service share a public key and a subject | `checkCertificateSetConsistency()` in the submission parser |
 | clause 6.5.3 entity reachable by `mailto:`, HTTP(S) and `tel:` | `buildAuthoringEntity()` from the `entityEmail`/`entityTelephone` form fields |
-| Entity country-role URI `http://uri.etsi.org/19602/ListOfTrustedEntities/{PIDProvider,WalletProvider,WRPACProvider,WRPRCProvider}/<CC>` | `buildAuthoringEntity()`; every profile except Annex E uses the responsible Member State |
-| Annex F/G omit the ServiceUniqueIdentifier extension entirely | `requiresServiceUniqueIdentifier` in `src/core/profiles/registry.ts`, applied in `buildAuthoringEntity()` and `compileForProfile()` |
+| Entity country-role URI `http://uri.etsi.org/19602/ListOfTrustedEntities/{PIDProvider,WalletProvider,WRPACProvider,WRPRCProvider,PubEAAProvider}/<CC>` | `buildAuthoringEntity()`; every profile except Annex E uses the responsible Member State |
+| Annex F/G/H omit the ServiceUniqueIdentifier extension entirely | `requiresServiceUniqueIdentifier` in `src/core/profiles/registry.ts`, applied in `buildAuthoringEntity()` and `compileForProfile()` |
 | clause 6.6.3 `X509Certificates[].val` strict Base64 DER | `buildAuthoringEntity()` |
 | clause 6.6.9 extension containers state criticality (`Critical`) | `compileForProfile()` |
-| Annex D/E service certificate subject `O` = Trusted Entity Name | `checkCertificateSubjectOrganisation()` in the submission parser |
+| Service certificate subject `O` = Trusted Entity Name, wherever a certificate is supplied | `checkCertificateSubjectOrganisation()` in the submission parser |
 | JAdES Baseline B `iat` integer NumericDate in the protected header | `src/core/signing/signing.ts` |
 | `NextUpdate` at most six months after the issue time | UTC month arithmetic in `createTrustedList()`; the application path uses 180 days |
 
@@ -229,8 +394,7 @@ Two rules constrain the **signing certificate** rather than the generated
 document, so they are properties of the operator's signing material:
 
 - subject organisation (`O`) must equal `SchemeOperatorName`
-- subject country (`C`) must equal `SchemeTerritory` — `EU` for Annex D and
-  Annex E
+- subject country (`C`) must equal `SchemeTerritory` — `EU` for Annex D to H
 
 Both are stated on the Create Trusted List form.
 
@@ -239,7 +403,8 @@ Both are stated on the Create Trusted List form.
 For Annex F/G, `ts119602.service.extensions` reports `not_applicable` rather
 than `pass`, because those profiles emit no extension container. A clean Annex
 F/G list therefore reaches 69 passed / 0 failed where a clean Annex D/E list
-reaches 70 passed / 0 failed.
+reaches 70 passed / 0 failed. A clean Annex H list reaches 68 passed / 1 failed:
+the one failure is `pubEaaLawReferencePresent`, described above.
 
 `ts119602.scheme.pointers.authentication`,
 `ts119602.scheme.distribution_consistency`,
@@ -278,6 +443,14 @@ claims:
 
 WE BUILD JSON/XML artefacts are used ONLY as compatibility fixtures in dedicated test
 files (`test/fixtures/we-build/`). They are NOT used as normative signing oracles.
+
+`HITL/WP4-LoTE_evaluation.json` — the Inspector's report on the WE BUILD WP4
+LoTL — is used the same way, as a **negative fixture**. `test/annexh-pub-eaa.test.ts`
+asserts that the Annex H rules it records as failing there (absent
+`HistoricalInformationPeriod`, absent telephone, absent country role URI, absent
+law reference) are exactly the rules a list produced by this publisher satisfies.
+Its three `EUPubEAAProvidersList` entries are evidence of what Annex H requires,
+never an example to copy.
 
 ### Other WE BUILD findings
 

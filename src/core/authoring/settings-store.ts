@@ -28,7 +28,13 @@ export interface PublisherSettings {
   autoApproveLists: Record<string, boolean>;
 }
 
-const SAFE_LIST_KEY = /^[a-z0-9][a-z0-9_]{0,99}$/;
+/*
+  The same character set the publication store derives keys with
+  (`SAFE_KEY_RE` in src/core/publication/store.ts). A narrower set here would
+  reject a list key the publisher itself can create — an operator name with a
+  hyphen in it, for instance.
+*/
+const SAFE_LIST_KEY = /^[a-z0-9][a-z0-9_.@()-]{0,99}$/;
 
 export function emptySettings(): PublisherSettings {
   return {

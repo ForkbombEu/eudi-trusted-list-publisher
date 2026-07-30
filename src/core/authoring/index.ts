@@ -32,8 +32,10 @@ export {
 } from "./submission-parser.js";
 export {
   CERTIFICATE_INPUT_MESSAGES,
+  checkCertificateSetConsistency,
   checkCertificateSubjectOrganisation,
   classifyCertificateInput,
+  splitPemCertificates,
 } from "./certificate-input.js";
 export { ApplicationService } from "./application-service.js";
 export {
@@ -56,6 +58,7 @@ export {
   checkLosslessPreservation,
   checkServiceIdentifierUniqueness,
   assembleNextList,
+  restateServiceStatusTimes,
 } from "./list-assembler.js";
 export type { SchemeDescriptor } from "./application-model.js";
 export type {
@@ -69,6 +72,8 @@ export type {
   WalletRelyingPartyApplicantData,
   WRPACProviderApplication,
   WRPRCProviderApplication,
+  PubEAAProviderApplicantData,
+  PubEAAProviderApplication,
   ApplicantDataByFamily,
   ApplicationByFamily,
   TrustedEntityApplication,

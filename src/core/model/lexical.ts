@@ -73,6 +73,30 @@ export function telUri(telephone: string): string {
   return compact.startsWith("tel:") ? compact : `tel:${compact}`;
 }
 
+/**
+ * Annex H expresses the Union or national legal basis of a Pub-EAA provider as
+ * an `OJ:` URI. The applicant supplies the Official Journal reference; the
+ * scheme prefix is added here so the published value is always a URI, and
+ * whitespace is removed because a URI cannot carry any.
+ */
+export function legalBasisUri(reference: string): string {
+  const compact = reference.trim().replace(/\s+/g, "");
+  if (!compact) throw new Error("Legal basis reference is empty.");
+  return compact.startsWith("OJ:") ? compact : `OJ:${compact}`;
+}
+
+/**
+ * True when the value is an Official Journal reference this project accepts.
+ * Whitespace inside the reference is rejected rather than glued together: a
+ * value with spaces in it is prose, not a citation.
+ */
+export function isLegalBasisReference(reference: string): boolean {
+  const trimmed = reference.trim();
+  const body = trimmed.startsWith("OJ:") ? trimmed.slice(3) : trimmed;
+  /* Path characters only: the reference becomes the path of an OJ: URI. */
+  return body.length > 0 && /^[A-Za-z0-9._~!$&'()*+,;=:@/%-]+$/.test(body);
+}
+
 /** `<prefix>/<country code>` role URI for a trusted entity. */
 export function roleUri(prefix: string, countryCode: string): string {
   return `${prefix}/${countryCode}`;

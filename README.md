@@ -1,8 +1,9 @@
 # Credimi EUDI Trusted Lists
 
-A TS 119 602 JSON List of Trusted Entities (LoTE) publisher for four profiles:
+A TS 119 602 JSON List of Trusted Entities (LoTE) publisher for five profiles:
 PID Providers (Annex D), Wallet Providers (Annex E), WRPAC Providers (Annex F)
-and WRPRC Providers (Annex G). Compiles, validates, signs (JAdES Compact Baseline B),
+WRPRC Providers (Annex G) and Pub-EAA Providers (Annex H). Compiles, validates,
+signs (JAdES Compact Baseline B),
 verifies, stores, and publishes LoTE artefacts. Signing keys are supplied through
 local files or CI secrets and are never uploaded through a public web interface.
 
@@ -10,8 +11,8 @@ Includes an immutable filesystem publication store and a read-only Credimi-brand
 web UI for browsing published LoTEs. Does not implement TS 119 612 Trusted Lists,
 LoTL aggregation, XML/XAdES, or the EC TS02 notification API.
 
-**Historical Phase 3** added an opt-in data-collection and administration GUI for authoring
-and publishing Wallet Provider LoTEs. The current GUI supports all four
+**Historical** added an opt-in data-collection and administration GUI for authoring
+and publishing Wallet Provider LoTEs. The current GUI supports all five
 implemented families. When enabled, it provides applicant onboarding and an
 administration backoffice, and every version it publishes is signed and assessed
 by the Trust Inspector.
@@ -40,7 +41,7 @@ npm run build
 node dist/src/cli/main.js --help
 ```
 
-### GUI mode (Phase 3)
+### GUI mode 
 
 Enable with `DATA_COLLECTION_GUI=true`:
 
@@ -62,6 +63,7 @@ When enabled:
 - `/onboarding/wallet-provider` — Wallet Provider application form
 - `/onboarding/wrpac-provider` — WRPAC Provider application form
 - `/onboarding/wrprc-provider` — WRPRC Provider application form
+- `/onboarding/pub-eaa-provider` — Pub-EAA Provider application form
 - `/admin` — administration backoffice (requires `TLP_ADMIN_TOKEN`)
 - `/admin/applications` — manage submitted applications
 - `/admin/signing` — view signing configuration status
@@ -238,16 +240,20 @@ specification is available at `/openapi.yaml` and `/openapi.json`.
 | Health check | `curl http://localhost:8080/healthz` |
 | OpenAPI specification | `curl http://localhost:8080/openapi.yaml` |
 
-## Authoring workflow (Phase 3)
+## Authoring workflow 
 
-1. Applicant navigates to `/onboarding` and selects one of the four available
-   families: PID, Wallet, WRPAC or WRPRC Providers
+1. Applicant navigates to `/onboarding` and selects one of the five available
+   families: PID, Wallet, WRPAC, WRPRC or Pub-EAA Providers
 2. Applicant submits entity details, addresses, and one X.509 PEM certificate per
-   service (self-signed or CA-issued; see `/docs/certificate-creation`)
+   service (self-signed or CA-issued; see `/docs/certificate-creation`). The
+   certificate is optional for Pub-EAA Providers, which may supply more than one
+   provided they share a public key and a subject
 3. Applicant receives a confirmed application ID
 4. Administrator reviews at `/admin/applications`
 5. Administrator approves, then publishes
 6. Published LoTE appears in the public catalogue at `/`
+7. For Pub-EAA Providers only, the administrator may later **withdraw** the
+   notification, which publishes a further immutable version
 
 Steps 4 and 5 are skipped for a Trusted List Family or Trusted List that is set
 to auto-approve in `/admin/settings`: those applications are approved and
@@ -260,7 +266,7 @@ resulting publication metadata.
 
 ## Cumulative publication semantics
 
-Phase 4 introduced cumulative membership independently for each configured list
+We introduced cumulative membership independently for each configured list
 key. The current profile-aware path adds one approved Wallet Provider or PID Provider entity to the
 latest authenticated list and creates the next immutable sequence; it does not
 replace earlier entities.
@@ -287,9 +293,9 @@ replace earlier entities.
 - The authenticated admin application-detail route renders existing/resulting
   entity counts and current/proposed sequences before publication.
 
-PID, Wallet, WRPAC and WRPRC Providers are implemented list families. Pub-EAA
-Providers and Registrars and Registers are visible in the GUI but are not
-accepted for authoring or publication.
+PID, Wallet, WRPAC, WRPRC and Pub-EAA Providers are implemented list families.
+Registrars and Registers is visible in the GUI but is not accepted for authoring
+or publication.
 
 ## Trusted List families
 
@@ -303,8 +309,20 @@ boundaries. It holds the six TS 119 602 families, in annex order:
 | Wallet Providers | E | enabled | `/onboarding/wallet-provider` |
 | WRPAC Providers | F | enabled | `/onboarding/wrpac-provider` |
 | WRPRC Providers | G | enabled | `/onboarding/wrprc-provider` |
-| Pub-EAA Providers | — | disabled | — |
+| Pub-EAA Providers | H | enabled | `/onboarding/pub-eaa-provider` |
 | Registrars and Registers | — | disabled | — |
+
+Annex H (Pub-EAA Providers) is the only implemented profile that publishes a
+service status. Every service of a notified provider carries
+`SvcStatus/notified` and a `StatusStartingTime` taken from the publication event;
+the administration **Withdraw notification** action publishes a new immutable
+version in which every service reads `SvcStatus/withdrawn` and the previous state
+is kept in `ServiceHistory` by subject key identifier only. Annex H also fixes
+`HistoricalInformationPeriod` at 65535, publishes **no** `PointersToOtherLoTE`,
+makes the service certificate optional, and requires the Union or national legal
+basis as an `OJ:` URI. One locally decidable Annex H sub-rule
+(`pubEaaLawReferencePresent`) is not yet satisfied — see `STANDARDS.md` for what
+was probed and why it is reported rather than hidden.
 
 Annex F and Annex G differ from Annex D/E in three ways that the registry states
 rather than the call sites guessing: they use no `ServiceUniqueIdentifier`
@@ -349,10 +367,10 @@ the posted form is the complete new state: a box left unticked turns its flag of
 | `TLP_PUBLICATION_DIR` | `publish`, `serve` | `./publications` |
 | `TLP_HOST` | `serve` | `127.0.0.1` |
 | `TLP_PORT` | `serve` | `8080` |
-| `DATA_COLLECTION_GUI` | `serve` (Phase 3) | `false` |
-| `AUTHORING_DIR` | `serve` (Phase 3) | `./authoring` |
-| `TLP_ADMIN_TOKEN` | `serve` (Phase 3) | — |
-| `TLP_SIGNING_CONFIG` | `serve` (Phase 3) | — |
-| `TLP_SCHEME_OPERATOR_NAME` | `serve` (Phase 3) | `Credimi` |
-| `TLP_SCHEME_NAME` | `serve` (Phase 3) | `EU Wallet Providers List` |
-| `TLP_SCHEME_TERRITORY` | `serve` (Phase 3) | `EU` |
+| `DATA_COLLECTION_GUI` | `serve`  | `false` |
+| `AUTHORING_DIR` | `serve`  | `./authoring` |
+| `TLP_ADMIN_TOKEN` | `serve`  | — |
+| `TLP_SIGNING_CONFIG` | `serve`  | — |
+| `TLP_SCHEME_OPERATOR_NAME` | `serve`  | `Credimi` |
+| `TLP_SCHEME_NAME` | `serve`  | `EU Wallet Providers List` |
+| `TLP_SCHEME_TERRITORY` | `serve`  | `EU` |

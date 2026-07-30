@@ -128,22 +128,20 @@ describe("List Family Catalogue", () => {
     ]);
   });
 
-  it("enables PID, Wallet, WRPAC and WRPRC Providers", () => {
+  it("enables PID, Wallet, WRPAC, WRPRC and Pub-EAA Providers", () => {
     const enabled = getEnabledFamilies();
     expect(enabled.map((family) => [family.key, family.label])).toEqual([
       ["pid-providers", "PID Providers"],
       ["wallet-providers", "Wallet Providers"],
       ["wrpac-providers", "WRPAC Providers"],
       ["wrprc-providers", "WRPRC Providers"],
+      ["pub-eaa-providers", "Pub-EAA Providers"],
     ]);
   });
 
-  it("keeps Pub-EAA and Registrars disabled with 'Not implemented yet'", () => {
+  it("keeps Registrars disabled with 'Not implemented yet'", () => {
     const disabled = LIST_FAMILIES.filter((family) => !family.enabled);
-    expect(disabled.map((family) => family.key)).toEqual([
-      "pub-eaa-providers",
-      "registrars",
-    ]);
+    expect(disabled.map((family) => family.key)).toEqual(["registrars"]);
     for (const family of disabled)
       expect(family.notImplementedNote).toBe("Not implemented yet");
   });

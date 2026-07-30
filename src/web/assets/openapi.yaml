@@ -345,6 +345,7 @@ components:
               wallet-providers,
               wrpac-providers,
               wrprc-providers,
+              pub-eaa-providers,
             ]
         schemeName:
           type: string

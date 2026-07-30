@@ -12,6 +12,7 @@ import {
 import {
   getEnabledProfile,
   type EnabledProfileFamily,
+  type TrustedEntityProfile,
 } from "../profiles/registry.js";
 import {
   normalizeToAuthoringInput,
@@ -19,7 +20,10 @@ import {
   type TrustedEntityApplication,
 } from "./application-model.js";
 import type { SigningConfigEntry } from "./signing-config.js";
-import { certificateDerBase64 } from "../model/lexical.js";
+import {
+  certificateDerBase64,
+  normalizeUtcDateTime,
+} from "../model/lexical.js";
 import { readFileSync } from "node:fs";
 
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -86,7 +90,7 @@ export async function loadLatestPublication(
       `Cannot parse latest publication LoTE JSON for "${listKey}" sequence ${highest}`,
     );
   }
-  const entities = convertLoTEToAuthoringEntities(loteDocument);
+  const entities = convertLoTEToAuthoringEntities(loteDocument, family);
   const preservation = checkLosslessPreservation(
     loteDocument.LoTE.TrustedEntitiesList ?? [],
     entities,
@@ -101,30 +105,42 @@ export async function loadLatestPublication(
 
 export function convertLoTEToAuthoringEntities(
   document: LoTEDocument,
+  family: EnabledProfileFamily = "wallet-providers",
 ): AuthoringEntity[] {
   const entities = document.LoTE.TrustedEntitiesList ?? [];
-  return entities.map((entity) => convertEntity(entity));
+  const profile = getEnabledProfile(family);
+  return entities.map((entity) => convertEntity(entity, profile));
 }
 
-function convertEntity(entity: TrustedEntity): AuthoringEntity {
+function convertEntity(
+  entity: TrustedEntity,
+  profile: TrustedEntityProfile,
+): AuthoringEntity {
   const information = entity.TrustedEntityInformation;
   const services = entity.TrustedEntityServices.map((trustedService) => {
     const service = trustedService.ServiceInformation;
-    if (service.ServiceStatus)
-      throw new Error(
-        "Cannot convert existing entity: ServiceStatus is present but not supported in the current profile. The existing LoTE contains data that cannot be preserved losslessly.",
-      );
-    if (service.StatusStartingTime)
-      throw new Error(
-        "Cannot convert existing entity: StatusStartingTime is present but not supported in the current profile.",
-      );
-    if (
-      trustedService.ServiceHistory &&
-      trustedService.ServiceHistory.length > 0
-    )
-      throw new Error(
-        "Cannot convert existing entity: ServiceHistory is present but not supported in the current profile.",
-      );
+    /*
+      Annex H publishes a service status, its starting time and the superseded
+      states; every other profile publishes none of them, so finding one there
+      means the stored list is not what the configured family says it is.
+    */
+    if (!profile.usesServiceStatus) {
+      if (service.ServiceStatus)
+        throw new Error(
+          "Cannot convert existing entity: ServiceStatus is present but not supported in the current profile. The existing LoTE contains data that cannot be preserved losslessly.",
+        );
+      if (service.StatusStartingTime)
+        throw new Error(
+          "Cannot convert existing entity: StatusStartingTime is present but not supported in the current profile.",
+        );
+      if (
+        trustedService.ServiceHistory &&
+        trustedService.ServiceHistory.length > 0
+      )
+        throw new Error(
+          "Cannot convert existing entity: ServiceHistory is present but not supported in the current profile.",
+        );
+    }
     if (service.SchemeServiceDefinitionURI)
       throw new Error(
         "Cannot convert existing entity: SchemeServiceDefinitionURI is present but not supported in the current authoring model.",
@@ -185,6 +201,37 @@ function convertEntity(entity: TrustedEntity): AuthoringEntity {
         return { uriValue: supplyPoint.uriValue };
       },
     );
+    /*
+      A history instance states the key that identified the service at the time
+      and never the certificate, so nothing but X509SKIs may appear in it.
+    */
+    const serviceHistory = (trustedService.ServiceHistory ?? []).map(
+      (instance) => {
+        if (instance.ServiceDigitalIdentity.X509Certificates?.length)
+          throw new Error(
+            "Cannot convert existing entity: a ServiceHistory instance carries an X509Certificate, which this profile publishes only in the current service entry.",
+          );
+        const skis = instance.ServiceDigitalIdentity.X509SKIs ?? [];
+        if (skis.length === 0)
+          throw new Error(
+            "Cannot convert existing entity: a ServiceHistory instance states no X509SKI.",
+          );
+        if (instance.ServiceDigitalIdentity.X509SubjectNames?.length)
+          throw new Error(
+            "Cannot convert existing entity: X509SubjectNames in ServiceHistory are not supported in the current authoring model.",
+          );
+        return {
+          serviceTypeIdentifier: instance.ServiceTypeIdentifier,
+          serviceName: instance.ServiceName.map((name) => ({
+            lang: name.lang,
+            value: name.value,
+          })),
+          x509Skis: [...skis],
+          serviceStatus: instance.ServiceStatus,
+          statusStartingTime: instance.StatusStartingTime,
+        };
+      },
+    );
     const converted: AuthoringService = {
       serviceTypeIdentifier: service.ServiceTypeIdentifier ?? "",
       serviceName: service.ServiceName.map((name) => ({
@@ -194,6 +241,9 @@ function convertEntity(entity: TrustedEntity): AuthoringEntity {
       serviceDigitalIdentity: { x509Certificates: certificates },
       serviceUniqueIdentifier,
       serviceSupplyPoints,
+      serviceStatus: service.ServiceStatus,
+      statusStartingTime: service.StatusStartingTime,
+      ...(serviceHistory.length > 0 ? { serviceHistory } : {}),
     };
     return converted;
   });
@@ -405,6 +455,31 @@ export function schemeDescriptorFor(
     distributionPointUri: entry.distributionPointUri,
     signerCertificates,
   };
+}
+
+/**
+ * Restates every service's status starting time as the issue time of the
+ * version being published.
+ *
+ * clause 6.6.5 requires a current service's StatusStartingTime not to precede
+ * the list's ListIssueDateTime, so an entity carried into a new version cannot
+ * keep the timestamp of the version that first listed it. The status itself is
+ * unchanged — the service is still notified, and the instant it *became*
+ * notified is what ServiceHistory records when the status later changes.
+ */
+export function restateServiceStatusTimes(
+  entities: readonly AuthoringEntity[],
+  listIssueDateTime: string,
+  family: EnabledProfileFamily,
+): AuthoringEntity[] {
+  if (!getEnabledProfile(family).usesServiceStatus) return [...entities];
+  const statusStartingTime = normalizeUtcDateTime(listIssueDateTime);
+  return entities.map((entity) => ({
+    ...entity,
+    services: entity.services.map((service) =>
+      service.serviceStatus ? { ...service, statusStartingTime } : service,
+    ),
+  }));
 }
 
 export function assembleNextList(

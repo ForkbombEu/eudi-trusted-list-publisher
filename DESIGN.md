@@ -114,8 +114,8 @@ unavailable capability looks the same everywhere in the product.
 ## Phase 8 WRPAC and WRPRC
 
 The catalogue lists the six TS 119 602 families in annex order — PID, Wallet,
-WRPAC, WRPRC, Pub-EAA, Registrars and Registers — with the first four available
-and the last two carrying the same neutral "Not implemented yet" badge. Nothing
+WRPAC, WRPRC, Pub-EAA, Registrars and Registers — with Registrars and Registers
+carrying the neutral "Not implemented yet" badge. Nothing
 distinguishes a WRPAC or WRPRC page from a Wallet or PID page except its words:
 the same shell, cards, chips, preview, Inspector card and Downloads row.
 
@@ -168,3 +168,36 @@ Repository. It uses the existing shell, `card`, `kv-table`, `notice-warning` and
 the page, so they are shown verbatim in preformatted blocks and everything else
 is prose around them. Its rejection table is rendered from the parser's own
 message constants, so the page and the form always say the same thing.
+
+## Phase 9 Pub-EAA
+
+The Pub-EAA card on the Catalogue and the Onboarding page reads Available like
+the other four; nothing distinguishes a Pub-EAA page from a WRPAC page except its
+words, its family colour and the two things Annex H actually adds.
+
+The onboarding form differs from the Annex F/G form in three visible ways, each
+because the profile differs:
+
+- a **Legal Basis Reference** field, required, because Annex H asks which Union
+  or national act the notification rests on. The help text says it is published
+  as an `OJ:` URI and that the prefix is added for the applicant — the form asks
+  for the citation, not for a URI;
+- the certificate field is **not** marked required, because Annex H is the only
+  implemented profile whose service digital identity is optional. It is the
+  absence of the asterisk that says so, and the help text explains that more than
+  one certificate may be supplied when they share a key and a subject;
+- there is no Additional Information URL, because Annex H does not collect one.
+
+The closing card is headed **Notification** rather than **Mandate**, and says
+what the other profiles cannot: every service is published as notified with a
+status starting time, and a withdrawal publishes a new version rather than
+removing the entity.
+
+On the administration detail page a published Pub-EAA application carries one
+extra action, **Withdraw notification**, styled as a destructive button behind a
+confirmation, because it publishes an immutable version that cannot be taken
+back. A withdrawn application shows two records side by side — **Publication
+Record** and **Withdrawal Record** — since both versions stay authentic and
+downloadable, and that is exactly the point of a withdrawal that adds a version
+instead of rewriting one. The state chip for `withdrawn` is neutral, not an
+error: a withdrawn notification is a normal end state, not a failure.

@@ -23,17 +23,26 @@ import {
   isEnabledProfileFamily,
   type EnabledProfileFamily,
 } from "../profiles/registry.js";
+import { splitPemCertificates } from "./certificate-input.js";
+import { isLegalBasisReference } from "../model/lexical.js";
 
 export interface AuthoringStoreConfig {
   authoringDir: string;
 }
 const SAFE_ID = /^[a-f0-9-]{32,128}$/;
-const SAFE_LIST_KEY = /^[a-z0-9][a-z0-9_]{0,99}$/;
+/*
+  The same character set the publication store derives keys with
+  (`SAFE_KEY_RE` in src/core/publication/store.ts). A narrower set here would
+  reject a list key the publisher itself can create — an operator name with a
+  hyphen in it, for instance.
+*/
+const SAFE_LIST_KEY = /^[a-z0-9][a-z0-9_.@()-]{0,99}$/;
 const STATES: readonly ApplicationState[] = [
   "submitted",
   "approved",
   "rejected",
   "published",
+  "withdrawn",
 ];
 type RecordValue = Record<string, unknown>;
 const isRecord = (value: unknown): value is RecordValue =>
@@ -98,8 +107,6 @@ function validApplicantData(
   family: EnabledProfileFamily,
 ): value is CommonApplicantData {
   const profile = getEnabledProfile(family);
-  const relyingParty =
-    family === "wrpac-providers" || family === "wrprc-providers";
   const supervised = profile.roleCountrySource === "responsible-member-state";
   if (
     !isRecord(value) ||
@@ -116,31 +123,52 @@ function validApplicantData(
       !isRecord(service) ||
       (service.serviceType !== "issuance" &&
         service.serviceType !== "revocation") ||
-      !isString(service.serviceName) ||
-      !isString(service.certificatePem)
+      !isString(service.serviceName)
     )
       return false;
     if (profile.requiresServiceUniqueIdentifier) {
       if (!isUrlString(service.serviceUniqueIdentifier)) return false;
     } else if (service.serviceUniqueIdentifier !== undefined) return false;
-    try {
-      new X509Certificate(service.certificatePem);
-    } catch {
-      return false;
+    /*
+      Annex H makes the service digital identity optional, and lets one service
+      carry several renditions of the same identity. Every block still has to
+      parse, so a record whose certificate field has been corrupted is rejected
+      rather than published with an unreadable identity.
+    */
+    if (service.certificatePem === undefined) {
+      if (profile.requiresServiceCertificate) return false;
+    } else {
+      if (!isString(service.certificatePem)) return false;
+      const blocks = splitPemCertificates(service.certificatePem);
+      for (const block of blocks.length > 0 ? blocks : [service.certificatePem])
+        try {
+          new X509Certificate(block);
+        } catch {
+          return false;
+        }
     }
   }
   if (supervised && !isMemberState(value.responsibleMemberState)) return false;
   if (!supervised && value.responsibleMemberState !== undefined) return false;
-  if (!relyingParty)
-    return (
-      value.registrationIdentifier === undefined &&
-      value.additionalInformationURI === undefined
-    );
+  if (
+    profile.requiresLegalBasisReference
+      ? !isString(value.legalBasisReference) ||
+        !isLegalBasisReference(value.legalBasisReference)
+      : value.legalBasisReference !== undefined
+  )
+    return false;
+  if (
+    !profile.collectsRegistrationIdentifier &&
+    value.registrationIdentifier !== undefined
+  )
+    return false;
   if (
     value.registrationIdentifier !== undefined &&
     !isString(value.registrationIdentifier)
   )
     return false;
+  if (!profile.collectsAdditionalInformationUri)
+    return value.additionalInformationURI === undefined;
   return (
     value.additionalInformationURI === undefined ||
     isUrlString(value.additionalInformationURI)
@@ -199,12 +227,29 @@ function parseApplication(
   }
   if (value.approvedAt !== undefined && !isIso(value.approvedAt)) return null;
   if (value.rejectedAt !== undefined && !isIso(value.rejectedAt)) return null;
+  if (value.withdrawnAt !== undefined && !isIso(value.withdrawnAt)) return null;
   if (value.adminNote !== undefined && !isString(value.adminNote)) return null;
   const publication =
     value.publication === undefined
       ? undefined
       : parsePublication(value.publication, value.targetListKey);
   if (value.publication !== undefined && publication === null) return null;
+  const withdrawal =
+    value.withdrawal === undefined
+      ? undefined
+      : parsePublication(value.withdrawal, value.targetListKey);
+  if (value.withdrawal !== undefined && withdrawal === null) return null;
+  /*
+    Only Annex H publishes a service status, so only a Pub-EAA application can
+    carry a withdrawal at all.
+  */
+  if (
+    !getEnabledProfile(family).usesServiceStatus &&
+    (value.state === "withdrawn" ||
+      withdrawal !== undefined ||
+      value.withdrawnAt !== undefined)
+  )
+    return null;
   if (
     (value.state === "submitted" &&
       (value.approvedAt !== undefined ||
@@ -225,7 +270,18 @@ function parseApplication(
       (value.approvedAt === undefined ||
         value.rejectedAt !== undefined ||
         value.adminNote !== undefined ||
-        publication === undefined))
+        publication === undefined ||
+        withdrawal !== undefined ||
+        value.withdrawnAt !== undefined)) ||
+    (value.state === "withdrawn" &&
+      (value.approvedAt === undefined ||
+        value.rejectedAt !== undefined ||
+        value.adminNote !== undefined ||
+        publication === undefined ||
+        withdrawal === undefined ||
+        value.withdrawnAt === undefined)) ||
+    (value.state !== "withdrawn" &&
+      (withdrawal !== undefined || value.withdrawnAt !== undefined))
   )
     return null;
   const common = {
@@ -244,6 +300,10 @@ function parseApplication(
       ? { rejectedAt: value.rejectedAt }
       : {}),
     ...(publication ? { publication } : {}),
+    ...(typeof value.withdrawnAt === "string"
+      ? { withdrawnAt: value.withdrawnAt }
+      : {}),
+    ...(withdrawal ? { withdrawal } : {}),
   };
   if (!validApplicantData(value.applicantData, family)) return null;
   /*
