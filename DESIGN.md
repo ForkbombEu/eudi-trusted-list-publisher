@@ -94,12 +94,36 @@ class, `app.css` defines the colour, and a test proves the two stay in step.
 Testing-tool warning notices are not used. The catalogue states plainly that the
 lists are published for testing and debugging purposes only.
 
+## Phase 7 Trust Inspector and Trusted List creation
+
+Every version page carries a **Trust Inspector** card and a **Downloads** card.
+The Inspector verdict is a badge — Pass (assurance), Fail (destructive),
+Unavailable (neutral) — because it is the first thing a reader looks for; the
+detected profile, conformance level, check counts, evaluation timestamp and
+Inspector origin follow as key/value rows. Unavailable never renders as
+conformance: the level reads "not evaluated" and the card says why.
+
+Downloads are three primary buttons in one row — JSON, Compact JAdES, Inspector
+report — plus the publication manifest as a plain link. The wording states which
+artifact is which, and that XML is not published yet.
+
+The Create Trusted List form reuses the onboarding form shell. The broken-list
+options are shown but disabled, under a legend carrying the same
+"Not implemented yet" neutral badge the disabled Trusted List Families use, so an
+unavailable capability looks the same everywhere in the product.
+
 ## Certificate input and guidance
 
 The onboarding certificate field is labelled **Service Digital Identity
-Certificate (X.509 PEM)** on both the Wallet Provider and the PID Provider form.
-Its help text says what to upload, links the Certificate creation guide and
-states that the private key is never uploaded.
+Certificate (PEM)** on both the Wallet Provider and the PID Provider form.
+Its help text opens with what the certificate is for in that profile — wallet
+unit authentication for Wallet Providers, PID signature or seal verification for
+PID Providers — then says what to upload, links the Certificate creation guide
+and states that the private key is never uploaded.
+
+The onboarding introduction is short and uses the full content width
+(`.lead-wide`). A service block is removed with a labelled **Remove service**
+button rather than a bare multiplication sign.
 
 The guide is a page of its own in the footer **Resources** column, above
 Repository. It uses the existing shell, `card`, `kv-table`, `notice-warning` and

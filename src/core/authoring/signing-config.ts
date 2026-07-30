@@ -18,6 +18,15 @@ export interface SigningConfigEntry {
   distributionPointUri: string;
   keyFile: string;
   certFile: string;
+  /*
+    Annex D/E scheme information. The operator declares these once per list; the
+    published list cannot be conformant without them, so they are required
+    rather than defaulted to something plausible.
+  */
+  schemeOperatorEmail: string;
+  schemeOperatorWebsite: string;
+  schemeInformationUris: string[];
+  policyUri: string;
 }
 export interface SigningConfig {
   lists: SigningConfigEntry[];
@@ -47,7 +56,33 @@ const FIELDS = [
   "distributionPointUri",
   "keyFile",
   "certFile",
+  "schemeOperatorEmail",
+  "schemeOperatorWebsite",
+  "policyUri",
 ] as const;
+
+/** Annex D/E require at least two scheme information URIs. */
+const MIN_SCHEME_INFORMATION_URIS = 2;
+
+function uriListField(record: Record<string, unknown>): string[] {
+  const value = record.schemeInformationUris;
+  if (!Array.isArray(value))
+    throw new Error(
+      "Signing configuration entry is missing schemeInformationUris.",
+    );
+  const uris = value.map((entry) => {
+    if (typeof entry !== "string" || !entry.trim())
+      throw new Error(
+        "schemeInformationUris entries must be non-empty strings.",
+      );
+    return entry;
+  });
+  if (uris.length < MIN_SCHEME_INFORMATION_URIS)
+    throw new Error(
+      `schemeInformationUris must list at least ${MIN_SCHEME_INFORMATION_URIS} URIs.`,
+    );
+  return uris;
+}
 function stringField(
   record: Record<string, unknown>,
   field: (typeof FIELDS)[number],
@@ -75,6 +110,10 @@ function parseEntry(value: unknown): SigningConfigEntry {
     distributionPointUri: stringField(record, "distributionPointUri"),
     keyFile: stringField(record, "keyFile"),
     certFile: stringField(record, "certFile"),
+    schemeOperatorEmail: stringField(record, "schemeOperatorEmail"),
+    schemeOperatorWebsite: stringField(record, "schemeOperatorWebsite"),
+    schemeInformationUris: uriListField(record),
+    policyUri: stringField(record, "policyUri"),
   };
 }
 export function loadSigningConfig(path: string): SigningConfig {

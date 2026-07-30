@@ -12,6 +12,12 @@ import {
   SERVICE_TYPE_ISSUANCE,
   SERVICE_TYPE_REVOCATION,
 } from "../profiles/wallet-provider/constants.js";
+import {
+  certificateDerBase64,
+  mailtoUri,
+  roleUri,
+  telUri,
+} from "../model/lexical.js";
 
 export const APPLICATION_SCHEMA_VERSION = 1;
 export type ApplicationState =
@@ -31,6 +37,12 @@ export interface CommonApplicantData {
   entityPostalCode?: string;
   entityCountry: string;
   entityInformationURI: string;
+  /**
+   * Annex D/E require a trusted entity to be contactable by email and
+   * telephone as well as by its information page.
+   */
+  entityEmail: string;
+  entityTelephone: string;
   services: ProviderServiceInput[];
 }
 export interface WalletProviderApplicantData extends CommonApplicantData {}
@@ -106,8 +118,29 @@ export function buildAuthoringEntity(
         Country: data.entityCountry,
       },
     ],
-    teElectronicAddress: [{ lang: "en", uriValue: data.entityInformationURI }],
-    teInformationURI: [{ lang: "en", uriValue: data.entityInformationURI }],
+    /*
+      Annex D/E ask for an email address, a telephone number and an information
+      page. The role URI states which country the entity is listed for and in
+      which role: for a PID Provider that is the supervising Member State, for a
+      Wallet Provider the entity's own country.
+    */
+    teElectronicAddress: [
+      { lang: "en", uriValue: mailtoUri(data.entityEmail) },
+      { lang: "en", uriValue: data.entityInformationURI },
+      { lang: "en", uriValue: telUri(data.entityTelephone) },
+    ],
+    teInformationURI: [
+      { lang: "en", uriValue: data.entityInformationURI },
+      {
+        lang: "en",
+        uriValue: roleUri(
+          profile.roleUriPrefix ?? "",
+          "responsibleMemberState" in data
+            ? (data as PIDProviderApplicantData).responsibleMemberState
+            : data.entityCountry,
+        ),
+      },
+    ],
     services: data.services.map((service) => {
       const serviceTypeIdentifier =
         family === "pid-providers"
@@ -124,21 +157,43 @@ export function buildAuthoringEntity(
       return {
         serviceTypeIdentifier,
         serviceName: [{ lang: "en", value: service.serviceName }],
-        serviceDigitalIdentity: { x509Certificates: [service.certificatePem] },
+        /*
+          The applicant supplies PEM; the published list carries Base64 DER
+          (clause 6.6.3), so the conversion happens once, here at the authoring
+          boundary, and every later stage sees the published form.
+        */
+        serviceDigitalIdentity: {
+          x509Certificates: [certificateDerBase64(service.certificatePem)],
+        },
         serviceUniqueIdentifier: service.serviceUniqueIdentifier,
       };
     }),
   };
 }
 
+/**
+ * Everything about the scheme that the list itself must carry. It mirrors a
+ * signing-configuration entry, which is where the operator declares it.
+ */
+export interface SchemeDescriptor {
+  schemeOperatorName: string;
+  schemeOperatorStreet: string;
+  schemeOperatorCountry: string;
+  schemeOperatorEmail: string;
+  schemeOperatorWebsite: string;
+  schemeName: string;
+  schemeTerritory: string;
+  /** At least two, per Annex D/E. */
+  schemeInformationUris: string[];
+  policyUri: string;
+  distributionPointUri: string;
+  /** Certificates that authenticate the list, for the self pointer. */
+  signerCertificates: string[];
+}
+
 export function normalizeToAuthoringInput(
   app: TrustedEntityApplication,
-  schemeOperatorName: string,
-  schemeName: string,
-  schemeTerritory: string,
-  schemeOperatorAddress: { streetAddress: string; country: string },
-  schemeOperatorContactURI: string,
-  distributionPointURI: string,
+  scheme: SchemeDescriptor,
   listIssueDateTime: string,
   nextUpdate: string,
   loTESequenceNumber: number,
@@ -146,20 +201,33 @@ export function normalizeToAuthoringInput(
 ): AuthoringInput {
   return {
     schemeOperator: {
-      name: [{ lang: "en", value: schemeOperatorName }],
+      name: [{ lang: "en", value: scheme.schemeOperatorName }],
       postalAddress: [
         {
           lang: "en",
-          StreetAddress: schemeOperatorAddress.streetAddress,
-          Country: schemeOperatorAddress.country,
+          StreetAddress: scheme.schemeOperatorStreet,
+          Country: scheme.schemeOperatorCountry,
         },
       ],
-      electronicAddress: [{ lang: "en", uriValue: schemeOperatorContactURI }],
+      /*
+        clauses 6.3.5.1 and 6.3.5.2 want the operator reachable by email and on
+        the web, so both URI schemes are always present.
+      */
+      electronicAddress: [
+        { lang: "en", uriValue: mailtoUri(scheme.schemeOperatorEmail) },
+        { lang: "en", uriValue: scheme.schemeOperatorWebsite },
+      ],
     },
     scheme: {
-      schemeName: [{ lang: "en", value: schemeName }],
-      schemeTerritory,
-      distributionPoints: [distributionPointURI],
+      schemeName: [{ lang: "en", value: scheme.schemeName }],
+      schemeTerritory: scheme.schemeTerritory,
+      schemeInformationURI: scheme.schemeInformationUris.map((uriValue) => ({
+        lang: "en",
+        uriValue,
+      })),
+      distributionPoints: [scheme.distributionPointUri],
+      policyUri: scheme.policyUri,
+      selfPointerCertificates: scheme.signerCertificates,
     },
     listIssueDateTime,
     nextUpdate,

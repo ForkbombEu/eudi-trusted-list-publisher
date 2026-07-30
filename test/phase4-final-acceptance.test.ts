@@ -222,6 +222,13 @@ function signingEntry(operatorName: string): SigningConfigEntry {
     distributionPointUri: `https://${safeName(operatorName)}.example.test/lote.json`,
     keyFile: TEST_KEY_PATH,
     certFile: TEST_CERT_PATH,
+    schemeOperatorEmail: "operator@scheme.example",
+    schemeOperatorWebsite: "https://scheme.example",
+    schemeInformationUris: [
+      "https://scheme.example/scheme",
+      "https://scheme.example/practice-statement",
+    ],
+    policyUri: "https://scheme.example/policy",
   };
 }
 
@@ -277,6 +284,8 @@ function createApprovedApplication(
       entityPostalCode: "2100",
       entityCountry: "DK",
       entityInformationURI: `https://${slug}.example.test/information`,
+      entityEmail: "trust@entity.example",
+      entityTelephone: "+39 02 1234567",
       services: serviceIdentifiers.map((identifier, index) => ({
         serviceType: index % 2 === 0 ? "issuance" : "revocation",
         serviceName: `${displayName} Shared Service`,

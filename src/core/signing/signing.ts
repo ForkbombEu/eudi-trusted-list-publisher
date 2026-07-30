@@ -6,6 +6,8 @@ export interface SignInput {
   document: LoTEDocument;
   key: globalThis.CryptoKey;
   certificatePem: string;
+  /** Claimed signing time; defaults to now. */
+  signingTime?: Date;
 }
 
 export interface SignedLoTE {
@@ -36,11 +38,19 @@ export async function sign(input: SignInput): Promise<SignedLoTE> {
   const payload = new TextEncoder().encode(JSON.stringify(input.document));
   const { certChain } = validateX5cParams(input.certificatePem);
 
+  /*
+    JAdES Baseline B requires the claimed signing time in the protected header
+    as an integer NumericDate (TS 119 182-1 clause 5.2.1). Without `iat` the
+    signature does not satisfy the profile, whatever else is present.
+  */
+  const iat = Math.floor((input.signingTime ?? new Date()).getTime() / 1000);
+
   const jws = await new jose.CompactSign(payload)
     .setProtectedHeader({
       alg: "ES256",
       x5c: certChain,
       typ: "JAdES",
+      iat,
     })
     .sign(input.key);
 

@@ -71,6 +71,8 @@ function parseForFamily(
     "entityPostalCode",
     "entityCountry",
     "entityInformationURI",
+    "entityEmail",
+    "entityTelephone",
     ...(family === "pid-providers" ? ["responsibleMemberState"] : []),
   ]);
   const addError = (field: string, message: string): void => {
@@ -107,6 +109,22 @@ function parseForFamily(
       addError("entityInformationURI", "Information URI must be a valid URL.");
     }
   }
+  /*
+    Annex D/E require a contactable entity: the published list carries the
+    email as a mailto URI and the telephone number as a tel URI.
+  */
+  const entityEmail = field("entityEmail");
+  if (!entityEmail) addError("entityEmail", "Email address is required.");
+  else if (!/^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(entityEmail))
+    addError("entityEmail", "Email address must be a valid address.");
+  const entityTelephone = field("entityTelephone");
+  if (!entityTelephone)
+    addError("entityTelephone", "Telephone number is required.");
+  else if (!/^\+?[0-9][0-9\s()-]{5,}$/.test(entityTelephone))
+    addError(
+      "entityTelephone",
+      "Telephone number must be in international form, e.g. +39 02 1234567.",
+    );
   const serviceIndices = new Set<number>();
   for (const key of Object.keys(fields)) {
     const match = SERVICE_FIELD.exec(key);
@@ -192,6 +210,8 @@ function parseForFamily(
     entityPostalCode: entityPostalCode || undefined,
     entityCountry,
     entityInformationURI,
+    entityEmail,
+    entityTelephone,
     services,
   };
   return family === "pid-providers"

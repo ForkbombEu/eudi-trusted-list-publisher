@@ -3,15 +3,17 @@ import { readFileSync } from "node:fs";
 import { compileForProfile } from "../compile/compile.js";
 import { getProfile, profileForLoTEType } from "../profiles/registry.js";
 import type { AuthoringEntity, AuthoringInput } from "../model/authoring.js";
+import type { LoTEDocument } from "../model/types.js";
+import {
+  InspectorClient,
+  type InspectorEvaluation,
+} from "../inspector/inspector.js";
 import type { PublicationStore } from "../publication/store.js";
 import { validateEtsiStruct } from "../validate/validate.js";
 import { sign as signLote } from "../signing/signing.js";
 import { verify } from "../verification/verification.js";
 import { publish, PublicationError } from "../publication/manifest.js";
-import {
-  canTransition,
-  normalizeToAuthoringInput,
-} from "./application-model.js";
+import { canTransition, buildAuthoringEntity } from "./application-model.js";
 import type {
   PIDProviderApplicantData,
   PublicationRecord,
@@ -87,17 +89,21 @@ export class ApplicationService {
   readonly publicationStore: PublicationStore;
   readonly signingConfig: SigningConfig | null | undefined;
   readonly settingsStore: SettingsStore | null | undefined;
+  /** Injected in tests so no assessment reaches the network. */
+  readonly inspectorClient: InspectorClient | null | undefined;
   private readonly listLocks = new Map<string, Promise<void>>();
   constructor(
     authoringStore: AuthoringStore,
     publicationStore: PublicationStore,
     signingConfig?: SigningConfig | null,
     settingsStore?: SettingsStore | null,
+    inspectorClient?: InspectorClient | null,
   ) {
     this.authoringStore = authoringStore;
     this.publicationStore = publicationStore;
     this.signingConfig = signingConfig;
     this.settingsStore = settingsStore;
+    this.inspectorClient = inspectorClient;
   }
   /**
    * Applies the administrator's auto-approve settings to a freshly submitted
@@ -404,6 +410,18 @@ export class ApplicationService {
         pubResult.loteJson,
         manifestJson,
       );
+      /*
+        Every new or updated version is assessed by the Trust Inspector and the
+        complete evaluation is stored next to it. An Inspector that cannot be
+        reached does not fail the publication — it is recorded as unavailable,
+        which the version page reports as such rather than as conformance.
+      */
+      await this.evaluateWithInspector(
+        pubResult.listKey,
+        pubResult.sequenceNumber,
+        signed.compact,
+        compileResult.document,
+      );
       const manifestHash = createHash("sha256")
         .update(manifestJson)
         .digest("hex");
@@ -614,24 +632,49 @@ export class ApplicationService {
   getSigningConfig(): SigningConfig | null | undefined {
     return this.signingConfig;
   }
+
+  /**
+   * Submits the Compact JAdES artifact to the Trust Inspector and stores the
+   * evaluation beside the version. Storage failures are swallowed for the same
+   * reason as Inspector failures: the immutable publication already succeeded,
+   * and a missing evaluation is reported as unavailable.
+   */
+  async evaluateWithInspector(
+    listKey: string,
+    sequenceNumber: number,
+    compactJades: string,
+    document: LoTEDocument,
+  ): Promise<InspectorEvaluation> {
+    const client = this.inspectorClient ?? new InspectorClient();
+    const schemeInformation = document.LoTE.ListAndSchemeInformation;
+    const evaluation = await client.assess({
+      compactJades,
+      source: `${listKey}/versions/${sequenceNumber}/lote.jades`,
+      declared: {
+        mimeType: "application/jose",
+        loteType: schemeInformation.LoTEType,
+        schemeOperatorName: schemeInformation.SchemeOperatorName[0]?.value,
+        schemeTerritory: schemeInformation.SchemeTerritory,
+      },
+    });
+    try {
+      this.publicationStore.writeInspectorEvaluation(
+        listKey,
+        sequenceNumber,
+        JSON.stringify(evaluation, null, 2),
+      );
+    } catch {
+      /* the evaluation is evidence, not part of the published version */
+    }
+    return evaluation;
+  }
 }
+/**
+ * Only the entity is wanted here, so the scheme description is irrelevant and
+ * left empty; the caller supplies the real one when the list is assembled.
+ */
 function buildCandidateEntity(app: TrustedEntityApplication): AuthoringEntity {
-  const input = normalizeToAuthoringInput(
-    app,
-    "",
-    "",
-    "",
-    { streetAddress: "", country: "" },
-    "",
-    "",
-    "",
-    "",
-    1,
-  );
-  const candidate = input.entities[0];
-  if (!candidate)
-    throw new Error("Application does not contain a publishable entity.");
-  return candidate;
+  return buildAuthoringEntity(app.applicantData, app.family);
 }
 function readFileString(path: string): string {
   return readFileSync(path, "utf-8");

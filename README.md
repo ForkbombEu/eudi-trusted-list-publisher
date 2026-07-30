@@ -61,6 +61,7 @@ When enabled:
 - `/admin/applications` — manage submitted applications
 - `/admin/signing` — view signing configuration status
 - `/admin/settings` — auto-approval settings per family and per list
+- `/admin/lists/create` — declare a Trusted List and publish its first version
 
 When `DATA_COLLECTION_GUI` is `false` or unset, the server operates in read-only
 mode exactly as before — no onboarding, no admin routes, no authoring state.
@@ -73,12 +74,30 @@ mode exactly as before — no onboarding, no admin routes, no authoring state.
     {
       "listKey": "eu_credimi",
       "family": "wallet-providers",
+      "schemeOperatorName": "Credimi",
+      "schemeOperatorStreet": "Via Roma 1",
+      "schemeOperatorCountry": "IT",
+      "schemeName": "EU Wallet Providers List",
+      "schemeTerritory": "EU",
+      "schemeOperatorContactUri": "https://credimi.eu",
+      "distributionPointUri": "https://credimi.eu/wallet-providers/latest",
       "keyFile": "./keys/signing-key.pem",
-      "certFile": "./keys/signing-cert.pem"
+      "certFile": "./keys/signing-cert.pem",
+      "schemeOperatorEmail": "trustedlists@credimi.eu",
+      "schemeOperatorWebsite": "https://credimi.eu/wallet-providers",
+      "schemeInformationUris": [
+        "https://credimi.eu/wallet-providers/scheme",
+        "https://credimi.eu/wallet-providers/practice-statement"
+      ],
+      "policyUri": "https://credimi.eu/wallet-providers/policy"
     }
   ]
 }
 ```
+
+The last four fields carry Annex D/E scheme information and are required: a list
+cannot be conformant without a policy, an operator email and at least two scheme
+information URIs. `/admin/lists/create` writes complete entries for you.
 
 **Testing-tool limitation**: This is a test/debug fixture publisher, not an
 official or production Trusted List Provider. Document uploads are not
@@ -93,20 +112,50 @@ sequence, issue and next-update dates and cryptographic signature status. Signer
 trust is always reported as *not evaluated*. Each Trusted List and each Trusted
 List Family is shown as a colour-coded chip, and the same colour is used for that
 family or list on every other page. Click a list to see its version history, and
-a version to see its manifest, entities, certificate details and downloads.
+a version to see its manifest, entities, certificate details, its Trust Inspector
+result and its downloads.
+
+### Version pages and the Trust Inspector
+
+Every published version is submitted to the
+[Trust Inspector](https://trust-inspector.credimi.io) as its **Compact JAdES**
+artifact — the signed form, because half of the Annex D/E requirements are
+signature requirements. The complete evaluation is stored beside the version, and
+the page shows the Inspector status (Pass, Fail or Unavailable), the detected
+family/profile, the TS 119 602 conformance level, pass/fail counts and the
+evaluation timestamp, with **View Inspector report** and **Download Inspector
+JSON**. An Inspector that could not be reached is reported as *Unavailable* and is
+never presented as conformance.
+
+Three download buttons appear on every version page: **JSON** (the decoded LoTE),
+**Compact JAdES** (the signed artifact) and **Inspector report**. XML is not
+published yet.
+
+### Creating a Trusted List
+
+From **Admin → Create Trusted List**, or over the API. Choose the family, name the
+list, give the scheme operator details and a public base URL, and point at the
+signing key and certificate. The list is declared, its first empty version is
+signed and published, and the Inspector assesses it immediately. Deliberately
+broken lists are listed on the form, one checkbox per defect, but generation of
+them is not implemented yet and the options are disabled.
+
+The signing certificate must have subject `O` equal to the scheme operator name
+and subject `C` equal to the scheme territory (`EU` for Annex D and Annex E), or
+the Inspector reports a signer subject mismatch.
 
 ### Onboarding (`/onboarding`)
 
 Pick the Trusted List Family your organisation belongs to and start an
 application. The form collects the entity's legal name, postal address and
-information URI, plus one or more services. Each service needs a type, a name, a
-**Service Digital Identity Certificate (X.509 PEM)** and a unique service URI.
+information URI, plus one or more services. Each service needs a type, a name, an email address, a telephone number, a
+**Service Digital Identity Certificate (PEM)** and a unique service URI.
 The certificate may be self-signed or CA-issued; its subject organisation (`O`)
 must be exactly the entity name entered on the form, and the private key is never
 uploaded. Anything that is not an X.509 PEM certificate — a private key, a public
 key, a signing request, a PKCS#12 bundle — is rejected with a message naming what
 was supplied. Use **+ Add Service** to add more services; blocks are renumbered
-automatically and every block after the first has an **×** button to remove it.
+automatically and every block after the first has a **Remove service** button.
 Submitting returns an application ID to quote when following up.
 
 ### Certificate creation (`/docs/certificate-creation`)
@@ -172,6 +221,8 @@ specification is available at `/openapi.yaml` and `/openapi.json`.
 | Download decoded LoTE JSON | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/lote` |
 | Download Compact JAdES | `curl -o lote.jades http://localhost:8080/api/v1/lists/eu_credimi/versions/1/signature` |
 | Download publication manifest | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/manifest` |
+| Download the Trust Inspector evaluation | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/inspector` |
+| Create a Trusted List (admin token) | `curl -X POST http://localhost:8080/api/v1/admin/lists -H "Authorization: Bearer $TLP_ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"family":"wallet-providers","schemeName":"EU Wallet Providers List","schemeOperatorName":"Example Scheme","schemeTerritory":"EU","schemeOperatorStreet":"1 Example St","schemeOperatorCountry":"IT","schemeOperatorEmail":"trustedlists@example.eu","baseUrl":"https://example.eu/wallet-providers","keyFile":"/etc/tlp/signer-key.pem","certFile":"/etc/tlp/signer-cert.pem"}'` |
 | Health check | `curl http://localhost:8080/healthz` |
 | OpenAPI specification | `curl http://localhost:8080/openapi.yaml` |
 

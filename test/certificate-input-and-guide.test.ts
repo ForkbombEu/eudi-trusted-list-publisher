@@ -73,6 +73,8 @@ function walletFields(
     entityStreetAddress: "1 Test Street",
     entityCountry: "IT",
     entityInformationURI: "https://provider.example/info",
+    entityEmail: "trust@entity.example",
+    entityTelephone: "+39 02 1234567",
     "service[0].serviceType": "issuance",
     "service[0].serviceName": "Issuance",
     "service[0].certificatePem": certificatePem,

@@ -35,11 +35,26 @@ export {
 } from "./certificate-input.js";
 export { ApplicationService } from "./application-service.js";
 export {
+  createTrustedList,
+  deriveListKeyFromParts,
+  isKnownDefect,
+  schemeUrisFor,
+  LIST_DEFECTS,
+} from "./list-creation.js";
+export type {
+  CreateListRequest,
+  CreateListResult,
+  CreateListSuccess,
+  ListCreationDeps,
+} from "./list-creation.js";
+export { schemeDescriptorFor } from "./list-assembler.js";
+export {
   loadLatestPublication,
   convertLoTEToAuthoringEntities,
   checkServiceIdentifierUniqueness,
   assembleNextList,
 } from "./list-assembler.js";
+export type { SchemeDescriptor } from "./application-model.js";
 export type {
   ApplicationState,
   WalletProviderServiceInput,

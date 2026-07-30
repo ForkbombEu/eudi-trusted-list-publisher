@@ -585,6 +585,45 @@ export class PublicationStore {
   manifestPath(listKey: string, sequenceNumber: number): string {
     return join(this.versionDir(listKey, sequenceNumber), "manifest.json");
   }
+  /**
+   * External assessment of a published version. It sits beside the version's
+   * artifacts but is deliberately outside the integrity-checked set: it is
+   * evidence *about* the version, produced after publication and re-runnable,
+   * while the three signed artifacts stay immutable.
+   */
+  inspectorEvaluationPath(listKey: string, sequenceNumber: number): string {
+    return join(this.versionDir(listKey, sequenceNumber), "inspector.json");
+  }
+
+  /** Writes (or replaces) the evaluation for one published version. */
+  writeInspectorEvaluation(
+    listKey: string,
+    sequenceNumber: number,
+    evaluationJson: string,
+  ): void {
+    const path = this.inspectorEvaluationPath(listKey, sequenceNumber);
+    if (!this.fs.existsSync(this.versionDir(listKey, sequenceNumber)))
+      throw new Error(
+        `Cannot store an evaluation for "${listKey}" sequence ${sequenceNumber}: the version does not exist.`,
+      );
+    const tmpPath = `${path}.tmp_${randomBytes(6).toString("hex")}`;
+    this.fs.writeFileSync(tmpPath, evaluationJson, { encoding: "utf-8" });
+    this.fs.renameSync(tmpPath, path);
+  }
+
+  /** Returns the stored evaluation, or null when none was ever stored. */
+  readInspectorEvaluation(
+    listKey: string,
+    sequenceNumber: number,
+  ): string | null {
+    const path = this.inspectorEvaluationPath(listKey, sequenceNumber);
+    if (!this.fs.existsSync(path)) return null;
+    try {
+      return this.fs.readFileSync(path, "utf-8");
+    } catch {
+      return null;
+    }
+  }
 
   async store(
     result: PublicationResult,

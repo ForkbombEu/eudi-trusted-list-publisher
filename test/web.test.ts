@@ -480,15 +480,26 @@ describe("HTTP correctness", () => {
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
   });
 
-  it("bidirectional route parity: all OpenAPI paths use GET method", async () => {
+  it("bidirectional route parity: every OpenAPI path documents the implemented method", async () => {
     const res = await httpGet("/openapi.json");
     const spec = JSON.parse(res.body);
-    for (const [, methods] of Object.entries(
+    /*
+      The published artifacts are read-only; Trusted List creation is the one
+      mutating route. Each documented path must carry the method the registry
+      implements, not GET unconditionally.
+    */
+    const implemented = new Map(
+      getApiRoutes().map((route) => [route.path, route.method.toLowerCase()]),
+    );
+    for (const [path, methods] of Object.entries(
       spec.paths as Record<string, unknown>,
     )) {
+      const expected = implemented.get(path);
       expect(
-        methods && typeof methods === "object" && "get" in (methods as object),
-      ).toBe(true);
+        expected,
+        `${path} is documented but not implemented`,
+      ).toBeDefined();
+      expect(Object.keys(methods as object)).toContain(expected);
     }
   });
 
@@ -689,16 +700,23 @@ describe("HTTP correctness", () => {
 
   it("API route registry is used and complete", async () => {
     const routes = getApiRoutes();
-    expect(routes.length).toBe(6);
+    expect(routes.length).toBe(8);
 
     const paths = routes.map((r) => r.path);
     expect(paths).toContain("/api/v1/lists");
     expect(paths).toContain("/api/v1/lists/{listKey}/versions/{sequence}/lote");
+    expect(paths).toContain(
+      "/api/v1/lists/{listKey}/versions/{sequence}/inspector",
+    );
+    expect(paths).toContain("/api/v1/admin/lists");
+    expect(
+      routes.filter((route) => route.method === "POST").map((r) => r.path),
+    ).toEqual(["/api/v1/admin/lists"]);
 
     // All routes should have handler identifiers
     for (const r of routes) {
       expect(r.handler).toBeTruthy();
-      expect(r.method).toBe("GET");
+      expect(["GET", "POST"]).toContain(r.method);
       expect(r.matcher).toBeInstanceOf(RegExp);
     }
   });
@@ -723,24 +741,25 @@ describe("HTTP correctness", () => {
     expect(spec.servers).toBeDefined();
     expect(Array.isArray(spec.servers)).toBe(true);
 
-    // Every path must have a GET operation with responses
+    // Every documented operation carries responses and an operationId
     for (const [, methods] of Object.entries(
       spec.paths as Record<string, unknown>,
     )) {
       const m = methods as Record<string, unknown>;
-      expect(m.get).toBeDefined();
-      const getOp = m.get as Record<string, unknown>;
-      expect(getOp.responses).toBeDefined();
-      expect(getOp.operationId).toBeDefined();
+      for (const method of ["get", "post"]) {
+        const operation = m[method] as Record<string, unknown> | undefined;
+        if (!operation) continue;
+        expect(operation.responses).toBeDefined();
+        expect(operation.operationId).toBeDefined();
+      }
     }
 
-    // Bidirectional: all API routes are in OpenAPI
+    // Bidirectional: all API routes are in OpenAPI under their own method
     for (const r of getApiRoutes()) {
       expect(Object.keys(spec.paths)).toContain(r.path);
-      // Each registered route must appear with GET method
       const pathObj = spec.paths[r.path] as Record<string, unknown>;
       expect(pathObj).toBeDefined();
-      expect(pathObj.get).toBeDefined();
+      expect(pathObj[r.method.toLowerCase()]).toBeDefined();
     }
   });
 

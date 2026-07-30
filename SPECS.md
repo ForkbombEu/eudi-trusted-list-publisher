@@ -308,6 +308,7 @@ ApplicationState = "submitted" | "approved" | "rejected" | "published"
 TrustedEntityApplication { id, schemaVersion, family, state, submittedAt,
   applicantData { entityName, entityTradeName?, entityStreetAddress,
     entityLocality?, entityPostalCode?, entityCountry, entityInformationURI,
+    entityEmail, entityTelephone,
     services[{ serviceType, serviceName, certificatePem, serviceUniqueIdentifier }] },
   adminNote?, approvedAt?, rejectedAt?, publication? }
 
@@ -528,6 +529,64 @@ it, so the page cannot drift from the form.
 the submitted entity name exactly, and names both values when it does not.
 `parseAndValidateSubmission()` applies both checks per service and reports them
 on `service[i].certificatePem`.
+
+### Trust Inspector integration
+
+`src/core/inspector/inspector.ts` submits the **Compact JAdES artifact** — never
+the decoded LoTE — to `POST /api/audit/artifact` on
+`https://trust-inspector.credimi.io` and derives a summary from the response:
+
+```ts
+InspectorSummary {
+  status: "pass" | "fail" | "unavailable",
+  error?, evaluatedAt, inspectorBaseUrl,
+  profile?, profileStatus?, detectedFormat?, detectedArtifactKind?,
+  conformanceLevel?, score?, counts?, locallyDecidableFailures?, mandatoryFailures?
+}
+```
+
+`status` is `pass` only when no locally decidable check failed. `unavailable`
+means the Inspector could not be reached; `assess()` never throws and never
+reports conformance in that case, and the version page renders the level as
+"not evaluated".
+
+The complete response is stored unmodified alongside the summary as
+`inspector.json` in the version directory. That file sits **outside** the
+integrity-checked artifact set: it is evidence produced after publication and can
+be re-run, while `lote.json`, `lote.jades` and `manifest.json` stay immutable and
+hash-verified. `ApplicationService.evaluateWithInspector()` runs on every
+publication, so version 2 gets its own evaluation rather than inheriting
+version 1's.
+
+`GET /api/v1/lists/{listKey}/versions/{sequence}/inspector` serves the stored
+evaluation (`?view=1` renders instead of downloading); a 404 means unavailable,
+which the response body states is not a conformance claim.
+
+### Trusted List creation
+
+`src/core/authoring/list-creation.ts` declares a Trusted List and publishes its
+first version in one operation: validate, derive the list key, compile an **empty**
+LoTE for the family, validate against the pinned schema, sign as Compact JAdES,
+publish, assess with the Inspector, and only then append the entry to the signing
+configuration — so a failed creation never leaves a list that cannot publish.
+`createWebServer()` reloads the signing configuration afterwards, so the new list
+appears on the onboarding forms without a restart.
+
+The list key is `<territory>_<operator name>` lowercased, the same derivation the
+manifest uses, so `deriveListKeyFromParts()` computes it up front and the creation
+refuses a collision. The six scheme URIs are derived from one base URL:
+`/scheme`, `/practice-statement`, `/policy`, `/latest`, plus the website itself.
+
+Both entry points require the administrator credential:
+
+- `POST /admin/lists/create` — the administration form, cookie session
+- `POST /api/v1/admin/lists` — JSON, `Authorization: Bearer <TLP_ADMIN_TOKEN>` or
+  `?token=`
+
+`LIST_DEFECTS` names the ten deliberate defects the form will offer, each
+combinable with the others. Generation of broken lists is not implemented: the
+checkboxes render disabled and the API rejects a non-empty `defects` array with a
+message naming the unimplemented option.
 
 ### Certificate creation guide
 

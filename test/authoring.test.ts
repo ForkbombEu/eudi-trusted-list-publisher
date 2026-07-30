@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { certificateDerBase64 } from "../src/core/model/lexical.js";
 import { existsSync, readFileSync, rmSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,6 +10,7 @@ import {
   findFamily,
   canTransition,
   normalizeToAuthoringInput,
+  type SchemeDescriptor,
   documentPlaceholder,
   AuthoringStore,
   loadSigningConfig,
@@ -32,6 +34,27 @@ function tmpDir(): string {
   mkdirSync(dir, { recursive: true });
   return dir;
 }
+
+/**
+ * Scheme description used by the normalization tests. It carries the Annex D/E
+ * scheme fields the compiler needs; individual tests override what they assert.
+ */
+const TEST_SCHEME: SchemeDescriptor = {
+  schemeOperatorName: "Credimi",
+  schemeOperatorStreet: "Via Roma 1",
+  schemeOperatorCountry: "IT",
+  schemeOperatorEmail: "trustedlists@credimi.eu",
+  schemeOperatorWebsite: "https://credimi.eu",
+  schemeName: "EU Wallet Providers List",
+  schemeTerritory: "EU",
+  schemeInformationUris: [
+    "https://credimi.eu/wallet-providers/scheme",
+    "https://credimi.eu/wallet-providers/practice-statement",
+  ],
+  policyUri: "https://credimi.eu/wallet-providers/policy",
+  distributionPointUri: "https://credimi.eu/wallet-providers/latest",
+  signerCertificates: [],
+};
 
 const TEST_CERT = readFileSync(
   resolve(import.meta.dirname, "fixtures", "test-cert.pem"),
@@ -60,6 +83,8 @@ function createTestApplication(
       entityPostalCode: "12345",
       entityCountry: "IT",
       entityInformationURI: "https://example.com/provider",
+      entityEmail: "trust@entity.example",
+      entityTelephone: "+39 02 1234567",
       services: [
         {
           serviceType: "issuance",
@@ -178,12 +203,7 @@ describe("Normalize to AuthoringInput", () => {
     const app = createTestApplication();
     const input = normalizeToAuthoringInput(
       app,
-      "Credimi",
-      "EU Wallet Providers List",
-      "EU",
-      { streetAddress: "Via Roma 1", country: "IT" },
-      "https://credimi.eu",
-      "https://credimi.eu/wallet-providers/latest",
+      TEST_SCHEME,
       "2026-01-01T00:00:00Z",
       "2026-07-01T00:00:00Z",
       1,
@@ -207,10 +227,11 @@ describe("Normalize to AuthoringInput", () => {
     expect(input.entities[0]!.services[0]!.serviceName[0]!.value).toBe(
       "Wallet Issuance Service",
     );
+    // The authoring model holds the published form: Base64 DER, no PEM armour.
     expect(
       input.entities[0]!.services[0]!.serviceDigitalIdentity
         .x509Certificates[0],
-    ).toBe(TEST_CERT);
+    ).toBe(certificateDerBase64(TEST_CERT));
     expect(input.entities[0]!.services[0]!.serviceUniqueIdentifier).toBe(
       "https://example.com/services/issuance",
     );
@@ -220,12 +241,11 @@ describe("Normalize to AuthoringInput", () => {
     const app = createTestApplication();
     const input = normalizeToAuthoringInput(
       app,
-      "TrustedOp",
-      "Trusted List",
-      "EU",
-      { streetAddress: "Via Config", country: "FR" },
-      "https://trusted.eu",
-      "https://dist.eu",
+      {
+        ...TEST_SCHEME,
+        schemeOperatorName: "TrustedOp",
+        schemeName: "Trusted List",
+      },
       "2026-01-01T00:00:00Z",
       "2026-07-01T00:00:00Z",
       5,
@@ -233,6 +253,10 @@ describe("Normalize to AuthoringInput", () => {
     expect(input.schemeOperator.name[0]!.value).toBe("TrustedOp");
     expect(input.scheme.schemeName[0]!.value).toBe("Trusted List");
     expect(input.loTESequenceNumber).toBe(5);
+    // clauses 6.3.5.1/6.3.5.2: the operator is reachable by email and on the web.
+    expect(
+      input.schemeOperator.electronicAddress.map((a) => a.uriValue),
+    ).toEqual(["mailto:trustedlists@credimi.eu", "https://credimi.eu"]);
   });
 
   it("maps revocation service type correctly", () => {
@@ -242,6 +266,8 @@ describe("Normalize to AuthoringInput", () => {
         entityStreetAddress: "1 Revoke St",
         entityCountry: "IT",
         entityInformationURI: "https://example.com",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "revocation",
@@ -254,12 +280,7 @@ describe("Normalize to AuthoringInput", () => {
     });
     const input = normalizeToAuthoringInput(
       app,
-      "Op",
-      "List",
-      "EU",
-      { streetAddress: "S", country: "IT" },
-      "https://c.eu",
-      "https://d.eu",
+      TEST_SCHEME,
       "2026-01-01T00:00:00Z",
       "2026-07-01T00:00:00Z",
       1,
@@ -396,6 +417,13 @@ describe("Signing Config", () => {
           distributionPointUri: "https://credimi.eu/latest",
           keyFile: "/k",
           certFile: "/c",
+          schemeOperatorEmail: "operator@scheme.example",
+          schemeOperatorWebsite: "https://scheme.example",
+          schemeInformationUris: [
+            "https://scheme.example/scheme",
+            "https://scheme.example/practice-statement",
+          ],
+          policyUri: "https://scheme.example/policy",
         },
       ],
     };
@@ -424,6 +452,13 @@ describe("Signing Config", () => {
           distributionPointUri: "https://test.eu/latest",
           keyFile: "/nonexistent",
           certFile: "/nonexistent",
+          schemeOperatorEmail: "operator@scheme.example",
+          schemeOperatorWebsite: "https://scheme.example",
+          schemeInformationUris: [
+            "https://scheme.example/scheme",
+            "https://scheme.example/practice-statement",
+          ],
+          policyUri: "https://scheme.example/policy",
         },
       ],
     };
@@ -470,12 +505,7 @@ describe("End-to-end publication workflow", () => {
 
     const input = normalizeToAuthoringInput(
       app,
-      "Credimi",
-      "EU Wallet Providers List",
-      "EU",
-      { streetAddress: "Via Roma 1", country: "IT" },
-      "https://credimi.eu",
-      "https://credimi.eu/wallet-providers/latest",
+      TEST_SCHEME,
       "2026-07-28T00:00:00Z",
       "2027-01-28T00:00:00Z",
       1,

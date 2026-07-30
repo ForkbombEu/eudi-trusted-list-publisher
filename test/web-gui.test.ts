@@ -165,6 +165,13 @@ function createSigningConfig(dir: string): string {
           distributionPointUri: "https://test.example/latest",
           keyFile: keyPath,
           certFile: certPath,
+          schemeOperatorEmail: "operator@scheme.example",
+          schemeOperatorWebsite: "https://scheme.example",
+          schemeInformationUris: [
+            "https://scheme.example/scheme",
+            "https://scheme.example/practice-statement",
+          ],
+          policyUri: "https://scheme.example/policy",
         },
       ],
     }),
@@ -190,6 +197,8 @@ const walletAdminApplication: WalletProviderApplication = {
     entityStreetAddress: "1 Wallet Way",
     entityCountry: "DK",
     entityInformationURI: "https://wallet.example",
+    entityEmail: "trust@entity.example",
+    entityTelephone: "+39 02 1234567",
     services: [
       {
         serviceType: "issuance",
@@ -213,6 +222,8 @@ const pidAdminApplication: PIDProviderApplication = {
     entityStreetAddress: "2 PID Place",
     entityCountry: "DK",
     entityInformationURI: "https://pid.example",
+    entityEmail: "trust@entity.example",
+    entityTelephone: "+39 02 1234567",
     responsibleMemberState: "<DK & Co",
     services: [
       {
@@ -486,9 +497,7 @@ describe("Phase 5.1 GUI shell", () => {
     try {
       const r = await httpGet(`${url}/onboarding`);
       expect(r.status).toBe(200);
-      expect(r.body).toContain(
-        "Welcome to Credimi Trusted List onboarding tool",
-      );
+      expect(r.body).toContain("Trusted List onboarding");
       expect(r.body).toContain('href="/onboarding/wallet-provider"');
       expect(r.body).toContain('href="/onboarding/pid-provider"');
       expect(r.body).toContain("card-disabled");
@@ -738,6 +747,8 @@ describe("Form submission", () => {
         entityStreetAddress: "123 Main St",
         entityCountry: "IT",
         entityInformationURI: "https://example.com/test",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         "service[0].serviceType": "issuance",
         "service[0].serviceName": "Test Issuance",
         "service[0].certificatePem": TEST_CERT,
@@ -784,6 +795,8 @@ describe("Form submission", () => {
         entityStreetAddress: "Saved St",
         entityCountry: "invalid123",
         entityInformationURI: "not-a-url",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         "service[0].serviceType": "",
         "service[0].serviceName": "",
         "service[0].certificatePem": "",
@@ -827,6 +840,8 @@ describe("Form submission", () => {
         entityStreetAddress: "456 Ave",
         entityCountry: "IT",
         entityInformationURI: "https://multi.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         "service[0].serviceType": "issuance",
         "service[0].serviceName": "Issuance Svc",
         "service[0].certificatePem": TEST_CERT,
@@ -893,6 +908,8 @@ describe("Admin lifecycle", () => {
         entityStreetAddress: "1 Approve St",
         entityCountry: "IT",
         entityInformationURI: "https://approve.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         "service[0].serviceType": "issuance",
         "service[0].serviceName": "Svc",
         "service[0].certificatePem": TEST_CERT,
@@ -975,6 +992,8 @@ describe("Admin lifecycle", () => {
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://note.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         "service[0].serviceType": "issuance",
         "service[0].serviceName": "Svc",
         "service[0].certificatePem": TEST_CERT,
@@ -1015,6 +1034,8 @@ describe("Admin lifecycle", () => {
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://pub.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         "service[0].serviceType": "issuance",
         "service[0].serviceName": "Svc",
         "service[0].certificatePem": TEST_CERT,
@@ -1087,6 +1108,13 @@ describe("Admin lifecycle", () => {
             distributionPointUri: "https://x/latest",
             keyFile: "/nonexistent/key.pem",
             certFile: "/nonexistent/cert.pem",
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -1109,6 +1137,8 @@ describe("Admin lifecycle", () => {
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://nokey.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         "service[0].serviceType": "issuance",
         "service[0].serviceName": "Svc",
         "service[0].certificatePem": TEST_CERT,
@@ -1167,6 +1197,8 @@ describe("Admin lifecycle", () => {
         entityStreetAddress: "555 Final St",
         entityCountry: "IT",
         entityInformationURI: "https://fullpub.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         "service[0].serviceType": "issuance",
         "service[0].serviceName": "Issuance",
         "service[0].certificatePem": TEST_CERT,

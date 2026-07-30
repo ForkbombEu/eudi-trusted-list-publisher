@@ -17,6 +17,7 @@ export function adminIndexHtml(): string {
   return `
 <h1>Administration</h1>
 <div class="card">
+  <p><a href="/admin/lists/create" class="btn">Create Trusted List</a></p>
   <p><a href="/admin/applications" class="btn">Manage Applications</a></p>
   <p><a href="/admin/signing" class="btn">Signing Configuration</a></p>
   <p><a href="/admin/settings" class="btn">Settings</a></p>
@@ -179,6 +180,8 @@ ${pubInfo}
     ${data.entityPostalCode ? `<tr><th>Postal Code</th><td>${escape(data.entityPostalCode)}</td></tr>` : ""}
     <tr><th>Country</th><td>${escape(data.entityCountry)}</td></tr>
     <tr><th>Information URI</th><td><code>${escape(data.entityInformationURI)}</code></td></tr>
+    <tr><th>Email</th><td><code>${escape(data.entityEmail)}</code></td></tr>
+    <tr><th>Telephone</th><td><code>${escape(data.entityTelephone)}</code></td></tr>
     ${
       app.family === "pid-providers"
         ? `<tr><th>Responsible Member State</th><td>${escape(app.applicantData.responsibleMemberState)}</td></tr>`

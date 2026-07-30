@@ -109,6 +109,13 @@ function createSigningConfig(dir: string): string {
           distributionPointUri: "https://test.example/latest",
           keyFile: keyPath,
           certFile: certPath,
+          schemeOperatorEmail: "operator@scheme.example",
+          schemeOperatorWebsite: "https://scheme.example",
+          schemeInformationUris: [
+            "https://scheme.example/scheme",
+            "https://scheme.example/practice-statement",
+          ],
+          policyUri: "https://scheme.example/policy",
         },
       ],
     }),
@@ -129,6 +136,8 @@ function walletSubmission(uniqueId: string): string {
     entityStreetAddress: "1 Auto Street",
     entityCountry: "IT",
     entityInformationURI: "https://auto.example/info",
+    entityEmail: "trust@entity.example",
+    entityTelephone: "+39 02 1234567",
     "service[0].serviceType": "issuance",
     "service[0].serviceName": "Auto Issuance",
     "service[0].certificatePem": TEST_CERT,
@@ -446,7 +455,8 @@ describe("Onboarding service blocks", () => {
     // Exactly one of the two remove buttons is hidden — the first block's.
     expect(html.match(/class="service-block card"/g)).toHaveLength(2);
     expect(html.match(/service-remove/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(html.match(/hidden>&times;/g)).toHaveLength(1);
+    // Only the first block hides its remover; the button is a named action now.
+    expect(html.match(/hidden>Remove service/g)).toHaveLength(1);
   });
 
   it("renumbers the blocks client-side after an add or a remove", () => {
@@ -458,7 +468,7 @@ describe("Onboarding service blocks", () => {
 
   it("labels the certificate as the service digital identity and explains it", () => {
     const html = walletProviderFormHtml({}, {}, []);
-    expect(html).toContain("Service Digital Identity Certificate (X.509 PEM)");
+    expect(html).toContain("Service Digital Identity Certificate (PEM)");
     expect(html).not.toContain("Self-Signed Certificate (PEM)");
     expect(html).toContain("does not build or verify");
     expect(html).toContain("Never upload the private key.");

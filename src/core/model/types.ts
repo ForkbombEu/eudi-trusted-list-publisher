@@ -35,7 +35,31 @@ export interface ServiceSupplyPointURI {
 }
 
 export interface ServiceInformationExtensionsItem {
+  /**
+   * clause 6.6.9: every extension states whether a reader that does not
+   * understand it may ignore it. An extension container without criticality is
+   * rejected.
+   */
+  Critical?: boolean;
   [key: string]: unknown;
+}
+
+/** clause 6.3.11: LoTEPolicy or LoTELegalNotice, never both. */
+export type PolicyOrLegalNoticeItem =
+  { LoTEPolicy: NonEmptyMultiLangURI } | { LoTELegalNotice: string };
+
+export interface LoTEQualifier {
+  LoTEType: string;
+  SchemeOperatorName: MultiLangString[];
+  SchemeTypeCommunityRules?: NonEmptyMultiLangURI[];
+  SchemeTerritory?: string;
+  MimeType: string;
+}
+
+export interface OtherLoTEPointer {
+  LoTELocation: string;
+  ServiceDigitalIdentities: ServiceDigitalIdentity[];
+  LoTEQualifiers: LoTEQualifier[];
 }
 
 export interface ServiceInformation {
@@ -94,9 +118,9 @@ export interface ListAndSchemeInformation {
   StatusDeterminationApproach?: string;
   SchemeTypeCommunityRules?: NonEmptyMultiLangURI[];
   SchemeTerritory?: string;
-  PolicyOrLegalNotice?: unknown[];
+  PolicyOrLegalNotice?: PolicyOrLegalNoticeItem[];
   HistoricalInformationPeriod?: number;
-  PointersToOtherLoTE?: unknown[];
+  PointersToOtherLoTE?: OtherLoTEPointer[];
   ListIssueDateTime: string;
   NextUpdate: string;
   DistributionPoints?: string[];

@@ -3,11 +3,13 @@ import {
   SERVICE_TYPE_ISSUANCE,
   SERVICE_TYPE_REVOCATION,
   WALLET_PROVIDER_LOTE_TYPE,
+  WALLET_PROVIDER_ROLE_URI_PREFIX,
   WALLET_PROVIDER_SCHEME_RULES,
   WALLET_PROVIDER_STATUS_DETN,
 } from "./wallet-provider/constants.js";
 import {
   PID_PROVIDER_LOTE_TYPE,
+  PID_PROVIDER_ROLE_URI_PREFIX,
   PID_PROVIDER_SCHEME_RULES,
   PID_PROVIDER_STATUS_DETN,
   PID_SERVICE_TYPE_ISSUANCE,
@@ -32,6 +34,8 @@ export interface TrustedEntityProfile {
   readonly statusDeterminationApproach?: string;
   readonly schemeRules?: string;
   readonly allowedServiceTypes: readonly string[];
+  /** `<prefix>/<country code>` identifies the entity role; Annex D/E. */
+  readonly roleUriPrefix?: string;
   readonly maxNextUpdateMonths?: number;
   readonly signatureProfile: "JAdES-Compact-B";
   readonly notImplementedNote?: string;
@@ -61,6 +65,7 @@ export const PROFILE_REGISTRY: Readonly<
       SERVICE_TYPE_ISSUANCE,
       SERVICE_TYPE_REVOCATION,
     ]),
+    roleUriPrefix: WALLET_PROVIDER_ROLE_URI_PREFIX,
     maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
     signatureProfile: "JAdES-Compact-B",
   }),
@@ -75,6 +80,7 @@ export const PROFILE_REGISTRY: Readonly<
       PID_SERVICE_TYPE_ISSUANCE,
       PID_SERVICE_TYPE_REVOCATION,
     ]),
+    roleUriPrefix: PID_PROVIDER_ROLE_URI_PREFIX,
     maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
     signatureProfile: "JAdES-Compact-B",
   }),

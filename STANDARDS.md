@@ -110,18 +110,59 @@ schema listed above), the two profile constant modules and a published artefact.
   the published identity attributable to the listed entity; it is not an ETSI
   requirement.
 
-### Open divergence: PEM stored where base64 DER is specified
+### Resolved: certificate values are Base64 DER
 
 `pkiOb.val` is declared `"contentEncoding": "base64"`, i.e. the base64 encoding of
-the DER certificate. `compileEntity()` in `src/core/compile/compile.ts` copies the
-authoring string into `val` unchanged, and the authoring string is the submitted
-PEM, so published LoTEs carry `-----BEGIN CERTIFICATE-----`, newlines and all
-inside `val` (see any `publications/*/versions/*/lote.json`).
+the DER certificate. This was previously the submitted PEM verbatim. The
+conversion now happens once, at the authoring boundary
+(`buildAuthoringEntity()`), so the authoring model and every published list carry
+strict Base64 DER with no armour and no whitespace. `convertLoTEToAuthoringEntities()`
+normalises legacy PEM values on read, which upgrades an older list on its next
+version; `checkLosslessPreservation()` normalises the stored original the same
+way so the upgrade is not mistaken for data loss.
 
-Ajv treats `contentEncoding` as an annotation, so schema validation does not
-catch this. It is a pre-existing divergence, not introduced by the certificate
-input work, and correcting it would change every published artefact and its
-signature. Recorded here for a decision rather than changed silently.
+## Locally decidable Annex D/E rules implemented
+
+Established empirically against the Trust Inspector
+(`https://trust-inspector.credimi.io`, `POST /api/audit/artifact`) and recorded
+here because several are lexical or structural rules that the pinned JSON schema
+does not enforce.
+
+| Rule | Where it is applied |
+|------|--------------------|
+| clause 6.1.3 UTC form `YYYY-MM-DDThh:mm:ssZ`, no fractional seconds | `src/core/model/lexical.ts`, applied in `compileForProfile()` |
+| clause 6.3.6 `SchemeName` = `<territory>:<name>` | `compileForProfile()`, idempotent |
+| Table 1 presence matrix: `SchemeInformationURI` mandatory; Annex D/E minimum two | `SigningConfigEntry.schemeInformationUris` |
+| clauses 6.3.5.1/6.3.5.2 operator reachable by `mailto:` and HTTP(S) | `normalizeToAuthoringInput()` |
+| clause 6.3.11 `PolicyOrLegalNotice` mandatory for explicit scheme information | `SigningConfigEntry.policyUri` |
+| Annex D/E self pointer in `PointersToOtherLoTE`, carrying the signing certificate and `MimeType: application/jose` | `compileForProfile()` |
+| clause 6.5.3 entity reachable by `mailto:`, HTTP(S) and `tel:` | `buildAuthoringEntity()` from the `entityEmail`/`entityTelephone` form fields |
+| Annex D/E entity country-role URI `http://uri.etsi.org/19602/ListOfTrustedEntities/{WalletProvider,PIDProvider}/<CC>` | `buildAuthoringEntity()`; PID uses the responsible Member State |
+| clause 6.6.3 `X509Certificates[].val` strict Base64 DER | `buildAuthoringEntity()` |
+| clause 6.6.9 extension containers state criticality (`Critical`) | `compileForProfile()` |
+| Annex D/E service certificate subject `O` = Trusted Entity Name | `checkCertificateSubjectOrganisation()` in the submission parser |
+| JAdES Baseline B `iat` integer NumericDate in the protected header | `src/core/signing/signing.ts` |
+| `NextUpdate` at most six months after the issue time | UTC month arithmetic in `createTrustedList()`; the application path uses 180 days |
+
+Two rules constrain the **signing certificate** rather than the generated
+document, so they are properties of the operator's signing material:
+
+- subject organisation (`O`) must equal `SchemeOperatorName`
+- subject country (`C`) must equal `SchemeTerritory` — `EU` for Annex D and
+  Annex E
+
+Both are stated on the Create Trusted List form.
+
+### What stays unchecked
+
+`ts119602.scheme.pointers.authentication`,
+`ts119602.scheme.distribution_consistency`,
+`json_lote.signature.jades_signer_trust`, `ts119602.language.annex_b` and
+`json_lote.dates.update_period_days` need dereferencing or an external trust
+decision. They report `not_checked`, and this project does not establish PKIX
+trust. A clean generated list therefore reaches zero `fail` findings while the
+Inspector's overall conformance level stays below `conformant`; that is expected
+and is never reported as conformance.
 
 ## WE BUILD Compatibility Findings
 

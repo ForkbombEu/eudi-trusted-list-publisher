@@ -38,15 +38,12 @@ export function onboardingCatalogueHtml(): string {
   }
 
   return `
-<h1>Welcome to Credimi Trusted List onboarding tool</h1>
-<p class="lead">Apply to be listed as a trusted entity in a TS 119 602 List of
-Trusted Entities. Pick the Trusted List Family your organisation belongs to and
-fill in the application form: you describe your entity and the services it
-operates, and attach the certificate each service signs with. The application is
-then reviewed by the scheme operator, and once it is approved the publisher
-compiles it into the target Trusted List, signs the list as a JAdES document and
-publishes a new, immutable version of it. Every published version stays readable
-in the Catalogue and over the API.</p>
+<h1>Trusted List onboarding</h1>
+<p class="lead lead-wide">Apply to be listed as a trusted entity in a TS 119 602
+List of Trusted Entities. Describe your entity and its services, and the scheme
+operator reviews the application. Once approved, it is compiled into the target
+Trusted List, signed as Compact JAdES and published as a new immutable
+version.</p>
 
 <div class="section-header"><h2>Trusted List Families</h2></div>
 <div class="onboarding-grid">${cards}
@@ -60,18 +57,15 @@ export interface ListOption {
 }
 
 /**
- * Shown once under the Services card. The certificate becomes the service
- * ServiceDigitalIdentity in the published LoTE; it may be self-signed or
- * CA-issued, because this publisher never builds or verifies a certification
- * path.
+ * Shown once under the Services card, in both profiles. What the certificate is
+ * *for* differs per profile and is said on the field itself.
  */
 const CERTIFICATE_EXPLANATION =
-  "Each service is registered with the X.509 certificate that identifies it. " +
   "The certificate is published as the service ServiceDigitalIdentity, so its " +
   "subject must identify the provider: set the organisation (O) to exactly the " +
   "Entity Name entered above. It may be self-signed or issued by a CA — this " +
   "publisher does not build or verify a certification path, so a self-signed " +
-  "certificate is the simplest option for testing.";
+  "certificate is accepted.";
 
 /** Per-family wording. Field names and the POST contract are identical. */
 interface FormProfile {
@@ -84,6 +78,8 @@ interface FormProfile {
   issuanceLabel: string;
   revocationLabel: string;
   extraEntityFields: string;
+  /** What this profile's service certificate is used for. */
+  certificatePurpose: string;
 }
 
 const WALLET_PROFILE: FormProfile = {
@@ -98,6 +94,9 @@ const WALLET_PROFILE: FormProfile = {
   issuanceLabel: "Wallet Solution Issuance",
   revocationLabel: "Wallet Solution Revocation",
   extraEntityFields: "",
+  certificatePurpose:
+    "The certificate used to authenticate and validate components of the " +
+    "wallet unit supplied under the wallet solution.",
 };
 
 const PID_PROFILE = (
@@ -115,6 +114,9 @@ const PID_PROFILE = (
   serviceTypeHelp: "Select the PID service type.",
   issuanceLabel: "PID Issuance",
   revocationLabel: "PID Revocation",
+  certificatePurpose:
+    "The certificate used to verify signatures or seals created by the PID " +
+    "Provider on issued PID.",
   extraEntityFields: `
     <div class="form-group">
       <label for="responsibleMemberState">Responsible Member State <span class="required">*</span></label>
@@ -258,6 +260,25 @@ ${profile.extraEntityFields}
       <span class="field-help">Public URI with information about the entity.</span>
       ${fieldError("entityInformationURI")}
     </div>
+
+    <div class="form-group">
+      <label for="entityEmail">Email Address <span class="required">*</span></label>
+      <input type="email" id="entityEmail" name="entityEmail" required
+        value="${escape(v.entityEmail ?? "")}" maxlength="200">
+      <span class="field-help">Published as a <code>mailto:</code> URI; the profile
+        requires the entity to be contactable by email.</span>
+      ${fieldError("entityEmail")}
+    </div>
+
+    <div class="form-group">
+      <label for="entityTelephone">Telephone <span class="required">*</span></label>
+      <input type="tel" id="entityTelephone" name="entityTelephone" required
+        value="${escape(v.entityTelephone ?? "")}" maxlength="40"
+        placeholder="+39 02 1234567">
+      <span class="field-help">International form. Published as a
+        <code>tel:</code> URI.</span>
+      ${fieldError("entityTelephone")}
+    </div>
   </div>
 
   <div class="card">
@@ -381,8 +402,7 @@ function serviceBlockHtml(
 <div class="service-block card">
   <div class="service-block-head">
     <h3 class="service-block-title">Service ${position}</h3>
-    <button type="button" class="btn btn-outline btn-sm service-remove"
-      title="Remove this service" aria-label="Remove this service"${hidden}>&times;</button>
+    <button type="button" class="btn btn-outline btn-sm service-remove"${hidden}>Remove service</button>
   </div>
   <div class="form-group">
     <label>Service Type <span class="required">*</span></label>
@@ -409,7 +429,8 @@ function serviceBlockHtml(
     <label>${escape(CERTIFICATE_FIELD_LABEL)} <span class="required">*</span></label>
     <textarea name="${escape(f("certificatePem"))}" required rows="8"
       placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----">${escape(v[f("certificatePem")] ?? "")}</textarea>
-    <span class="field-help">Upload an X.509 certificate beginning with
+    <span class="field-help">${escape(profile.certificatePurpose)}
+      Upload an X.509 certificate beginning with
       <code>-----BEGIN CERTIFICATE-----</code>. For testing, you can generate a
       self-signed certificate using our
       <a href="${CERTIFICATE_GUIDE_PATH}">Certificate creation guide</a>.

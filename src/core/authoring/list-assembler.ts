@@ -15,9 +15,12 @@ import {
 } from "../profiles/registry.js";
 import {
   normalizeToAuthoringInput,
+  type SchemeDescriptor,
   type TrustedEntityApplication,
 } from "./application-model.js";
 import type { SigningConfigEntry } from "./signing-config.js";
+import { certificateDerBase64 } from "../model/lexical.js";
+import { readFileSync } from "node:fs";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 type RecordValue = Record<string, unknown>;
@@ -145,12 +148,18 @@ function convertEntity(entity: TrustedEntity): AuthoringEntity {
         throw new Error(
           "Cannot convert existing entity: X509Certificate has encoding/specRef fields not supported in the authoring model.",
         );
-      return certificate.val;
+      /*
+        Lists published before the Base64 DER rule was enforced carry PEM here.
+        Normalising on read upgrades them on their next version; the
+        preservation check normalises the original the same way so the upgrade
+        is not mistaken for data loss.
+      */
+      return certificateDerBase64(certificate.val);
     });
     let serviceUniqueIdentifier = "";
     for (const extension of service.ServiceInformationExtensions ?? []) {
       for (const key of Object.keys(extension)) {
-        if (key !== "ServiceUniqueIdentifier")
+        if (key !== "ServiceUniqueIdentifier" && key !== "Critical")
           throw new Error(
             `Cannot convert existing entity: unsupported extension "${key}" in ServiceInformationExtensions.`,
           );
@@ -211,6 +220,51 @@ function convertEntity(entity: TrustedEntity): AuthoringEntity {
   };
 }
 
+/**
+ * Restates a stored entity in the form the current compiler emits, so the
+ * preservation check compares meaning rather than encoding. Only the two
+ * representations this project has ever produced are adjusted: PEM certificate
+ * values and extension containers without criticality.
+ */
+function normalizePublishedEntity(
+  entity: TrustedEntity | undefined,
+): TrustedEntity | undefined {
+  if (!entity) return entity;
+  return {
+    ...entity,
+    TrustedEntityServices: entity.TrustedEntityServices.map((service) => {
+      const information = service.ServiceInformation;
+      const certificates = information.ServiceDigitalIdentity.X509Certificates;
+      return {
+        ...service,
+        ServiceInformation: {
+          ...information,
+          ServiceDigitalIdentity: {
+            ...information.ServiceDigitalIdentity,
+            ...(certificates
+              ? {
+                  X509Certificates: certificates.map((certificate) => ({
+                    ...certificate,
+                    val: certificateDerBase64(certificate.val),
+                  })),
+                }
+              : {}),
+          },
+          ...(information.ServiceInformationExtensions
+            ? {
+                ServiceInformationExtensions:
+                  information.ServiceInformationExtensions.map((extension) => ({
+                    Critical: false,
+                    ...extension,
+                  })),
+              }
+            : {}),
+        },
+      };
+    }),
+  };
+}
+
 export function checkLosslessPreservation(
   originalEntities: readonly TrustedEntity[],
   convertedEntities: readonly AuthoringEntity[],
@@ -242,7 +296,7 @@ export function checkLosslessPreservation(
       .TrustedEntitiesList?.[0];
     const difference = deepDiff(
       `TrustedEntitiesList[${index}]`,
-      originalEntities[index],
+      normalizePublishedEntity(originalEntities[index]),
       recompiled,
     );
     if (difference) return { ok: false, path: difference };
@@ -311,6 +365,38 @@ export function checkServiceIdentifierUniqueness(
   return { ok: true };
 }
 
+/**
+ * Turns a signing-configuration entry into the scheme description the compiler
+ * needs. `signerCertificates` is read from the configured certificate file so
+ * the self pointer publishes the list's own trust anchor.
+ */
+export function schemeDescriptorFor(
+  entry: SigningConfigEntry,
+): SchemeDescriptor {
+  let signerCertificates: string[] = [];
+  try {
+    signerCertificates = [
+      certificateDerBase64(readFileSync(entry.certFile, "utf-8")),
+    ];
+  } catch {
+    // Without a readable certificate the self pointer is omitted; publication
+    // fails later on the missing signing material with a clearer message.
+  }
+  return {
+    schemeOperatorName: entry.schemeOperatorName,
+    schemeOperatorStreet: entry.schemeOperatorStreet,
+    schemeOperatorCountry: entry.schemeOperatorCountry,
+    schemeOperatorEmail: entry.schemeOperatorEmail,
+    schemeOperatorWebsite: entry.schemeOperatorWebsite,
+    schemeName: entry.schemeName,
+    schemeTerritory: entry.schemeTerritory,
+    schemeInformationUris: entry.schemeInformationUris,
+    policyUri: entry.policyUri,
+    distributionPointUri: entry.distributionPointUri,
+    signerCertificates,
+  };
+}
+
 export function assembleNextList(
   existingEntities: readonly AuthoringEntity[],
   candidateEntity: AuthoringEntity,
@@ -326,15 +412,7 @@ export function assembleNextList(
     );
   return normalizeToAuthoringInput(
     application,
-    entry.schemeOperatorName,
-    entry.schemeName,
-    entry.schemeTerritory,
-    {
-      streetAddress: entry.schemeOperatorStreet,
-      country: entry.schemeOperatorCountry,
-    },
-    entry.schemeOperatorContactUri,
-    entry.distributionPointUri,
+    schemeDescriptorFor(entry),
     listIssueDateTime,
     nextUpdate,
     nextSequence,

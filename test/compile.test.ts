@@ -134,7 +134,8 @@ describe("compile", () => {
     const result = compile(validAuthoringInput);
     const names = result.document.LoTE.ListAndSchemeInformation.SchemeName;
     expect(names).toBeDefined();
-    expect(names![0]!.value).toBe("Test Wallet Providers");
+    // clause 6.3.6: SchemeName carries the territory, then a colon, then the name.
+    expect(names![0]!.value).toBe("EU:Test Wallet Providers");
   });
 
   it("sets scheme territory", () => {

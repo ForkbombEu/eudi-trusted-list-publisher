@@ -1381,6 +1381,8 @@ describe("Authoritative store validation", () => {
         entityStreetAddress: "123 St",
         entityCountry: "IT",
         entityInformationURI: "https://x.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -1415,6 +1417,8 @@ describe("Authoritative store validation", () => {
         entityStreetAddress: "X",
         entityCountry: "IT",
         entityInformationURI: "https://x",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -1444,6 +1448,8 @@ describe("Authoritative store validation", () => {
         entityStreetAddress: "X",
         entityCountry: "IT",
         entityInformationURI: "https://x",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -1472,6 +1478,8 @@ describe("Authoritative store validation", () => {
         entityStreetAddress: "X",
         entityCountry: "IT",
         entityInformationURI: "https://x",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: "not-an-array",
       },
     });
@@ -1514,6 +1522,8 @@ describe("Authoritative store validation", () => {
         entityStreetAddress: "X",
         entityCountry: "IT",
         entityInformationURI: "https://x",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -1542,6 +1552,8 @@ describe("Authoritative store validation", () => {
         entityStreetAddress: "X",
         entityCountry: "IT",
         entityInformationURI: "https://x",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -1571,6 +1583,8 @@ describe("Authoritative store validation", () => {
         entityStreetAddress: "X",
         entityCountry: "IT",
         entityInformationURI: "https://x",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -1600,6 +1614,8 @@ describe("Authoritative store validation", () => {
         entityStreetAddress: "X",
         entityCountry: "IT",
         entityInformationURI: "https://x",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -1628,6 +1644,8 @@ describe("Authoritative store validation", () => {
         entityStreetAddress: "X",
         entityCountry: "IT",
         entityInformationURI: "https://x",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -1677,6 +1695,8 @@ describe("OpenAPI route parity", () => {
         "/api/v1/lists/{listKey}/versions/{sequence}/lote": { get: {} },
         "/api/v1/lists/{listKey}/versions/{sequence}/signature": { get: {} },
         "/api/v1/lists/{listKey}/versions/{sequence}/manifest": { get: {} },
+        "/api/v1/lists/{listKey}/versions/{sequence}/inspector": { get: {} },
+        "/api/v1/admin/lists": { post: {} },
       },
     };
     const errors = checkApiRouteParity(implemented, spec);
@@ -1752,6 +1772,13 @@ describe("Preview and publication consistency", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -1782,6 +1809,8 @@ describe("Preview and publication consistency", () => {
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://preview.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -1859,6 +1888,13 @@ describe("Preview and publication consistency", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -1886,6 +1922,8 @@ describe("Preview and publication consistency", () => {
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://clock.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -1935,6 +1973,8 @@ describe("Multi-service form indexes", () => {
       entityStreetAddress: "123 St",
       entityCountry: "IT",
       entityInformationURI: "https://test.example",
+      entityEmail: "trust@entity.example",
+      entityTelephone: "+39 02 1234567",
       "service[0].serviceType": "issuance",
       "service[0].serviceName": "Service Zero",
       "service[0].certificatePem":
@@ -2003,6 +2043,8 @@ describe("Save boundary validation", () => {
           entityStreetAddress: "123 St",
           entityCountry: "IT",
           entityInformationURI: "https://x.example",
+          entityEmail: "trust@entity.example",
+          entityTelephone: "+39 02 1234567",
           services: [
             {
               serviceType: "issuance",
@@ -2049,6 +2091,8 @@ describe("Rejected lifecycle", () => {
           entityStreetAddress: "123 St",
           entityCountry: "IT",
           entityInformationURI: "https://x.example",
+          entityEmail: "trust@entity.example",
+          entityTelephone: "+39 02 1234567",
           services: [
             {
               serviceType: "issuance",
@@ -2099,6 +2143,8 @@ describe("Strict timestamp validation", () => {
             entityStreetAddress: "123 St",
             entityCountry: "IT",
             entityInformationURI: "https://x.example",
+            entityEmail: "trust@entity.example",
+            entityTelephone: "+39 02 1234567",
             services: [
               {
                 serviceType: "issuance",
@@ -2138,6 +2184,8 @@ describe("Strict timestamp validation", () => {
           entityStreetAddress: "123 St",
           entityCountry: "IT",
           entityInformationURI: "https://x.example",
+          entityEmail: "trust@entity.example",
+          entityTelephone: "+39 02 1234567",
           services: [
             {
               serviceType: "issuance",
@@ -2231,6 +2279,13 @@ describe("Real preview/publication equivalence", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -2261,6 +2316,8 @@ describe("Real preview/publication equivalence", () => {
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://eq.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -2297,8 +2354,12 @@ describe("Real preview/publication equivalence", () => {
     const info = lote.LoTE.ListAndSchemeInformation;
 
     // Timestamps must be exactly the injected clock and clock + 180 days
-    expect(info.ListIssueDateTime).toBe("2026-12-15T12:00:00.000Z");
-    expect(info.NextUpdate).toBe("2027-06-13T12:00:00.000Z");
+    /*
+      clause 6.1.3 forbids the fractional seconds Date.toISOString() emits, so
+      the published values are the same instants in the strict UTC form.
+    */
+    expect(info.ListIssueDateTime).toBe("2026-12-15T12:00:00Z");
+    expect(info.NextUpdate).toBe("2027-06-13T12:00:00Z");
     expect(info.LoTESequenceNumber).toBe(seq);
 
     // Entity name and service data must match the applicant data
@@ -2378,6 +2439,13 @@ describe("ApplicationService transition tests", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -2399,6 +2467,8 @@ describe("ApplicationService transition tests", () => {
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://t.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance" as const,
@@ -2510,6 +2580,13 @@ describe("Phase 3 closeout: deep-compare preview vs published", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -2539,6 +2616,8 @@ describe("Phase 3 closeout: deep-compare preview vs published", () => {
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://deepeq.example",
+        entityEmail: "trust@entity.example",
+        entityTelephone: "+39 02 1234567",
         services: [
           {
             serviceType: "issuance",
@@ -2651,6 +2730,13 @@ describe("Phase 4: cumulative list composition", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -2712,6 +2798,13 @@ describe("Phase 4: cumulative list composition", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -2777,6 +2870,13 @@ describe("Phase 4: cumulative list composition", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -2844,6 +2944,13 @@ describe("Phase 4: cumulative list composition", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
           {
             listKey: "eu_other_authority",
@@ -2857,6 +2964,13 @@ describe("Phase 4: cumulative list composition", () => {
             distributionPointUri: "https://other.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -2942,6 +3056,13 @@ describe("Phase 4: cumulative list composition", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3002,6 +3123,13 @@ describe("Phase 4: cumulative list composition", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3070,6 +3198,13 @@ describe("Phase 4: cumulative list composition", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3128,6 +3263,8 @@ function makeApp(
       entityStreetAddress: "1 St",
       entityCountry: "IT",
       entityInformationURI: `https://entity-${name}.example`,
+      entityEmail: "trust@entity.example",
+      entityTelephone: "+39 02 1234567",
       services: [
         {
           serviceType: "issuance",
@@ -3164,6 +3301,13 @@ describe("Phase 4 repair: corrupt-latest fail-closed", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3298,6 +3442,13 @@ describe("Phase 4 repair: reconciliation", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3359,6 +3510,13 @@ describe("Phase 4 repair: reconciliation", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3418,6 +3576,8 @@ function makeAppMulti(
       entityStreetAddress: "1 St",
       entityCountry: "IT",
       entityInformationURI: `https://entity-${name}.example`,
+      entityEmail: "trust@entity.example",
+      entityTelephone: "+39 02 1234567",
       services: svcIds.map((id) => ({
         serviceType: "issuance" as const,
         serviceName: `Service ${name}`,
@@ -3452,6 +3612,13 @@ describe("Phase 4: real deep equality", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3518,6 +3685,13 @@ describe("Phase 4: concurrency", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3588,6 +3762,13 @@ describe("Phase 4: concurrency", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
           {
             listKey: "eu_other_authority",
@@ -3601,6 +3782,13 @@ describe("Phase 4: concurrency", () => {
             distributionPointUri: "https://other.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3681,6 +3869,13 @@ describe("Legacy Phase 4 cumulative smoke coverage", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3741,6 +3936,13 @@ describe("Legacy Phase 4 cumulative smoke coverage", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3801,6 +4003,13 @@ describe("Legacy Phase 4 negative smoke coverage", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3854,6 +4063,13 @@ describe("Legacy Phase 4 negative smoke coverage", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3911,6 +4127,13 @@ describe("Legacy Phase 4 negative smoke coverage", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -3987,6 +4210,13 @@ describe("Legacy overlapping same-list concurrency smoke", () => {
               distributionPointUri: "https://test.org/lote.json",
               keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
               certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+              schemeOperatorEmail: "operator@scheme.example",
+              schemeOperatorWebsite: "https://scheme.example",
+              schemeInformationUris: [
+                "https://scheme.example/scheme",
+                "https://scheme.example/practice-statement",
+              ],
+              policyUri: "https://scheme.example/policy",
             },
           ],
         }),
@@ -4071,6 +4301,13 @@ describe("Legacy preparation-failure queue smoke", () => {
               distributionPointUri: "https://test.org/lote.json",
               keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
               certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+              schemeOperatorEmail: "operator@scheme.example",
+              schemeOperatorWebsite: "https://scheme.example",
+              schemeInformationUris: [
+                "https://scheme.example/scheme",
+                "https://scheme.example/practice-statement",
+              ],
+              policyUri: "https://scheme.example/policy",
             },
           ],
         }),
@@ -4144,6 +4381,13 @@ describe("LOSSLESS: StateOrProvince survives", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -4260,6 +4504,13 @@ describe("PARTIAL-1: Structured partial-commit", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -4333,6 +4584,13 @@ describe("Legacy runtime uniqueness and corruption smoke", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
           {
             listKey: "eu_other_authority",
@@ -4346,6 +4604,13 @@ describe("Legacy runtime uniqueness and corruption smoke", () => {
             distributionPointUri: "https://other.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -4396,6 +4661,13 @@ describe("Legacy runtime uniqueness and corruption smoke", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -4450,6 +4722,13 @@ describe("Legacy runtime uniqueness and corruption smoke", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -4502,6 +4781,13 @@ describe("Legacy runtime uniqueness and corruption smoke", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),
@@ -4598,6 +4884,13 @@ describe("Legacy runtime uniqueness and corruption smoke", () => {
             distributionPointUri: "https://test.org/lote.json",
             keyFile: resolve(__dirname, "fixtures", "test-key.pem"),
             certFile: resolve(__dirname, "fixtures", "test-cert.pem"),
+            schemeOperatorEmail: "operator@scheme.example",
+            schemeOperatorWebsite: "https://scheme.example",
+            schemeInformationUris: [
+              "https://scheme.example/scheme",
+              "https://scheme.example/practice-statement",
+            ],
+            policyUri: "https://scheme.example/policy",
           },
         ],
       }),

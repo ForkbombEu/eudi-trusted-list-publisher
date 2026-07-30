@@ -137,6 +137,13 @@ function signingEntry(
     distributionPointUri: `https://authority.example/${listKey}/latest`,
     keyFile: TEST_KEY_PATH,
     certFile: TEST_CERT_PATH,
+    schemeOperatorEmail: "operator@scheme.example",
+    schemeOperatorWebsite: "https://scheme.example",
+    schemeInformationUris: [
+      "https://scheme.example/scheme",
+      "https://scheme.example/practice-statement",
+    ],
+    policyUri: "https://scheme.example/policy",
   };
 }
 
@@ -151,6 +158,8 @@ function pidFields(
     entityStreetAddress: "1 PID Way",
     entityCountry: "DK",
     entityInformationURI: "https://pid.example/provider",
+    entityEmail: "trust@entity.example",
+    entityTelephone: "+39 02 1234567",
     responsibleMemberState: memberState,
     "service[0].serviceType": "issuance",
     "service[0].serviceName": "PID issuance",
@@ -318,6 +327,8 @@ describe("Phase 5 PID Provider acceptance", () => {
           entityStreetAddress: "1 Way",
           entityCountry: "DK",
           entityInformationURI: "https://pid.example",
+          entityEmail: "trust@entity.example",
+          entityTelephone: "+39 02 1234567",
           services: [
             {
               serviceType: "issuance",

@@ -18,6 +18,8 @@ import {
   getFamilyConfigs,
   signingConfigDisplay,
   ApplicationService,
+  createTrustedList,
+  type CreateListResult,
   type PublisherSettings,
   type SigningConfig,
   type PIDProviderApplicantData,
@@ -28,6 +30,12 @@ import {
   CERTIFICATE_GUIDE_PATH,
   CERTIFICATE_GUIDE_TITLE,
 } from "./views/certificate-guide.js";
+import {
+  inspectorPanelHtml,
+  parseInspectorEvaluation,
+  versionDownloadsHtml,
+} from "./views/inspector-panel.js";
+import { inspectorStatusLabel } from "../core/inspector/inspector.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -192,11 +200,13 @@ function sendResponse(
   body: string,
   contentType: string,
   cacheControl: string,
+  extraHeaders?: Record<string, string>,
 ): void {
   const headers: Record<string, string> = {
     ...securityHeaders(),
     "Content-Type": contentType,
     "Cache-Control": cacheControl,
+    ...extraHeaders,
   };
   res.writeHead(status, headers);
   res.end(body);
@@ -300,7 +310,7 @@ function readFileBounded(filePath: string, maxBytes: number): string | null {
 }
 
 export interface ApiRoute {
-  method: "GET";
+  method: "GET" | "POST";
   path: string;
   matcher: RegExp;
   handler: string;
@@ -343,6 +353,19 @@ const API_ROUTES: ApiRoute[] = [
     path: "/api/v1/lists/{listKey}/versions/{sequence}/manifest",
     matcher: /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/manifest$/,
     handler: "getManifest",
+  },
+  {
+    method: "GET",
+    path: "/api/v1/lists/{listKey}/versions/{sequence}/inspector",
+    matcher:
+      /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/inspector$/,
+    handler: "getInspectorEvaluation",
+  },
+  {
+    method: "POST",
+    path: "/api/v1/admin/lists",
+    matcher: /^\/api\/v1\/admin\/lists$/,
+    handler: "createTrustedList",
   },
 ];
 
@@ -448,15 +471,33 @@ export function createWebServer(config: ServerConfig) {
     // authoring records rather than in the immutable publication store.
     settingsStore = new SettingsStore({ settingsDir: config.authoringDir });
   }
-  if (guiEnabled && config.signingConfigPath) {
-    signingConfig = loadSigningConfig(config.signingConfigPath);
-    const wp = getWalletProviderConfigs(signingConfig);
-    walletProviderLists = wp.map((e) => e.listKey);
+  const signingConfigPath = guiEnabled ? config.signingConfigPath : undefined;
+
+  /*
+    Creating a Trusted List appends to the signing configuration, so the
+    in-memory view is rebuilt afterwards. Without this the new list would not
+    appear on the onboarding forms until the server restarted.
+  */
+  function reloadSigningConfig(): void {
+    if (!signingConfigPath) return;
+    signingConfig = loadSigningConfig(signingConfigPath);
+    walletProviderLists = getWalletProviderConfigs(signingConfig).map(
+      (entry) => entry.listKey,
+    );
     pidProviderLists = getFamilyConfigs(signingConfig, "pid-providers").map(
       (entry) => entry.listKey,
     );
+    if (authoringStore)
+      appService = new ApplicationService(
+        authoringStore,
+        store,
+        signingConfig,
+        settingsStore,
+      );
   }
-  if (authoringStore) {
+
+  if (signingConfigPath) reloadSigningConfig();
+  if (authoringStore && !appService) {
     appService = new ApplicationService(
       authoringStore,
       store,
@@ -636,6 +677,19 @@ export function createWebServer(config: ServerConfig) {
     }
 
     if (path.startsWith("/api/v1/")) {
+      /*
+        The only mutating API route. It is handled here rather than in
+        handleApi(), which serves the read-only published artifacts.
+      */
+      if (path === "/api/v1/admin/lists") {
+        if ((req.method ?? "GET") !== "POST") {
+          send405(res, guiEnabled);
+          logRequest(req.method ?? "GET", path, 405, requestId);
+          return;
+        }
+        void apiCreateTrustedList(req, res, url, requestId);
+        return;
+      }
       handleApi(req, res, url, requestId);
       return;
     }
@@ -1005,12 +1059,13 @@ over the published Lists of Trusted Entities.</p>
 <tr><th>Valid To</th><td>${escapeHtml(manifest.certificateValidTo)}</td></tr>
 <tr><th>SHA-256</th><td><code>${escapeHtml(manifest.signingCertificateSha256)}</code></td></tr>
 </table></div>
+${inspectorPanelHtml(
+  parseInspectorEvaluation(s.readInspectorEvaluation(listKey, sequence)),
+  listKey,
+  sequence,
+)}
 ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="catalogue-table"><thead><tr><th>Entity</th><th>Services</th></tr></thead><tbody>${entityRows}</tbody></table></div>` : ""}
-<div class="card"><h2>Downloads</h2><ul>
-<li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${String(sequence)}/signature">Compact JAdES artifact (lote.jades)</a></li>
-<li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${String(sequence)}/lote">Decoded LoTE JSON</a></li>
-<li><a href="/api/v1/lists/${escapeHtml(listKey)}/versions/${String(sequence)}/manifest">Publication manifest</a></li>
-</ul></div>
+${versionDownloadsHtml(listKey, sequence)}
 <div class="card"><h2>Artifact Hashes</h2>
 <table class="kv-table">
 <tr><th>Compact JAdES SHA-256</th><td><code>${escapeHtml(manifest.compactJadesSha256)}</code></td></tr>
@@ -1095,6 +1150,7 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
     listKey: string,
     sequence: number,
     fileType: "lote" | "signature" | "manifest",
+    download = false,
   ): Promise<void> {
     try {
       const content = await store.loadVersionBytes(listKey, sequence, fileType);
@@ -1106,14 +1162,62 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
         return;
       }
       const contentType =
-        fileType === "signature"
-          ? "application/octet-stream"
-          : "application/json";
+        fileType === "signature" ? "application/jose" : "application/json";
       const cacheControl = "public, max-age=86400, immutable";
-      sendResponse(res, 200, content, contentType, cacheControl);
+      /*
+        The version page links these as downloads. A filename is offered so the
+        saved file is recognisable, but the bytes are exactly the published
+        artifact either way.
+      */
+      const extra = download
+        ? {
+            "Content-Disposition": `attachment; filename="${listKey}-v${sequence}-${
+              fileType === "signature" ? "lote.jades" : `${fileType}.json`
+            }"`,
+          }
+        : undefined;
+      sendResponse(res, 200, content, contentType, cacheControl, extra);
     } catch {
       sendJson(res, 500, { error: "internal_error" });
     }
+  }
+
+  /**
+   * The stored Trust Inspector evaluation. `?view=1` renders it in the browser
+   * instead of offering it as a download.
+   */
+  function apiInspectorEvaluation(
+    res: ServerResponse,
+    listKey: string,
+    sequence: number,
+    view: boolean,
+  ): void {
+    let stored: string | null = null;
+    try {
+      stored = store.readInspectorEvaluation(listKey, sequence);
+    } catch {
+      stored = null;
+    }
+    if (stored === null) {
+      sendJson(res, 404, {
+        error: "not_found",
+        message:
+          "No Trust Inspector evaluation is stored for this version. Inspector status is unavailable, which is not a conformance statement.",
+      });
+      return;
+    }
+    sendResponse(
+      res,
+      200,
+      stored,
+      "application/json",
+      "no-store",
+      view
+        ? undefined
+        : {
+            "Content-Disposition": `attachment; filename="inspector-${listKey}-v${sequence}.json"`,
+          },
+    );
   }
 
   function handleApi(
@@ -1152,6 +1256,20 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
           fileMatch[1]!,
           parseInt(fileMatch[2]!, 10),
           fileMatch[3]! as "lote" | "signature" | "manifest",
+          url.searchParams.get("download") === "1",
+        );
+        logRequest("GET", path, res.statusCode, requestId);
+        return;
+      }
+      const inspectorMatch = path.match(
+        /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/inspector$/,
+      );
+      if (inspectorMatch) {
+        apiInspectorEvaluation(
+          res,
+          inspectorMatch[1]!,
+          parseInt(inspectorMatch[2]!, 10),
+          url.searchParams.get("view") === "1",
         );
         logRequest("GET", path, res.statusCode, requestId);
         return;
@@ -1194,6 +1312,187 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
    * POST /admin/login — exchanges the configured ADMIN_USER/ADMIN_PASSWORD pair
    * for the existing admin session cookie. The token flow is left untouched.
    */
+
+  /**
+   * Shared implementation behind the administration form and the API. Both
+   * require the administrator credential; the API accepts the admin token in an
+   * Authorization header or the `token` query parameter.
+   */
+  async function createTrustedListFrom(
+    fields: Record<string, string | string[]>,
+  ): Promise<CreateListResult> {
+    if (!signingConfigPath)
+      return {
+        success: false,
+        error:
+          "No signing configuration path is configured, so a Trusted List cannot be declared.",
+      };
+    const single = (name: string): string => {
+      const value = fields[name];
+      return (Array.isArray(value) ? value[0] : value)?.trim() ?? "";
+    };
+    const defectsValue = fields.defects;
+    const defects = (
+      Array.isArray(defectsValue)
+        ? defectsValue
+        : defectsValue
+          ? [defectsValue]
+          : []
+    )
+      .map((defect) => defect.trim())
+      .filter(Boolean);
+    const family = single("family");
+    if (family !== "wallet-providers" && family !== "pid-providers")
+      return {
+        success: false,
+        error: "family must be wallet-providers or pid-providers.",
+      };
+    const result = await createTrustedList(
+      {
+        family,
+        schemeName: single("schemeName"),
+        schemeOperatorName: single("schemeOperatorName"),
+        schemeTerritory: single("schemeTerritory"),
+        schemeOperatorStreet: single("schemeOperatorStreet"),
+        schemeOperatorCountry: single("schemeOperatorCountry"),
+        schemeOperatorEmail: single("schemeOperatorEmail"),
+        baseUrl: single("baseUrl"),
+        keyFile: single("keyFile"),
+        certFile: single("certFile"),
+        defects,
+      },
+      { publicationStore: store, signingConfigPath },
+    );
+    if (result.success) reloadSigningConfig();
+    return result;
+  }
+
+  async function handleCreateTrustedList(
+    res: ServerResponse,
+    fields: Record<string, string>,
+    requestId: string,
+  ): Promise<void> {
+    const result = await createTrustedListFrom(fields);
+    const { createListFormHtml, createdListHtml } =
+      await import("../web/views/list-creation.js");
+    if (!result.success) {
+      sendHtml(
+        res,
+        400,
+        guiPage(
+          "Create Trusted List",
+          createListFormHtml(fields, result.error),
+        ),
+      );
+      logRequest("POST", "/admin/lists/create", 400, requestId);
+      return;
+    }
+    sendHtml(
+      res,
+      200,
+      guiPage(
+        "Trusted List created",
+        createdListHtml({
+          listKey: result.listKey,
+          family: result.entry.family,
+          schemeName: result.entry.schemeName,
+          sequenceNumber: result.sequenceNumber,
+          inspectorStatus: inspectorStatusLabel(result.inspector.summary),
+          inspectorProfile: result.inspector.summary.profile,
+          inspectorLevel: result.inspector.summary.conformanceLevel,
+        }),
+      ),
+    );
+    logRequest("POST", "/admin/lists/create", 200, requestId);
+  }
+
+  /** `POST /api/v1/admin/lists` — same operation, JSON in and JSON out. */
+  async function apiCreateTrustedList(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    requestId: string,
+  ): Promise<void> {
+    if (!apiAdminAuthorized(req, url)) {
+      sendJson(res, 403, {
+        error: "forbidden",
+        message:
+          "A valid administrator token is required. Send it as Authorization: Bearer <TLP_ADMIN_TOKEN>.",
+      });
+      logRequest("POST", url.pathname, 403, requestId);
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readBody(req)) as unknown;
+    } catch {
+      sendJson(res, 400, {
+        error: "bad_request",
+        message: "Request body must be JSON.",
+      });
+      logRequest("POST", url.pathname, 400, requestId);
+      return;
+    }
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      sendJson(res, 400, {
+        error: "bad_request",
+        message: "Request body must be a JSON object.",
+      });
+      logRequest("POST", url.pathname, 400, requestId);
+      return;
+    }
+    const record = parsed as Record<string, unknown>;
+    const fields: Record<string, string | string[]> = {};
+    for (const [key, value] of Object.entries(record)) {
+      if (typeof value === "string") fields[key] = value;
+      else if (Array.isArray(value))
+        fields[key] = value.filter(
+          (item): item is string => typeof item === "string",
+        );
+      else if (value !== undefined && value !== null)
+        fields[key] = String(value);
+    }
+    const result = await createTrustedListFrom(fields);
+    if (!result.success) {
+      sendJson(res, 400, { error: "bad_request", message: result.error });
+      logRequest("POST", url.pathname, 400, requestId);
+      return;
+    }
+    sendJson(
+      res,
+      201,
+      {
+        listKey: result.listKey,
+        family: result.entry.family,
+        schemeName: result.entry.schemeName,
+        schemeTerritory: result.entry.schemeTerritory,
+        sequenceNumber: result.sequenceNumber,
+        versionUrl: `/lists/${result.listKey}/versions/${result.sequenceNumber}`,
+        inspector: result.inspector.summary,
+      },
+      "no-store",
+    );
+    logRequest("POST", url.pathname, 201, requestId);
+  }
+
+  /**
+   * API callers authenticate with the administrator token only — the cookie
+   * session belongs to the browser flow and is not accepted here.
+   */
+  function apiAdminAuthorized(req: IncomingMessage, url: URL): boolean {
+    if (!adminToken) return false;
+    const header = req.headers.authorization ?? "";
+    const bearer = header.startsWith("Bearer ")
+      ? header.slice("Bearer ".length).trim()
+      : "";
+    const supplied = bearer || (url.searchParams.get("token") ?? "");
+    return supplied.length > 0 && secretEquals(supplied, adminToken);
+  }
+
   async function handleAdminLogin(
     req: IncomingMessage,
     res: ServerResponse,
@@ -1320,6 +1619,29 @@ ${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="
             res,
             200,
             guiPage("Applications", adminApplicationsHtml(apps, stateFilter)),
+          );
+          logRequest("GET", path, 200, requestId);
+        })
+        .catch(() => {
+          send500(res, requestId);
+          logRequest("GET", path, 500, requestId);
+        });
+      return;
+    }
+
+    if (path === "/admin/lists/create" && signingConfigPath) {
+      import("../web/views/list-creation.js")
+        .then(({ createListFormHtml }) => {
+          sendHtml(
+            res,
+            200,
+            guiPage(
+              "Create Trusted List",
+              createListFormHtml(
+                {},
+                url.searchParams.get("error") ?? undefined,
+              ),
+            ),
           );
           logRequest("GET", path, 200, requestId);
         })
@@ -1631,6 +1953,11 @@ ${outcome}
         });
         res.end();
         logRequest("POST", path, 303, requestId);
+        return;
+      }
+
+      if (path === "/admin/lists/create") {
+        await handleCreateTrustedList(res, parseFormBody(body), requestId);
         return;
       }
 

@@ -8,7 +8,7 @@ export const CERTIFICATE_GUIDE_PATH = "/docs/certificate-creation";
 
 /** Label of the onboarding field this page explains. */
 export const CERTIFICATE_FIELD_LABEL =
-  "Service Digital Identity Certificate (X.509 PEM)";
+  "Service Digital Identity Certificate (PEM)";
 
 /*
   The OpenSSL workflow is the substance of this page, so the commands are the

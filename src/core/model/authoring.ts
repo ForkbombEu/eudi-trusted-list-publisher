@@ -28,6 +28,15 @@ export interface AuthoringScheme {
   schemeInformationURI?: AuthoringElectronicAddress[];
   schemeTerritory: string;
   distributionPoints: string[];
+  /** LoTEPolicy URI; mandatory wherever explicit scheme information is used. */
+  policyUri?: string;
+  /**
+   * Base64 DER certificates that authenticate this list, published in the
+   * self pointer so a reader learns the list's own trust anchor.
+   */
+  selfPointerCertificates?: string[];
+  /** Media type of the artifact the self pointer addresses. */
+  selfPointerMimeType?: string;
 }
 
 export interface AuthoringService {

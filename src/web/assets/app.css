@@ -767,6 +767,63 @@ textarea:focus {
   }
 }
 
+/* --- Trust Inspector panel and version downloads --- */
+/*
+  The Inspector verdict is the first thing a reader looks for on a version page,
+  so Pass/Fail/Unavailable is a badge rather than a table value. `badge-danger`
+  reuses the destructive tokens from style.css; the other two states reuse the
+  existing assurance and neutral badges.
+*/
+.badge-danger {
+  background: var(--destructive-bg);
+  color: var(--destructive);
+}
+
+.inspector-status {
+  font-size: var(--fs-sm);
+}
+
+.inspector-actions,
+.version-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.inspector-failures {
+  margin: var(--space-3) 0 0;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.inspector-failures li + li {
+  margin-top: var(--space-2);
+}
+
+/* The onboarding introduction reads across the content column, not a narrow measure. */
+.lead-wide {
+  max-width: none;
+}
+
+/* --- Trusted List creation --- */
+.tl-create-form fieldset {
+  margin-top: var(--space-5);
+}
+
+.tl-broken-options {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.tl-broken-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+}
+
 @media (max-width: 640px) {
   .tlp-product-name {
     display: none;

@@ -15,9 +15,15 @@ import type {
   NonEmptyMultiLangURI,
   PostalAddress,
   PkiOb,
+  OtherLoTEPointer,
 } from "../model/types.js";
 import { LOTE_VERSION_IDENTIFIER } from "../profiles/wallet-provider/constants.js";
 import { getProfile, type ProfileFamily } from "../profiles/registry.js";
+import {
+  certificateDerBase64,
+  normalizeUtcDateTime,
+  schemeNameWithTerritory,
+} from "../model/lexical.js";
 
 export interface CompileResult {
   document: LoTEDocument;
@@ -84,14 +90,25 @@ function compileEntity(entity: AuthoringEntity): TrustedEntity {
       ServiceDigitalIdentity: {
         X509Certificates: svc.serviceDigitalIdentity.x509Certificates.map(
           (cert) => {
-            const pkiOb: PkiOb = { val: cert };
+            /*
+              clause 6.6.3: the value is Base64 DER certificate data. The
+              authoring model already holds it in that form, so no PEM armour
+              or whitespace can reach the published list.
+            */
+            const pkiOb: PkiOb = { val: certificateDerBase64(cert) };
             return pkiOb;
           },
         ),
       },
       ServiceTypeIdentifier: svc.serviceTypeIdentifier,
+      /*
+        clause 6.6.9: ServiceUniqueIdentifier is a recognised extension, and
+        every extension container must state its criticality. It is not
+        critical: a reader that does not understand it can still use the entry.
+      */
       ServiceInformationExtensions: [
         {
+          Critical: false,
           ServiceUniqueIdentifier: svc.serviceUniqueIdentifier,
         },
       ],
@@ -148,12 +165,15 @@ export function compileForProfile(
         input.schemeOperator.electronicAddress,
       ),
     },
-    SchemeName: toMultiLang(input.scheme.schemeName),
+    SchemeName: input.scheme.schemeName.map(({ lang, value }) => ({
+      lang,
+      value: schemeNameWithTerritory(value, input.scheme.schemeTerritory),
+    })),
     StatusDeterminationApproach: profile.statusDeterminationApproach,
     SchemeTypeCommunityRules: [{ lang: "en", uriValue: profile.schemeRules }],
     SchemeTerritory: input.scheme.schemeTerritory,
-    ListIssueDateTime: input.listIssueDateTime,
-    NextUpdate: input.nextUpdate,
+    ListIssueDateTime: normalizeUtcDateTime(input.listIssueDateTime),
+    NextUpdate: normalizeUtcDateTime(input.nextUpdate),
     DistributionPoints: input.scheme.distributionPoints,
   };
 
@@ -164,6 +184,44 @@ export function compileForProfile(
     schemeInfo.SchemeInformationURI = toMultiLangURI(
       input.scheme.schemeInformationURI,
     );
+  }
+
+  if (input.scheme.policyUri) {
+    schemeInfo.PolicyOrLegalNotice = [
+      { LoTEPolicy: { lang: "en", uriValue: input.scheme.policyUri } },
+    ];
+  }
+
+  /*
+    Annex D/E require the list to point at itself, so a reader that starts from
+    the artifact can confirm where it is published and which certificates
+    authenticate it.
+  */
+  const selfPointerCertificates = input.scheme.selfPointerCertificates ?? [];
+  const selfPointerLocation = input.scheme.distributionPoints[0];
+  if (selfPointerCertificates.length > 0 && selfPointerLocation) {
+    const pointer: OtherLoTEPointer = {
+      LoTELocation: selfPointerLocation,
+      ServiceDigitalIdentities: [
+        {
+          X509Certificates: selfPointerCertificates.map((cert) => ({
+            val: certificateDerBase64(cert),
+          })),
+        },
+      ],
+      LoTEQualifiers: [
+        {
+          LoTEType: profile.loTEType,
+          SchemeOperatorName: toMultiLang(input.schemeOperator.name),
+          SchemeTypeCommunityRules: [
+            { lang: "en", uriValue: profile.schemeRules },
+          ],
+          SchemeTerritory: input.scheme.schemeTerritory,
+          MimeType: input.scheme.selfPointerMimeType ?? "application/jose",
+        },
+      ],
+    };
+    schemeInfo.PointersToOtherLoTE = [pointer];
   }
 
   const lote: LoTE = {

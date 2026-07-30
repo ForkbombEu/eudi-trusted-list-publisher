@@ -9,3 +9,7 @@ export const PID_SERVICE_TYPE_ISSUANCE =
   "http://uri.etsi.org/19602/SvcType/PID/Issuance";
 export const PID_SERVICE_TYPE_REVOCATION =
   "http://uri.etsi.org/19602/SvcType/PID/Revocation";
+
+/** Annex D entity role URI prefix; see the Annex E counterpart. */
+export const PID_PROVIDER_ROLE_URI_PREFIX =
+  "http://uri.etsi.org/19602/ListOfTrustedEntities/PIDProvider";

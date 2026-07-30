@@ -131,6 +131,70 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Manifest"
+  /api/v1/lists/{listKey}/versions/{sequence}/inspector:
+    get:
+      summary: Download the stored Trust Inspector evaluation
+      description: >-
+        The complete external assessment of this version's Compact JAdES
+        artifact. A 404 means no evaluation is stored, which is reported as
+        Unavailable and is not a statement about conformance. Add view=1 to
+        render it in the browser instead of downloading it.
+      operationId: getInspectorEvaluation
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Stored Trust Inspector evaluation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InspectorEvaluation"
+        "404":
+          description: No evaluation is stored for this version
+  /api/v1/admin/lists:
+    post:
+      summary: Create a Trusted List and publish its first version
+      description: >-
+        Declares a Trusted List, publishes an empty version 1 signed as Compact
+        JAdES, and stores the Trust Inspector evaluation beside it. Requires the
+        administrator token, sent either as a bearer Authorization header or as
+        the token query parameter. Deliberately broken lists are not implemented
+        yet, so a non-empty defects array is rejected.
+      operationId: createTrustedList
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTrustedListRequest"
+      responses:
+        "201":
+          description: Trusted List created and version 1 published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateTrustedListResponse"
+        "400":
+          description: The request was rejected; the message says why
+        "403":
+          description: Missing or invalid administrator token
 components:
   schemas:
     ListSummary:
@@ -219,5 +283,142 @@ components:
           type: boolean
         signerTrustStatus:
           type: string
-  securitySchemes: {}
+    CreateTrustedListRequest:
+      type: object
+      required:
+        - family
+        - schemeName
+        - schemeOperatorName
+        - schemeTerritory
+        - schemeOperatorStreet
+        - schemeOperatorCountry
+        - schemeOperatorEmail
+        - baseUrl
+        - keyFile
+        - certFile
+      properties:
+        family:
+          type: string
+          enum: [wallet-providers, pid-providers]
+        schemeName:
+          type: string
+          description: Name of the Trusted List, published as SchemeName.
+        schemeOperatorName:
+          type: string
+          description: >-
+            Must be unique within the territory; the publication list key is
+            derived from the territory and this name, and the signing
+            certificate's subject organisation must equal it.
+        schemeTerritory:
+          type: string
+          example: EU
+        schemeOperatorStreet:
+          type: string
+        schemeOperatorCountry:
+          type: string
+          example: IT
+        schemeOperatorEmail:
+          type: string
+        baseUrl:
+          type: string
+          description: >-
+            The website, scheme information, policy and distribution URIs are
+            derived from it.
+        keyFile:
+          type: string
+          description: Server-side path to the signing private key.
+        certFile:
+          type: string
+          description: Server-side path to the signing certificate.
+        defects:
+          type: array
+          description: >-
+            Deliberate defects. Not implemented yet; a non-empty array is
+            rejected.
+          items:
+            type: string
+    CreateTrustedListResponse:
+      type: object
+      properties:
+        listKey:
+          type: string
+        family:
+          type: string
+        schemeName:
+          type: string
+        schemeTerritory:
+          type: string
+        sequenceNumber:
+          type: integer
+        versionUrl:
+          type: string
+        inspector:
+          $ref: "#/components/schemas/InspectorSummary"
+    InspectorSummary:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pass, fail, unavailable]
+          description: >-
+            Unavailable means the Inspector could not be reached and is never a
+            conformance statement.
+        error:
+          type: string
+        evaluatedAt:
+          type: string
+        inspectorBaseUrl:
+          type: string
+        profile:
+          type: string
+        profileStatus:
+          type: string
+        detectedFormat:
+          type: string
+        detectedArtifactKind:
+          type: string
+        conformanceLevel:
+          type: string
+        score:
+          type: number
+          nullable: true
+        counts:
+          type: object
+          properties:
+            pass:
+              type: integer
+            fail:
+              type: integer
+            warn:
+              type: integer
+            notApplicable:
+              type: integer
+            notChecked:
+              type: integer
+            other:
+              type: integer
+        locallyDecidableFailures:
+          type: array
+          items:
+            type: string
+        mandatoryFailures:
+          type: array
+          items:
+            type: string
+    InspectorEvaluation:
+      type: object
+      properties:
+        schemaVersion:
+          type: integer
+        summary:
+          $ref: "#/components/schemas/InspectorSummary"
+        report:
+          type: object
+          description: Complete, unmodified Trust Inspector response.
+          additionalProperties: true
+  securitySchemes:
+    adminToken:
+      type: http
+      scheme: bearer
+      description: The TLP_ADMIN_TOKEN value.
 security: []

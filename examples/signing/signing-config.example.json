@@ -11,7 +11,14 @@
       "schemeOperatorContactUri": "https://credimi.eu",
       "distributionPointUri": "https://credimi.eu/wallet-providers/latest",
       "keyFile": "/path/to/signing-key.pem",
-      "certFile": "/path/to/signing-cert.pem"
+      "certFile": "/path/to/signing-cert.pem",
+      "schemeOperatorEmail": "trustedlists@credimi.eu",
+      "schemeOperatorWebsite": "https://credimi.eu/wallet-providers",
+      "schemeInformationUris": [
+        "https://credimi.eu/wallet-providers/scheme",
+        "https://credimi.eu/wallet-providers/practice-statement"
+      ],
+      "policyUri": "https://credimi.eu/wallet-providers/policy"
     },
     {
       "listKey": "eu_pid_example",
@@ -24,7 +31,14 @@
       "schemeOperatorContactUri": "https://example.test/pid",
       "distributionPointUri": "https://example.test/pid/latest",
       "keyFile": "/path/to/pid-signing-key.pem",
-      "certFile": "/path/to/pid-signing-cert.pem"
+      "certFile": "/path/to/pid-signing-cert.pem",
+      "schemeOperatorEmail": "pid@example.test",
+      "schemeOperatorWebsite": "https://example.test/pid",
+      "schemeInformationUris": [
+        "https://example.test/pid/scheme",
+        "https://example.test/pid/practice-statement"
+      ],
+      "policyUri": "https://example.test/pid/policy"
     }
   ]
 }
