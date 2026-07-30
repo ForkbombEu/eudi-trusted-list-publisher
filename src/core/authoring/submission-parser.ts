@@ -10,6 +10,10 @@ import {
   getEnabledProfile,
   type EnabledProfileFamily,
 } from "../profiles/registry.js";
+import {
+  checkCertificateSubjectOrganisation,
+  classifyCertificateInput,
+} from "./certificate-input.js";
 
 export type SubmissionFields = Record<string, string>;
 export interface SubmissionFieldError {
@@ -122,13 +126,23 @@ function parseForFamily(
     if (!serviceName)
       addError(`${prefix}serviceName`, "Service name is required.");
     const certificatePem = field(`${prefix}certificatePem`);
-    if (!certificatePem)
-      addError(`${prefix}certificatePem`, "Certificate is required.");
-    else if (
-      !certificatePem.includes("-----BEGIN CERTIFICATE-----") ||
-      !certificatePem.includes("-----END CERTIFICATE-----")
-    )
-      addError(`${prefix}certificatePem`, "Certificate must be in PEM format.");
+    /*
+      A self-signed or CA-issued X.509 certificate in PEM form is accepted; any
+      other PEM or container content is named in the error message so the
+      applicant knows which object they supplied. The subject organisation must
+      be the Trusted Entity Name, because the service digital identity has to
+      identify the entity the list vouches for.
+    */
+    const certificate = classifyCertificateInput(certificatePem);
+    if (certificate.message !== null)
+      addError(`${prefix}certificatePem`, certificate.message);
+    else if (certificate.certificate) {
+      const mismatch = checkCertificateSubjectOrganisation(
+        certificate.certificate,
+        entityName,
+      );
+      if (mismatch) addError(`${prefix}certificatePem`, mismatch);
+    }
     const serviceUniqueIdentifier = field(`${prefix}serviceUniqueIdentifier`);
     if (!serviceUniqueIdentifier)
       addError(

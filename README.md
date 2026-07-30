@@ -100,10 +100,23 @@ a version to see its manifest, entities, certificate details and downloads.
 Pick the Trusted List Family your organisation belongs to and start an
 application. The form collects the entity's legal name, postal address and
 information URI, plus one or more services. Each service needs a type, a name, a
-self-signed X.509 certificate in PEM form and a unique service URI. Use
-**+ Add Service** to add more services; blocks are renumbered automatically and
-every block after the first has an **×** button to remove it. Submitting returns
-an application ID to quote when following up.
+**Service Digital Identity Certificate (X.509 PEM)** and a unique service URI.
+The certificate may be self-signed or CA-issued; its subject organisation (`O`)
+must be exactly the entity name entered on the form, and the private key is never
+uploaded. Anything that is not an X.509 PEM certificate — a private key, a public
+key, a signing request, a PKCS#12 bundle — is rejected with a message naming what
+was supplied. Use **+ Add Service** to add more services; blocks are renumbered
+automatically and every block after the first has an **×** button to remove it.
+Submitting returns an application ID to quote when following up.
+
+### Certificate creation (`/docs/certificate-creation`)
+
+A one-page guide, linked from the footer **Resources** column and from the
+certificate field on both onboarding forms. It explains what
+`ServiceDigitalIdentity` means for Wallet and PID services, distinguishes PEM,
+PKCS#8, PKCS#10, PKCS#12/PFX and DER, and gives the OpenSSL commands to create a
+self-signed test certificate, to check that a certificate matches its private
+key, to create a CSR for a CA, and to convert or extract a certificate to PEM.
 
 ### Administration (`/admin`)
 
@@ -165,7 +178,8 @@ specification is available at `/openapi.yaml` and `/openapi.json`.
 ## Authoring workflow (Phase 3)
 
 1. Applicant navigates to `/onboarding` and selects Wallet Providers or PID Providers
-2. Applicant submits entity details, addresses, and self-signed X.509 certificate(s)
+2. Applicant submits entity details, addresses, and one X.509 PEM certificate per
+   service (self-signed or CA-issued; see `/docs/certificate-creation`)
 3. Applicant receives a confirmed application ID
 4. Administrator reviews at `/admin/applications`
 5. Administrator approves, then publishes

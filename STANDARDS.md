@@ -89,6 +89,40 @@ B. This implementation uses the existing explicit authoring fields for the
 Annex D service semantics and requires a responsible Member State on PID
 applications; that latter form field is a project-local authoring choice.
 
+## Service digital identity (clause 6.6.3)
+
+Confirmed against `schemas/etsi/1960201_json_schema.json` (the vendored ETSI
+schema listed above), the two profile constant modules and a published artefact.
+
+`ServiceDigitalIdentity` is a set of optional identity arrays —
+`X509Certificates`, `X509SubjectNames`, `PublicKeyValues`, `X509SKIs`,
+`OtherIds` — each with `minItems: 1`. This publisher populates
+`X509Certificates` only, from the single `certificatePem` field per service.
+
+- **Annex E (Wallet Provider)** and **Annex D (PID Provider), Table D.3** require
+  an X.509 service digital identity. Neither requires the certificate to be
+  issued by a CA, and neither requires a verifiable certification path. The
+  publisher never builds or verifies one, so a **self-signed** certificate is
+  conformant input and is supported as the simplest testing option; a CA-issued
+  certificate is equally acceptable.
+- No clause fixes the certificate subject. Requiring the subject `O` to equal the
+  Trusted Entity Name (`TEName`) is a **project-local authoring rule** that keeps
+  the published identity attributable to the listed entity; it is not an ETSI
+  requirement.
+
+### Open divergence: PEM stored where base64 DER is specified
+
+`pkiOb.val` is declared `"contentEncoding": "base64"`, i.e. the base64 encoding of
+the DER certificate. `compileEntity()` in `src/core/compile/compile.ts` copies the
+authoring string into `val` unchanged, and the authoring string is the submitted
+PEM, so published LoTEs carry `-----BEGIN CERTIFICATE-----`, newlines and all
+inside `val` (see any `publications/*/versions/*/lote.json`).
+
+Ajv treats `contentEncoding` as an annotation, so schema validation does not
+catch this. It is a pre-existing divergence, not introduced by the certificate
+input work, and correcting it would change every published artefact and its
+signature. Recorded here for a decision rather than changed silently.
+
 ## WE BUILD Compatibility Findings
 
 ### Divergence from claimed profile

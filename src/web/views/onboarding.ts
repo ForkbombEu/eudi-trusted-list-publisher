@@ -1,6 +1,10 @@
 import { LIST_FAMILIES } from "../../core/authoring/list-family-catalogue.js";
 import type { ProfileFamily } from "../../core/profiles/registry.js";
 import { familyChip, listChip } from "./colors.js";
+import {
+  CERTIFICATE_FIELD_LABEL,
+  CERTIFICATE_GUIDE_PATH,
+} from "./certificate-guide.js";
 
 /**
  * Implemented onboarding routes are singular; the profile registry keys are
@@ -56,16 +60,18 @@ export interface ListOption {
 }
 
 /**
- * Shown once under the Services card. The publisher accepts any syntactically
- * valid X.509 certificate; it never builds or checks a certification path, so
- * in practice a service is registered with its own self-signed certificate.
+ * Shown once under the Services card. The certificate becomes the service
+ * ServiceDigitalIdentity in the published LoTE; it may be self-signed or
+ * CA-issued, because this publisher never builds or verifies a certification
+ * path.
  */
-const SELF_SIGNED_EXPLANATION =
-  "Self-signed certificate: paste the certificate the service signs with, " +
-  "including the BEGIN and END CERTIFICATE lines. This publisher stores the " +
-  "certificate as the service digital identity and does not build or verify " +
-  "a certification path, so the certificate does not need to be issued by a " +
-  "CA and is normally the service own self-signed certificate.";
+const CERTIFICATE_EXPLANATION =
+  "Each service is registered with the X.509 certificate that identifies it. " +
+  "The certificate is published as the service ServiceDigitalIdentity, so its " +
+  "subject must identify the provider: set the organisation (O) to exactly the " +
+  "Entity Name entered above. It may be self-signed or issued by a CA — this " +
+  "publisher does not build or verify a certification path, so a self-signed " +
+  "certificate is the simplest option for testing.";
 
 /** Per-family wording. Field names and the POST contract are identical. */
 interface FormProfile {
@@ -262,7 +268,7 @@ ${profile.extraEntityFields}
       ${renderAllServices(profile, v, errors)}
     </div>
     <button type="button" class="btn btn-outline btn-sm" id="add-service-btn" style="margin-top:1rem;">+ Add Service</button>
-    <p class="field-help">${SELF_SIGNED_EXPLANATION}</p>
+    <p class="field-help">${CERTIFICATE_EXPLANATION}</p>
   </div>
 
   <div class="card">
@@ -400,10 +406,14 @@ function serviceBlockHtml(
     ${e("serviceName")}
   </div>
   <div class="form-group">
-    <label>Self-Signed Certificate (PEM) <span class="required">*</span></label>
-    <textarea name="${escape(f("certificatePem"))}" required rows="4"
+    <label>${escape(CERTIFICATE_FIELD_LABEL)} <span class="required">*</span></label>
+    <textarea name="${escape(f("certificatePem"))}" required rows="8"
       placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----">${escape(v[f("certificatePem")] ?? "")}</textarea>
-    <span class="field-help">The X.509 certificate this service signs with, in PEM format.</span>
+    <span class="field-help">Upload an X.509 certificate beginning with
+      <code>-----BEGIN CERTIFICATE-----</code>. For testing, you can generate a
+      self-signed certificate using our
+      <a href="${CERTIFICATE_GUIDE_PATH}">Certificate creation guide</a>.
+      Never upload the private key.</span>
     ${e("certificatePem")}
   </div>
   <div class="form-group">

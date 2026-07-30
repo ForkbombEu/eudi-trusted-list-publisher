@@ -28,6 +28,11 @@ export {
   parseAndValidateSubmission,
   createApplicationRecord,
 } from "./submission-parser.js";
+export {
+  CERTIFICATE_INPUT_MESSAGES,
+  checkCertificateSubjectOrganisation,
+  classifyCertificateInput,
+} from "./certificate-input.js";
 export { ApplicationService } from "./application-service.js";
 export {
   loadLatestPublication,
@@ -62,6 +67,10 @@ export type {
   SubmissionFields,
   SubmissionParseResult,
 } from "./submission-parser.js";
+export type {
+  CertificateInputClassification,
+  CertificateInputKind,
+} from "./certificate-input.js";
 export type {
   AutoApproveOutcome,
   PartialCommitResult,

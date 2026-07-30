@@ -496,8 +496,48 @@ Service blocks are numbered by position, not by field index. Field names keep
 the index they were created with so a rejected submission re-renders as posted,
 while `renumber()` recomputes the headings and hides the remove button on
 whichever block is currently first. The certificate field is labelled
-`Self-Signed Certificate (PEM)`: the publisher stores the certificate as the
-service's digital identity and never builds or verifies a certification path.
+`Service Digital Identity Certificate (X.509 PEM)` and links the Certificate
+creation guide; the publisher stores the certificate as the service's digital
+identity and never builds or verifies a certification path, so a self-signed and
+a CA-issued certificate are equally acceptable.
+
+### Certificate input
+
+`src/core/authoring/certificate-input.ts` classifies the pasted field value
+before anything else looks at it:
+
+```ts
+classifyCertificateInput(text): {
+  kind: "certificate" | "private-key" | "public-key" | "certificate-request"
+      | "pkcs12" | "unparseable-certificate" | "empty" | "unknown",
+  message: string | null,      // null only for "certificate"
+  certificate: X509Certificate | null
+}
+```
+
+Recognition is by PEM label, so the message names the object the applicant
+actually supplied. A private key anywhere in the input wins over a certificate in
+the same input: a combined key-and-certificate file is refused rather than
+silently accepted. Input with no PEM armor is base64-decoded and checked for the
+PKCS#12 PFX shape (`INTEGER 3` plus the pkcs7-data OID `1.2.840.113549.1.7.1`);
+anything else is reported as not being PEM. `CERTIFICATE_INPUT_MESSAGES` is the
+single source of those strings — the guide page renders its rejection table from
+it, so the page cannot drift from the form.
+
+`checkCertificateSubjectOrganisation()` then requires the subject `O` to equal
+the submitted entity name exactly, and names both values when it does not.
+`parseAndValidateSubmission()` applies both checks per service and reports them
+on `service[i].certificatePem`.
+
+### Certificate creation guide
+
+`src/web/views/certificate-guide.ts` renders a static page at
+`/docs/certificate-creation` (`CERTIFICATE_GUIDE_PATH`), served whether or not
+the data-collection GUI is enabled and linked from the footer Resources column
+and from the certificate field on both onboarding forms. It explains what
+`ServiceDigitalIdentity` is for, distinguishes PEM/PKCS#8/PKCS#10/PKCS#12/DER,
+and carries the OpenSSL workflows: self-signed creation, key/certificate match
+verification, CSR creation, DER-to-PEM and PKCS#12 extraction.
 
 ### Auto-approval settings
 

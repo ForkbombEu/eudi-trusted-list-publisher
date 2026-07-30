@@ -43,6 +43,8 @@ const TEST_CERT = readFileSync(
   resolve(import.meta.dirname, "fixtures", "test-cert.pem"),
   "utf-8",
 );
+/** Subject organisation of test-cert.pem; a submission must repeat it exactly. */
+const CERT_ORGANISATION = "Test";
 const TEST_KEY_PATH = resolve(import.meta.dirname, "fixtures", "test-key.pem");
 const TEST_CERT_PATH = resolve(
   import.meta.dirname,
@@ -145,7 +147,7 @@ function pidFields(
 ): Record<string, string> {
   return {
     targetListKey,
-    entityName: "PID Provider",
+    entityName: CERT_ORGANISATION,
     entityStreetAddress: "1 PID Way",
     entityCountry: "DK",
     entityInformationURI: "https://pid.example/provider",

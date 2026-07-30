@@ -42,6 +42,13 @@ const TEST_CERT = readFileSync(
   "utf-8",
 );
 
+/**
+ * The subject organisation of test-cert.pem. A submission is only accepted when
+ * its Entity Name is exactly this value, because the service digital identity
+ * has to identify the trusted entity.
+ */
+const CERT_ORGANISATION = "Test";
+
 function tmpDir(): string {
   const d = join(tmpdir(), "tlp-gui-" + randomBytes(8).toString("hex"));
   mkdirSync(d, { recursive: true });
@@ -727,7 +734,7 @@ describe("Form submission", () => {
     try {
       const body = encodeForm({
         targetListKey: "eu_test_authority",
-        entityName: "Test Corp",
+        entityName: CERT_ORGANISATION,
         entityStreetAddress: "123 Main St",
         entityCountry: "IT",
         entityInformationURI: "https://example.com/test",
@@ -745,7 +752,7 @@ describe("Form submission", () => {
       const r2 = await httpGet(`${url}/onboarding/submitted/${appId}`);
       expect(r2.status).toBe(200);
       expect(r2.body).toContain("submitted");
-      expect(r2.body).toContain("Test Corp");
+      expect(r2.body).toContain(`<th>Entity</th><td>${CERT_ORGANISATION}</td>`);
     } finally {
       await stop();
       try {
@@ -816,7 +823,7 @@ describe("Form submission", () => {
     try {
       const body = encodeForm({
         targetListKey: "eu_test_authority",
-        entityName: "MultiSvc Corp",
+        entityName: CERT_ORGANISATION,
         entityStreetAddress: "456 Ave",
         entityCountry: "IT",
         entityInformationURI: "https://multi.example",
@@ -882,7 +889,7 @@ describe("Admin lifecycle", () => {
       // Submit application
       const body = encodeForm({
         targetListKey: "eu_test_authority",
-        entityName: "ApproveMe Inc",
+        entityName: CERT_ORGANISATION,
         entityStreetAddress: "1 Approve St",
         entityCountry: "IT",
         entityInformationURI: "https://approve.example",
@@ -897,7 +904,7 @@ describe("Admin lifecycle", () => {
       // Inspect
       const r2 = await httpGet(`${url}/admin/applications/${appId}`, cookie);
       expect(r2.status).toBe(200);
-      expect(r2.body).toContain("ApproveMe Inc");
+      expect(r2.body).toContain(`<th>Name</th><td>${CERT_ORGANISATION}</td>`);
 
       // Invalid transition: submit → publish (should fail)
       const rBad = await postThenFollow(
@@ -964,7 +971,7 @@ describe("Admin lifecycle", () => {
     try {
       const body = encodeForm({
         targetListKey: "eu_test_authority",
-        entityName: "NoteFail Inc",
+        entityName: CERT_ORGANISATION,
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://note.example",
@@ -1004,7 +1011,7 @@ describe("Admin lifecycle", () => {
     try {
       const body = encodeForm({
         targetListKey: "eu_test_authority",
-        entityName: "PubDelete Inc",
+        entityName: CERT_ORGANISATION,
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://pub.example",
@@ -1098,7 +1105,7 @@ describe("Admin lifecycle", () => {
       // Submit app targeting nonexistent list
       const body = encodeForm({
         targetListKey: "nonexistent",
-        entityName: "NoKey Inc",
+        entityName: CERT_ORGANISATION,
         entityStreetAddress: "1 St",
         entityCountry: "IT",
         entityInformationURI: "https://nokey.example",
@@ -1156,7 +1163,7 @@ describe("Admin lifecycle", () => {
 
       const body = encodeForm({
         targetListKey: "eu_test_authority",
-        entityName: "FullPub Corp",
+        entityName: CERT_ORGANISATION,
         entityStreetAddress: "555 Final St",
         entityCountry: "IT",
         entityInformationURI: "https://fullpub.example",

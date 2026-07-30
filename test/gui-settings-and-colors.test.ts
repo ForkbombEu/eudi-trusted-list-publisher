@@ -26,6 +26,9 @@ const TEST_CERT = readFileSync(
   "utf-8",
 );
 
+/** Subject organisation of test-cert.pem; a submission must repeat it exactly. */
+const CERT_ORGANISATION = "Test";
+
 function tmpDir(): string {
   const d = join(tmpdir(), "tlp-settings-" + randomBytes(8).toString("hex"));
   mkdirSync(d, { recursive: true });
@@ -122,7 +125,7 @@ function encodeForm(data: Record<string, string>): string {
 function walletSubmission(uniqueId: string): string {
   return encodeForm({
     targetListKey: "eu_test_authority",
-    entityName: "Auto Corp",
+    entityName: CERT_ORGANISATION,
     entityStreetAddress: "1 Auto Street",
     entityCountry: "IT",
     entityInformationURI: "https://auto.example/info",
@@ -453,11 +456,12 @@ describe("Onboarding service blocks", () => {
     expect(html).toContain("remove.hidden = i === 0");
   });
 
-  it("asks for a self-signed certificate and explains why", () => {
+  it("labels the certificate as the service digital identity and explains it", () => {
     const html = walletProviderFormHtml({}, {}, []);
-    expect(html).toContain("Self-Signed Certificate (PEM)");
-    expect(html).not.toContain("X.509 Certificate (PEM)");
+    expect(html).toContain("Service Digital Identity Certificate (X.509 PEM)");
+    expect(html).not.toContain("Self-Signed Certificate (PEM)");
     expect(html).toContain("does not build or verify");
+    expect(html).toContain("Never upload the private key.");
   });
 });
 

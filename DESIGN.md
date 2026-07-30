@@ -93,3 +93,17 @@ class, `app.css` defines the colour, and a test proves the two stay in step.
 
 Testing-tool warning notices are not used. The catalogue states plainly that the
 lists are published for testing and debugging purposes only.
+
+## Certificate input and guidance
+
+The onboarding certificate field is labelled **Service Digital Identity
+Certificate (X.509 PEM)** on both the Wallet Provider and the PID Provider form.
+Its help text says what to upload, links the Certificate creation guide and
+states that the private key is never uploaded.
+
+The guide is a page of its own in the footer **Resources** column, above
+Repository. It uses the existing shell, `card`, `kv-table`, `notice-warning` and
+`pre` styles and introduces no new CSS: the OpenSSL commands are the substance of
+the page, so they are shown verbatim in preformatted blocks and everything else
+is prose around them. Its rejection table is rendered from the parser's own
+message constants, so the page and the form always say the same thing.

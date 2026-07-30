@@ -23,6 +23,11 @@ import {
   type PIDProviderApplicantData,
   type WalletProviderApplicantData,
 } from "../core/authoring/index.js";
+import {
+  certificateGuideHtml,
+  CERTIFICATE_GUIDE_PATH,
+  CERTIFICATE_GUIDE_TITLE,
+} from "./views/certificate-guide.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -122,6 +127,7 @@ ${body}
         </div>
         <div class="footer-col">
           <h5>Resources</h5>
+          <a href="${CERTIFICATE_GUIDE_PATH}">${escapeHtml(CERTIFICATE_GUIDE_TITLE)}</a>
           <a href="${REPOSITORY_URL}">Repository</a>
         </div>${settingsCol}
       </div>
@@ -624,6 +630,11 @@ export function createWebServer(config: ServerConfig) {
       return;
     }
 
+    if (path === CERTIFICATE_GUIDE_PATH) {
+      serveCertificateGuide(res, requestId);
+      return;
+    }
+
     if (path.startsWith("/api/v1/")) {
       handleApi(req, res, url, requestId);
       return;
@@ -766,6 +777,15 @@ over the published Lists of Trusted Entities.</p>
 `,
     );
     sendHtml(res, 200, html);
+  }
+
+  /**
+   * The Certificate creation guide. Reachable whether or not the data-collection
+   * GUI is enabled, because the footer Resources column is always rendered.
+   */
+  function serveCertificateGuide(res: ServerResponse, requestId: string): void {
+    sendHtml(res, 200, page(CERTIFICATE_GUIDE_TITLE, certificateGuideHtml()));
+    logRequest("GET", CERTIFICATE_GUIDE_PATH, res.statusCode, requestId);
   }
 
   /**
