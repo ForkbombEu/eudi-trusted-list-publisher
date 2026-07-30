@@ -50,8 +50,9 @@ cp .env.example .env
 # Edit .env: set DATA_COLLECTION_GUI=true, configure signing config path
 
 # Create signing configuration
-cp examples/signing/signing-config.example.json signing-config.json
-# Edit signing-config.json with paths to your actual signing key/cert
+mkdir -p .local-signing
+cp examples/signing/signing-config.example.json .local-signing/signing-config.json
+# Edit it with paths to your actual signing key/cert
 
 npm run build
 node dist/src/cli/main.js serve --data-collection-gui
@@ -72,8 +73,53 @@ When enabled:
 
 When `DATA_COLLECTION_GUI` is `false` or unset, the server operates in read-only
 mode exactly as before — no onboarding, no admin routes, no authoring state.
+### Signing configuration (`./.local-signing/signing-config.json`)
 
-**Example signing configuration** (`signing-config.json`):
+`TLP_SIGNING_CONFIG` points at a JSON or YAML file that answers one question per
+Trusted List: **who signs it, with which key, and under what scheme identity.**
+It is the bridge between a `listKey` used throughout the application and the
+concrete key pair and Annex D/E scheme metadata that a conformant list requires.
+Without an entry for a given list key, that list cannot be published or signed.
+
+The file lives under `./.local-signing/` together with the PEM key and
+certificate files it references. **That whole directory is gitignored and must
+never be committed** — it holds private signing keys. Only
+`examples/signing/signing-config.example.json` is in the repository, as a
+template to copy.
+
+```
+.local-signing/            # gitignored
+├── signing-config.json    # the file TLP_SIGNING_CONFIG points at
+├── wallet-signer-key.pem  # private key, referenced by keyFile
+└── wallet-signer-cert.pem # certificate, referenced by certFile
+```
+
+The path is not special — it is simply whatever `TLP_SIGNING_CONFIG` is set to
+in `.env`. Relative paths inside the file, including `keyFile` and `certFile`,
+resolve against the process working directory, not against the config file.
+
+Every field below is required. Missing ones raise a startup error rather than
+being defaulted, because a list signed with guessed scheme metadata would be
+silently non-conformant.
+
+| Field | Meaning |
+|-------|---------|
+| `listKey` | Unique identifier for the list; must be unique across the file |
+| `family` | One of `wallet-providers`, `pid-providers`, `wrpac-providers`, `wrprc-providers`, `pub-eaa-providers` |
+| `keyFile` / `certFile` | Paths to the PEM private key and certificate used to sign |
+| `schemeOperatorName` / `schemeOperatorStreet` / `schemeOperatorCountry` | Identity of the scheme operator |
+| `schemeName` / `schemeTerritory` | Name and territory of the scheme |
+| `schemeOperatorContactUri` / `schemeOperatorEmail` / `schemeOperatorWebsite` | Operator contact points |
+| `distributionPointUri` | Where the published list is served from |
+| `schemeInformationUris` | Annex D/E scheme information; **at least two URIs** |
+| `policyUri` | The scheme policy document |
+
+`/admin/signing` shows, per list key, whether both files exist and the subject
+and SHA-256 fingerprint of the loaded certificate — the quickest way to confirm
+the configuration resolves. A duplicate `listKey` or an unknown `family` is a
+hard error at load time.
+
+**Example signing configuration** (`./.local-signing/signing-config.json`):
 
 ```json
 {
@@ -88,8 +134,8 @@ mode exactly as before — no onboarding, no admin routes, no authoring state.
       "schemeTerritory": "EU",
       "schemeOperatorContactUri": "https://credimi.eu",
       "distributionPointUri": "https://credimi.eu/wallet-providers/latest",
-      "keyFile": "./keys/signing-key.pem",
-      "certFile": "./keys/signing-cert.pem",
+      "keyFile": "./.local-signing/wallet-signer-key.pem",
+      "certFile": "./.local-signing/wallet-signer-cert.pem",
       "schemeOperatorEmail": "trustedlists@credimi.eu",
       "schemeOperatorWebsite": "https://credimi.eu/wallet-providers",
       "schemeInformationUris": [
@@ -357,6 +403,56 @@ publication path, so uniqueness, round-trip and ETSI checks all still apply. On
 read, unknown families, unsafe list keys and non-boolean values are dropped so a
 hand-edited file cannot break the administration pages. Writes are atomic, and
 the posted form is the complete new state: a box left unticked turns its flag off.
+
+## Deployment
+
+Reference deployment: the Node app under pm2 listening on `TLP_PORT`, behind
+Caddy as a reverse proxy, with DNS at Cloudflare. See
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the full debugging guide and
+[`deploy/Caddyfile.example`](deploy/Caddyfile.example) for a ready site config.
+
+```caddy
+lote.credimi.io {
+    reverse_proxy 127.0.0.1:23100
+}
+```
+
+The app exposes `GET /healthz`, which returns `{"status":"ok"}` uncached, and
+writes one JSON line per request to stderr (`pm2 logs`). Probe the app, then
+Caddy, then Cloudflare — the first probe that fails identifies the broken layer.
+
+### Cloudflare: the proxied-record redirect loop
+
+If the site answers `ERR_TOO_MANY_REDIRECTS` in the browser, and `curl -I` shows
+a chain of `308 Permanent Redirect` responses whose `Location` equals the URL
+that was requested, the cause is the Cloudflare DNS record for the subdomain
+being set to **Proxied** (orange cloud) while the zone's SSL/TLS mode is
+**Flexible**.
+
+In that combination Cloudflare fetches the origin over plain HTTP on port 80.
+Caddy's automatic HTTPS answers every path with its standard `308` redirect to
+`https://`. Cloudflare relays that redirect to the browser, which is already on
+HTTPS, so it requests the same URL again — indefinitely.
+
+Two details make this easy to recognise:
+
+- **The status code is the fingerprint.** `308` is Caddy's automatic-HTTPS
+  redirect. Cloudflare's own "Always Use HTTPS" feature emits `301` instead.
+- **`pm2 logs` stays completely empty.** The loop resolves at the edge, so no
+  request ever reaches the app. An empty app log during a failing request is
+  itself a diagnosis: look at Caddy and Cloudflare, not at the application.
+
+The fix is to set the DNS record for the subdomain to **DNS only** (grey cloud),
+so Caddy terminates TLS end-to-end with its own Let's Encrypt certificate. If
+the record must stay proxied, set the Cloudflare SSL/TLS encryption mode to
+**Full (strict)** instead.
+
+Verify with `curl` before trusting a browser — browsers cache `308` responses
+aggressively and keep looping after the server is already fixed:
+
+```sh
+curl -sSI https://lote.credimi.io/healthz   # expect 200, not 308
+```
 
 ## Environment variables
 

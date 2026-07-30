@@ -36,6 +36,10 @@ handoffs/
 /signing-config.yaml
 /signing-config.yml
 
+# Local signing material: private keys, certificates and the signing config
+# that points at them. Never committed.
+/.local-signing/
+
 # Logs and local data
 *.log
 *.sqlite

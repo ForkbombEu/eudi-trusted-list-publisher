@@ -10,8 +10,8 @@
       "schemeTerritory": "EU",
       "schemeOperatorContactUri": "https://credimi.eu",
       "distributionPointUri": "https://credimi.eu/wallet-providers/latest",
-      "keyFile": "/path/to/signing-key.pem",
-      "certFile": "/path/to/signing-cert.pem",
+      "keyFile": "./.local-signing/wallet-signer-key.pem",
+      "certFile": "./.local-signing/wallet-signer-cert.pem",
       "schemeOperatorEmail": "trustedlists@credimi.eu",
       "schemeOperatorWebsite": "https://credimi.eu/wallet-providers",
       "schemeInformationUris": [
@@ -30,8 +30,8 @@
       "schemeTerritory": "EU",
       "schemeOperatorContactUri": "https://example.test/pid",
       "distributionPointUri": "https://example.test/pid/latest",
-      "keyFile": "/path/to/pid-signing-key.pem",
-      "certFile": "/path/to/pid-signing-cert.pem",
+      "keyFile": "./.local-signing/pid-signer-key.pem",
+      "certFile": "./.local-signing/pid-signer-cert.pem",
       "schemeOperatorEmail": "pid@example.test",
       "schemeOperatorWebsite": "https://example.test/pid",
       "schemeInformationUris": [

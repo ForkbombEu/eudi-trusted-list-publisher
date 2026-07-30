@@ -1,0 +1,56 @@
+# EUDI Trusted List Publisher — Caddy site config
+#
+# Copy the relevant block into /etc/caddy/Caddyfile (or an imported snippet)
+# and reload with: sudo systemctl reload caddy
+#
+# IMPORTANT: pick ONE of the two blocks below depending on whether the
+# hostname is proxied by Cloudflare (orange cloud) or DNS-only (grey cloud).
+# See docs/DEPLOYMENT.md for why this matters — getting it wrong produces an
+# ERR_TOO_MANY_REDIRECTS loop of 308s.
+
+# ---------------------------------------------------------------------------
+# Option A — DNS-only in Cloudflare (grey cloud). Caddy terminates TLS itself
+# with a Let's Encrypt certificate. This matches how the other credimi.io
+# services on this host are deployed.
+# ---------------------------------------------------------------------------
+lote.credimi.io {
+	reverse_proxy 127.0.0.1:23100 {
+		# Fail fast and surface upstream problems instead of hanging.
+		health_uri /healthz
+		health_interval 30s
+		health_timeout 5s
+	}
+
+	# Per-site access log — the first place to look when the app seems silent.
+	log {
+		output file /var/log/caddy/lote.credimi.io.log {
+			roll_size 20MiB
+			roll_keep 10
+		}
+		format json
+	}
+
+	encode zstd gzip
+}
+
+# ---------------------------------------------------------------------------
+# Option B — Proxied by Cloudflare (orange cloud).
+#
+# Cloudflare MUST be set to SSL/TLS mode "Full (strict)" for this zone or
+# hostname. In "Flexible" mode Cloudflare fetches the origin over plain HTTP,
+# Caddy answers with its automatic 308 HTTP->HTTPS redirect, and the browser
+# loops forever.
+#
+# If — and only if — you cannot change the Cloudflare SSL mode, bind the site
+# to HTTP explicitly so Caddy stops issuing that redirect. Cloudflare then
+# provides the public TLS. Traffic between Cloudflare and the origin is
+# UNENCRYPTED, so prefer fixing the Cloudflare setting instead.
+# ---------------------------------------------------------------------------
+# http://lote.credimi.io {
+# 	reverse_proxy 127.0.0.1:23100
+#
+# 	log {
+# 		output file /var/log/caddy/lote.credimi.io.log
+# 		format json
+# 	}
+# }
