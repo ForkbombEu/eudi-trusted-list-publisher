@@ -982,10 +982,11 @@ over the published Lists of Trusted Entities.</p>
 
   /**
    * Catalogue "Open" cell: the latest version's artifacts, opened in place
-   * rather than downloaded. XML is listed only when the version actually has an
-   * `lote.xml` beside it — this publisher does not produce one, so the link
-   * appears for an externally supplied rendition and is absent otherwise, never
-   * offered as a dead link.
+   * rather than downloaded. JSON and JAdES are always present — every published
+   * version has both by construction. XML is listed only when the version
+   * actually has an `lote.xml` beside it — this publisher does not produce one,
+   * so the link appears for an externally supplied rendition and is absent
+   * otherwise, never offered as a dead link.
    */
   function openLinks(
     s: PublicationStore,
@@ -995,6 +996,7 @@ over the published Lists of Trusted Entities.</p>
     const base = `/api/v1/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}`;
     const links = [
       `<a class="btn btn-sm" href="${base}/lote">JSON</a>`,
+      `<a class="btn btn-sm" href="${base}/signature">JAdES</a>`,
       ...(s.hasLoteXml(listKey, sequenceNumber)
         ? [`<a class="btn btn-sm" href="${base}/xml">XML</a>`]
         : []),

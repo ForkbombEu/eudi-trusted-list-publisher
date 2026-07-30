@@ -221,18 +221,27 @@ describe("Web UI", () => {
     produced by this publisher, so the link must be absent until an XML rendition
     exists beside the version rather than offered as a dead link.
   */
-  it("offers JSON in the catalogue Open column, and XML only when present", async () => {
+  it("offers JSON and JAdES in the catalogue Open column, and XML only when present", async () => {
     const key = await storePublication();
     const store = new PublicationStore({ publicationDir: pubDir });
     const sequence = store.getHighestStoredSequence(key);
     expect(sequence).not.toBeNull();
     const jsonHref = `/api/v1/lists/${key}/versions/${sequence}/lote`;
+    const jadesHref = `/api/v1/lists/${key}/versions/${sequence}/signature`;
     const xmlHref = `/api/v1/lists/${key}/versions/${sequence}/xml`;
 
     const before = await httpGet("/");
     expect(before.body).toContain("<th>Open</th>");
     expect(before.body).toContain(`href="${jsonHref}">JSON<`);
+    expect(before.body).toContain(`href="${jadesHref}">JAdES<`);
     expect(before.body).not.toContain(`href="${xmlHref}"`);
+
+    /* Every published version has a JAdES by construction, so the link is
+       never conditional the way the XML one is. */
+    const jades = await httpGet(jadesHref);
+    expect(jades.status).toBe(200);
+    expect(jades.contentType).toContain("application/jose");
+    expect(jades.body.split(".")).toHaveLength(3);
 
     const missing = await httpGet(xmlHref);
     expect(missing.status).toBe(404);

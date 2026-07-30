@@ -169,10 +169,12 @@ a version to see its manifest, entities, certificate details, its Trust Inspecto
 result and its downloads.
 
 The last column, **Open**, opens the latest version's artifacts directly: a
-**JSON** button for the LoTE, and an **XML** button only for versions that
-actually have an `lote.xml` beside them. This publisher does not produce XML —
-TS 119 612 and XAdES are out of scope — so the XML button is normally absent
-rather than dead.
+**JSON** button for the LoTE, a **JAdES** button for the Compact JAdES signed
+artifact, and an **XML** button only for versions that actually have an
+`lote.xml` beside them. JSON and JAdES are always present, because every
+published version has both by construction. This publisher does not produce
+XML — TS 119 612 and XAdES are out of scope — so the XML button is normally
+absent rather than dead.
 
 ### Version pages and the Trust Inspector
 
