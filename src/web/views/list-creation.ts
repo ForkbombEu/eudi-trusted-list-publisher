@@ -89,7 +89,8 @@ ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
       <label for="schemeTerritory">Scheme Territory <span class="required">*</span></label>
       <input type="text" id="schemeTerritory" name="schemeTerritory" required
         maxlength="2" pattern="[A-Z]{2}" value="${escape(v.schemeTerritory ?? "EU")}">
-      <span class="field-help">Two-letter code. Annex D/E use <code>EU</code>.</span>
+      <span class="field-help">Two-letter code. The Annex D, E, F and G profiles
+        use <code>EU</code>.</span>
     </div>
   </div>
 
@@ -152,8 +153,8 @@ ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
       <span class="field-help">Its subject must match the scheme metadata, or the
         Inspector reports a signer subject mismatch: organisation
         (<code>O</code>) exactly the operator name above, and country
-        (<code>C</code>) the scheme territory — <code>EU</code> for the Annex D
-        and Annex E profiles.</span>
+        (<code>C</code>) the scheme territory — <code>EU</code> for the
+        Annex D, E, F and G profiles.</span>
     </div>
   </div>
 
@@ -163,7 +164,7 @@ ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
       <label class="tl-broken-option">
         <input type="radio" name="health" value="healthy" checked>
         <span><strong>Healthy</strong>
-        <span class="field-help">Conformant with the Annex D/E rules this
+        <span class="field-help">Conformant with the Annex D/E/F/G rules this
         publisher implements.</span></span>
       </label>
     </div>

@@ -1,7 +1,8 @@
 # Credimi EUDI Trusted Lists
 
-A TS 119 602 JSON List of Trusted Entities (LoTE) publisher for the Wallet
-Provider (Annex E) and PID Provider (Annex D) profiles. Compiles, validates, signs (JAdES Compact Baseline B),
+A TS 119 602 JSON List of Trusted Entities (LoTE) publisher for four profiles:
+PID Providers (Annex D), Wallet Providers (Annex E), WRPAC Providers (Annex F)
+and WRPRC Providers (Annex G). Compiles, validates, signs (JAdES Compact Baseline B),
 verifies, stores, and publishes LoTE artefacts. Signing keys are supplied through
 local files or CI secrets and are never uploaded through a public web interface.
 
@@ -10,8 +11,10 @@ web UI for browsing published LoTEs. Does not implement TS 119 612 Trusted Lists
 LoTL aggregation, XML/XAdES, or the EC TS02 notification API.
 
 **Historical Phase 3** added an opt-in data-collection and administration GUI for authoring
-and publishing Wallet Provider LoTEs. The current Phase 5 GUI also supports PID Providers. When enabled, it provides applicant
-onboarding and an administration backoffice.
+and publishing Wallet Provider LoTEs. The current GUI supports all four
+implemented families. When enabled, it provides applicant onboarding and an
+administration backoffice, and every version it publishes is signed and assessed
+by the Trust Inspector.
 
 ## Important: signature valid vs signer trusted
 
@@ -55,8 +58,10 @@ node dist/src/cli/main.js serve --data-collection-gui
 
 When enabled:
 - `/onboarding` — applicant onboarding and Trusted List Family catalogue
-- `/onboarding/wallet-provider` — Wallet Provider application form
 - `/onboarding/pid-provider` — PID Provider application form
+- `/onboarding/wallet-provider` — Wallet Provider application form
+- `/onboarding/wrpac-provider` — WRPAC Provider application form
+- `/onboarding/wrprc-provider` — WRPRC Provider application form
 - `/admin` — administration backoffice (requires `TLP_ADMIN_TOKEN`)
 - `/admin/applications` — manage submitted applications
 - `/admin/signing` — view signing configuration status
@@ -222,13 +227,14 @@ specification is available at `/openapi.yaml` and `/openapi.json`.
 | Download Compact JAdES | `curl -o lote.jades http://localhost:8080/api/v1/lists/eu_credimi/versions/1/signature` |
 | Download publication manifest | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/manifest` |
 | Download the Trust Inspector evaluation | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/inspector` |
-| Create a Trusted List (admin token) | `curl -X POST http://localhost:8080/api/v1/admin/lists -H "Authorization: Bearer $TLP_ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"family":"wallet-providers","schemeName":"EU Wallet Providers List","schemeOperatorName":"Example Scheme","schemeTerritory":"EU","schemeOperatorStreet":"1 Example St","schemeOperatorCountry":"IT","schemeOperatorEmail":"trustedlists@example.eu","baseUrl":"https://example.eu/wallet-providers","keyFile":"/etc/tlp/signer-key.pem","certFile":"/etc/tlp/signer-cert.pem"}'` |
+| Create a Trusted List (admin token) | `curl -X POST http://localhost:8080/api/v1/admin/lists -H "Authorization: Bearer $TLP_ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"family":"wrpac-providers","schemeName":"EU WRPAC Providers List","schemeOperatorName":"Example Scheme","schemeTerritory":"EU","schemeOperatorStreet":"1 Example St","schemeOperatorCountry":"IT","schemeOperatorEmail":"trustedlists@example.eu","baseUrl":"https://example.eu/wrpac-providers","keyFile":"/etc/tlp/signer-key.pem","certFile":"/etc/tlp/signer-cert.pem"}'` — `family` is one of `pid-providers`, `wallet-providers`, `wrpac-providers`, `wrprc-providers` |
 | Health check | `curl http://localhost:8080/healthz` |
 | OpenAPI specification | `curl http://localhost:8080/openapi.yaml` |
 
 ## Authoring workflow (Phase 3)
 
-1. Applicant navigates to `/onboarding` and selects Wallet Providers or PID Providers
+1. Applicant navigates to `/onboarding` and selects one of the four available
+   families: PID, Wallet, WRPAC or WRPRC Providers
 2. Applicant submits entity details, addresses, and one X.509 PEM certificate per
    service (self-signed or CA-issued; see `/docs/certificate-creation`)
 3. Applicant receives a confirmed application ID
@@ -274,16 +280,34 @@ replace earlier entities.
 - The authenticated admin application-detail route renders existing/resulting
   entity counts and current/proposed sequences before publication.
 
-Wallet Providers and PID Providers are implemented list families. The other five
-catalogue families are visible in the GUI but are not accepted for authoring or
-publication.
+PID, Wallet, WRPAC and WRPRC Providers are implemented list families. Pub-EAA
+Providers and Registrars and Registers are visible in the GUI but are not
+accepted for authoring or publication.
 
-## Phase 5 profiles
+## Trusted List families
 
-The immutable profile registry explicitly selects profiles at compile,
-configuration, publication, and reconciliation boundaries. Wallet Providers and
-PID Providers are enabled; Non-qualified EAA, QEAA, WRPAC, WRPRC, and Registrars
-remain disabled. PID onboarding is available at `/onboarding/pid-provider`.
+The immutable profile registry (`src/core/profiles/registry.ts`) explicitly
+selects profiles at compile, configuration, publication, and reconciliation
+boundaries. It holds the six TS 119 602 families, in annex order:
+
+| Family | Annex | State | Onboarding |
+|--------|-------|-------|------------|
+| PID Providers | D | enabled | `/onboarding/pid-provider` |
+| Wallet Providers | E | enabled | `/onboarding/wallet-provider` |
+| WRPAC Providers | F | enabled | `/onboarding/wrpac-provider` |
+| WRPRC Providers | G | enabled | `/onboarding/wrprc-provider` |
+| Pub-EAA Providers | — | disabled | — |
+| Registrars and Registers | — | disabled | — |
+
+Annex F and Annex G differ from Annex D/E in three ways that the registry states
+rather than the call sites guessing: they use no `ServiceUniqueIdentifier`
+extension, their entity role URI names the Responsible Member State that mandates
+the provider, and their onboarding collects a policies and terms URL, an optional
+official registration identifier and an optional additional-information URL.
+Neither profile publishes `ServiceStatus` or `StatusStartingTime`: presence in the
+current list version is the statement that the provider is mandated, and losing
+the mandate removes the entity from the next version.
+
 Every configured list key declares `family`, and cumulative publication rejects
 an authenticated existing LoTE whose type conflicts with that family. Internal
 schema/signature checks are publication safety boundaries, not external trust

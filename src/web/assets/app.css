@@ -118,13 +118,7 @@ a .chip {
   color: oklch(0.42 0.16 235);
 }
 
-.chip-family--eaa {
-  background: oklch(0.95 0.04 160);
-  border-color: oklch(0.82 0.09 160);
-  color: oklch(0.4 0.13 160);
-}
-
-.chip-family--qeaa {
+.chip-family--pubeaa {
   background: oklch(0.95 0.05 85);
   border-color: oklch(0.82 0.1 85);
   color: oklch(0.42 0.13 85);

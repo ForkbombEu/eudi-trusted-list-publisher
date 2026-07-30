@@ -66,9 +66,8 @@ plausible fallback sequence.
 ## Phase 5 profile-aware administration
 
 PID Provider onboarding uses the existing application shell, form, preview, and
-administration patterns. The catalogue shows Wallet and PID Providers as
-available, while the five remaining families remain visibly disabled. No new
-visual system or canonical HITL asset is introduced.
+administration patterns. No new visual system or canonical HITL asset is
+introduced.
 
 ## Phase 6 presentation
 
@@ -85,7 +84,7 @@ Catalogue and Onboarding, API Docs and Open API, Repository. The footer carries
 three columns: Explore, Resources and Settings, the last holding the Admin link.
 
 Trusted List Families and individual Trusted Lists are colour-coded. Each of the
-seven families has one predefined colour and each list key is mapped
+six families has one predefined colour and each list key is mapped
 deterministically to one of eight list swatches, so the same family or list is
 always the same colour wherever it appears: catalogue, list and version pages,
 onboarding, administration and settings. `src/web/views/colors.ts` decides the
@@ -112,14 +111,40 @@ options are shown but disabled, under a legend carrying the same
 "Not implemented yet" neutral badge the disabled Trusted List Families use, so an
 unavailable capability looks the same everywhere in the product.
 
+## Phase 8 WRPAC and WRPRC
+
+The catalogue lists the six TS 119 602 families in annex order — PID, Wallet,
+WRPAC, WRPRC, Pub-EAA, Registrars and Registers — with the first four available
+and the last two carrying the same neutral "Not implemented yet" badge. Nothing
+distinguishes a WRPAC or WRPRC page from a Wallet or PID page except its words:
+the same shell, cards, chips, preview, Inspector card and Downloads row.
+
+The WRPAC and WRPRC onboarding forms differ from the Annex D/E forms in three
+visible ways, each because the profile differs and not for variety's sake:
+
+- the entity's public URI is labelled **Policies and Terms URL**, because that is
+  what Annex F/G collect in that position;
+- **Official Registration Identifier** and **Additional Information URL** are
+  optional fields, and say so;
+- there is no Service Unique Identifier field, because the profile has no such
+  extension. An absent field is better than a disabled one here: the applicant
+  has nothing to decide.
+
+A **Mandate** card closes both forms, and the same sentence appears above the
+administration Actions card: being listed states that the provider is currently
+mandated by the Responsible Member State, and losing the mandate removes the
+entity from the next version rather than marking it withdrawn. The profiles
+publish no service status, so the meaning of approval has to be stated in words.
+
 ## Certificate input and guidance
 
 The onboarding certificate field is labelled **Service Digital Identity
-Certificate (PEM)** on both the Wallet Provider and the PID Provider form.
-Its help text opens with what the certificate is for in that profile — wallet
-unit authentication for Wallet Providers, PID signature or seal verification for
-PID Providers — then says what to upload, links the Certificate creation guide
-and states that the private key is never uploaded.
+Certificate (PEM)** on every onboarding form. Its help text opens with what the
+certificate is for in that profile — wallet unit authentication for Wallet
+Providers, PID signature or seal verification for PID Providers, access
+certificate signatures for WRPAC Providers, registration certificate signatures
+for WRPRC Providers — then says what to upload, links the Certificate creation
+guide and states that the private key is never uploaded.
 
 The onboarding introduction is short and uses the full content width
 (`.lead-wide`). A service block is removed with a labelled **Remove service**

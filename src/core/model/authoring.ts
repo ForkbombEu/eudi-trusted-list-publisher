@@ -45,7 +45,12 @@ export interface AuthoringService {
   serviceDigitalIdentity: {
     x509Certificates: string[];
   };
-  serviceUniqueIdentifier: string;
+  /**
+   * Annex D/E publish this as the ServiceUniqueIdentifier extension. Annex F/G
+   * do not use the extension, so it is absent for those families and no
+   * extension container is emitted.
+   */
+  serviceUniqueIdentifier?: string;
   serviceSupplyPoints?: { uriValue: string }[];
 }
 

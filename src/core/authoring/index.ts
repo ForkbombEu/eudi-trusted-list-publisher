@@ -5,9 +5,11 @@ export {
 } from "./list-family-catalogue.js";
 export {
   APPLICATION_SCHEMA_VERSION,
+  buildAuthoringEntity,
   canTransition,
   normalizeToAuthoringInput,
   documentPlaceholder,
+  serviceTypeUri,
 } from "./application-model.js";
 export { AuthoringStore } from "./authoring-store.js";
 export {
@@ -51,6 +53,7 @@ export { schemeDescriptorFor } from "./list-assembler.js";
 export {
   loadLatestPublication,
   convertLoTEToAuthoringEntities,
+  checkLosslessPreservation,
   checkServiceIdentifierUniqueness,
   assembleNextList,
 } from "./list-assembler.js";
@@ -62,6 +65,12 @@ export type {
   WalletProviderApplication,
   PIDProviderApplicantData,
   PIDProviderApplication,
+  SupervisedApplicantData,
+  WalletRelyingPartyApplicantData,
+  WRPACProviderApplication,
+  WRPRCProviderApplication,
+  ApplicantDataByFamily,
+  ApplicationByFamily,
   TrustedEntityApplication,
   PublicationRecord,
 } from "./application-model.js";

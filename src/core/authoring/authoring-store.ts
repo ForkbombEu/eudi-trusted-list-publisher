@@ -15,14 +15,14 @@ import {
   APPLICATION_SCHEMA_VERSION,
   type ApplicationState,
   type CommonApplicantData,
-  type PIDProviderApplicantData,
-  type PIDProviderApplication,
   type PublicationRecord,
   type TrustedEntityApplication,
-  type WalletProviderApplicantData,
-  type WalletProviderApplication,
 } from "./application-model.js";
-import { getEnabledProfile } from "../profiles/registry.js";
+import {
+  getEnabledProfile,
+  isEnabledProfileFamily,
+  type EnabledProfileFamily,
+} from "../profiles/registry.js";
 
 export interface AuthoringStoreConfig {
   authoringDir: string;
@@ -75,32 +75,40 @@ const isString = (value: unknown): value is string =>
 const isApplicationState = (value: unknown): value is ApplicationState =>
   typeof value === "string" && STATES.includes(value as ApplicationState);
 
+const isUrlString = (value: unknown): boolean => {
+  if (!isString(value)) return false;
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const isMemberState = (value: unknown): boolean =>
+  isString(value) && /^[A-Z]{2}$/.test(value);
+
+/**
+ * Validates a stored applicant record against the family it claims. The family
+ * decides which fields must be present: Annex D/E require a service unique
+ * identifier and Annex F/G must not carry one, so a record written by a
+ * different version of the form is rejected rather than half-read.
+ */
 function validApplicantData(
   value: unknown,
-  family: "wallet-providers",
-): value is WalletProviderApplicantData;
-function validApplicantData(
-  value: unknown,
-  family: "pid-providers",
-): value is PIDProviderApplicantData;
-function validApplicantData(
-  value: unknown,
-  family: "wallet-providers" | "pid-providers",
+  family: EnabledProfileFamily,
 ): value is CommonApplicantData {
+  const profile = getEnabledProfile(family);
+  const relyingParty =
+    family === "wrpac-providers" || family === "wrprc-providers";
+  const supervised = profile.roleCountrySource === "responsible-member-state";
   if (
     !isRecord(value) ||
     !isString(value.entityName) ||
     !isString(value.entityStreetAddress) ||
-    !isString(value.entityCountry) ||
-    !/^[A-Z]{2}$/.test(value.entityCountry) ||
-    !isString(value.entityInformationURI)
+    !isMemberState(value.entityCountry) ||
+    !isUrlString(value.entityInformationURI)
   )
     return false;
-  try {
-    new URL(value.entityInformationURI);
-  } catch {
-    return false;
-  }
   if (!Array.isArray(value.services) || value.services.length === 0)
     return false;
   for (const service of value.services) {
@@ -109,21 +117,33 @@ function validApplicantData(
       (service.serviceType !== "issuance" &&
         service.serviceType !== "revocation") ||
       !isString(service.serviceName) ||
-      !isString(service.certificatePem) ||
-      !isString(service.serviceUniqueIdentifier)
+      !isString(service.certificatePem)
     )
       return false;
+    if (profile.requiresServiceUniqueIdentifier) {
+      if (!isUrlString(service.serviceUniqueIdentifier)) return false;
+    } else if (service.serviceUniqueIdentifier !== undefined) return false;
     try {
       new X509Certificate(service.certificatePem);
-      new URL(service.serviceUniqueIdentifier);
     } catch {
       return false;
     }
   }
+  if (supervised && !isMemberState(value.responsibleMemberState)) return false;
+  if (!supervised && value.responsibleMemberState !== undefined) return false;
+  if (!relyingParty)
+    return (
+      value.registrationIdentifier === undefined &&
+      value.additionalInformationURI === undefined
+    );
+  if (
+    value.registrationIdentifier !== undefined &&
+    !isString(value.registrationIdentifier)
+  )
+    return false;
   return (
-    family !== "pid-providers" ||
-    (isString(value.responsibleMemberState) &&
-      /^[A-Z]{2}$/.test(value.responsibleMemberState))
+    value.additionalInformationURI === undefined ||
+    isUrlString(value.additionalInformationURI)
   );
 }
 
@@ -169,10 +189,11 @@ function parseApplication(
     !isApplicationState(value.state)
   )
     return null;
-  if (value.family !== "wallet-providers" && value.family !== "pid-providers")
+  if (typeof value.family !== "string" || !isEnabledProfileFamily(value.family))
     return null;
+  const family: EnabledProfileFamily = value.family;
   try {
-    getEnabledProfile(value.family);
+    getEnabledProfile(family);
   } catch {
     return null;
   }
@@ -224,22 +245,17 @@ function parseApplication(
       : {}),
     ...(publication ? { publication } : {}),
   };
-  if (value.family === "pid-providers") {
-    if (!validApplicantData(value.applicantData, "pid-providers")) return null;
-    const application: PIDProviderApplication = {
-      ...common,
-      family: "pid-providers",
-      applicantData: value.applicantData,
-    };
-    return application;
-  }
-  if (!validApplicantData(value.applicantData, "wallet-providers")) return null;
-  const application: WalletProviderApplication = {
+  if (!validApplicantData(value.applicantData, family)) return null;
+  /*
+    Every family shares the record shape; only the applicant data differs, and
+    it has just been validated against this family, so the record can be
+    restated as the family's application type.
+  */
+  return {
     ...common,
-    family: "wallet-providers",
+    family,
     applicantData: value.applicantData,
-  };
-  return application;
+  } as TrustedEntityApplication;
 }
 
 export class AuthoringStore {

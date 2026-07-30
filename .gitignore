@@ -22,6 +22,9 @@ out/
 coverage/
 handoffs/
 
+# Agents files 
+/HITL/
+
 # Generated publications
 /publications/
 

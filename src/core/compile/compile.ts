@@ -101,18 +101,23 @@ function compileEntity(entity: AuthoringEntity): TrustedEntity {
         ),
       },
       ServiceTypeIdentifier: svc.serviceTypeIdentifier,
-      /*
-        clause 6.6.9: ServiceUniqueIdentifier is a recognised extension, and
-        every extension container must state its criticality. It is not
-        critical: a reader that does not understand it can still use the entry.
-      */
-      ServiceInformationExtensions: [
+    };
+
+    /*
+      clause 6.6.9: ServiceUniqueIdentifier is a recognised extension, and every
+      extension container must state its criticality. It is not critical: a
+      reader that does not understand it can still use the entry. Annex F and
+      Annex G do not use the extension, so no empty container is emitted for
+      them.
+    */
+    if (svc.serviceUniqueIdentifier) {
+      si.ServiceInformationExtensions = [
         {
           Critical: false,
           ServiceUniqueIdentifier: svc.serviceUniqueIdentifier,
         },
-      ],
-    };
+      ];
+    }
 
     if (svc.serviceSupplyPoints && svc.serviceSupplyPoints.length > 0) {
       si.ServiceSupplyPoints = svc.serviceSupplyPoints.map((sp) => ({

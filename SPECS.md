@@ -14,8 +14,9 @@ Direct import into Credimi's Go backend is not currently required.
 ## Approved first vertical slice
 
 Historical first vertical slice: implement a TS 119 602 JSON LoTE publisher for
-the Wallet Provider profile. The current Phase 5 implementation supports Wallet
-Provider Annex E and PID Provider Annex D profiles.
+the Wallet Provider profile. The current implementation supports four profiles:
+PID Providers (Annex D), Wallet Providers (Annex E), WRPAC Providers (Annex F)
+and WRPRC Providers (Annex G).
 
 The core must compile, schema-validate, sign and verify deterministic LoTE
 artifacts. Signing keys are supplied through local files or CI secrets and
@@ -89,8 +90,10 @@ src/
   core/
     model/            — TypeScript types for LoTE data model
     profiles/
-      wallet-provider/ — Wallet Provider Annex E profile types and constants
-      pid-provider/    — PID Provider Annex D profile types and constants
+      wallet-provider/ — Wallet Provider Annex E profile constants
+      pid-provider/    — PID Provider Annex D profile constants
+      wrpac-provider/  — WRPAC Provider Annex F profile constants
+      wrprc-provider/  — WRPRC Provider Annex G profile constants
     compile/          — Compile authoring input -> LoTE
     validate/         — Schema validation (authoring + ETSI)
     signing/          — JAdES Compact signing
@@ -286,18 +289,19 @@ existing public catalogue and download functionality is retained.
 ### List-family catalogue
 
 One authoritative catalogue at `src/core/authoring/list-family-catalogue.ts`
-defines the seven intended families:
+derives from `src/core/profiles/registry.ts` and defines the six TS 119 602
+families, in annex order:
 
-- PID Providers (enabled in Phase 5)
-- Non-qualified EAA Providers
-- QEAA Providers
-- Wallet Providers (enabled in Phase 3)
-- WRPAC / Access CA Providers
-- WRPRC Providers
-- Registrars
+- PID Providers — enabled (Annex D)
+- Wallet Providers — enabled (Annex E)
+- WRPAC Providers — enabled (Annex F)
+- WRPRC Providers — enabled (Annex G)
+- Pub-EAA Providers — disabled
+- Registrars and Registers — disabled
 
-Wallet Providers and PID Providers are enabled. The remaining five families are
-displayed with "Not implemented yet".
+The two disabled families are displayed with "Not implemented yet". The
+Non-qualified EAA and QEAA entries were removed: TS 119 602 does not profile
+them as separate lists of trusted entities.
 
 ### Application model
 
@@ -351,6 +355,10 @@ Onboarding (public):
 - `POST /onboarding/wallet-provider` — submit application
 - `GET /onboarding/pid-provider` — PID Provider application form
 - `POST /onboarding/pid-provider` — submit application
+- `GET /onboarding/wrpac-provider` — WRPAC Provider application form
+- `POST /onboarding/wrpac-provider` — submit application
+- `GET /onboarding/wrprc-provider` — WRPRC Provider application form
+- `POST /onboarding/wrprc-provider` — submit application
 - `GET /onboarding/submitted/{id}` — submission confirmation
 
 Administration (requires admin token via `?token=` query parameter):
@@ -621,3 +629,31 @@ publication path, bypassing the manual Approve and Publish actions. A failed
 automatic publication is reported on the confirmation page and leaves the
 application in the manual queue; it never falls back to a plausible-looking
 success.
+
+## Phase 8: WRPAC and WRPRC Providers
+
+`src/core/profiles/registry.ts` holds all six families and grew two members that
+the rest of the code reads instead of switching on family names:
+
+- `requiresServiceUniqueIdentifier` — true for Annex D/E, false for Annex F/G.
+  `AuthoringService.serviceUniqueIdentifier` is optional, and
+  `compileForProfile()` emits no `ServiceInformationExtensions` container when it
+  is absent.
+- `roleCountrySource` — `entity` for Annex E, `responsible-member-state` for
+  Annex D, F and G.
+
+`parseAndValidateSubmission()` and `createApplicationRecord()` are generic in the
+family: the family decides which fields are allowed, and anything else in the
+posted body is reported as an unknown field. The authoring store validates a
+stored record against the family it claims, so a record with an identifier the
+profile does not use, or without a Responsible Member State the profile
+requires, is rejected rather than half-read.
+
+`ONBOARDING_FORMS` in `src/web/server.ts` declares one route, family, title and
+view per implemented family, and both the GET and POST handlers read it, so
+adding a family does not mean adding two more branches.
+
+Reconciliation after a partial commit identifies a published entity by its
+complete service-identifier set. Annex F/G services have none, so the operation
+is refused with a message saying why rather than matching the first entity that
+also has none.

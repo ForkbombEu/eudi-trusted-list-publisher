@@ -3,7 +3,8 @@
 ## Project scope
 
 This project implements a **TS 119 602 JSON List of Trusted Entities (LoTE) publisher**
-for the Wallet Provider profile (Annex E) and PID Provider profile (Annex D).
+for four profiles: PID Providers (Annex D), Wallet Providers (Annex E), WRPAC
+Providers (Annex F) and WRPRC Providers (Annex G).
 
 ### Normative definitions
 
@@ -20,13 +21,16 @@ for the Wallet Provider profile (Annex E) and PID Provider profile (Annex D).
 - URL: https://www.etsi.org/deliver/etsi_ts/119600_119699/119602/01.01.01_60/ts_119602v010101p.pdf
 - Date retrieved: 2026-07-28
 - Defines the abstract data model for LoTE with JSON and XML bindings
-- Profile-based approach for different entity types (PID, Wallet, WRPAC, WRPRC, Pub-EAA, Registrars)
+- Profile-based approach for six entity families: PID Providers (Annex D),
+  Wallet Providers (Annex E), WRPAC Providers (Annex F), WRPRC Providers
+  (Annex G), Pub-EAA Providers and Registrars and Registers. The last two are
+  catalogued and disabled.
 - References ETSI TS 119 182-1 (JAdES) for JSON signatures
 
 ### ETSI TS 119 182-1 (JAdES)
 
 - Defines Compact JAdES Baseline B profile for JSON Advanced Electronic Signatures
-- Wallet Provider and PID Provider profiles require Compact JAdES Baseline B
+- All four implemented profiles require Compact JAdES Baseline B
 - JAdES Compact Serialization: BASE64URL(UTF8(JWS Protected Header)).BASE64URL(JWS Payload).BASE64URL(JWS Signature)
 - Required header parameters: `alg`, `x5c` (certificate chain), `typ` (optional, value "JAdES")
 
@@ -89,6 +93,81 @@ B. This implementation uses the existing explicit authoring fields for the
 Annex D service semantics and requires a responsible Member State on PID
 applications; that latter form field is a project-local authoring choice.
 
+## WRPAC Provider Profile (Annex F)
+
+Wallet-Relying-Party Access Certificate Providers. Constants in
+`src/core/profiles/wrpac-provider/constants.ts`:
+
+- LoTE Type: `http://uri.etsi.org/19602/LoTEType/EUWRPACProvidersList`
+- Status Determination Approach: `http://uri.etsi.org/19602/WRPACProvidersList/StatusDetn/EU`
+- Scheme Type/Community/Rules: `http://uri.etsi.org/19602/WRPACProvidersList/schemerules/EU`
+- Entity role URI prefix: `http://uri.etsi.org/19602/ListOfTrustedEntities/WRPACProvider`
+- Service Types:
+  - `http://uri.etsi.org/19602/SvcType/WRPAC/Issuance`
+  - `http://uri.etsi.org/19602/SvcType/WRPAC/Revocation`
+
+## WRPRC Provider Profile (Annex G)
+
+Wallet-Relying-Party Registration Certificate Providers. Constants in
+`src/core/profiles/wrprc-provider/constants.ts`:
+
+- LoTE Type: `http://uri.etsi.org/19602/LoTEType/EUWRPRCProvidersList`
+- Status Determination Approach: `http://uri.etsi.org/19602/WRPRCrovidersList/StatusDetn/EU`
+- Scheme Type/Community/Rules: `http://uri.etsi.org/19602/WRPRCProvidersList/schemerules/EU`
+- Entity role URI prefix: `http://uri.etsi.org/19602/ListOfTrustedEntities/WRPRCProvider`
+- Service Types:
+  - `http://uri.etsi.org/19602/SvcType/WRPRC/Issuance`
+  - `http://uri.etsi.org/19602/SvcType/WRPRC/Revocation`
+
+### The `WRPRCrovidersList` literal
+
+Annex G prints the status-determination URI as `WRPRCrovidersList`, without the
+`P` of `Providers`, while the scheme-rules URI on the same page reads
+`WRPRCProvidersList`. The publisher reproduces both exactly as printed. A status
+determination approach is matched literally by a reader, so silently
+"correcting" the token would produce a URI that nothing recognises. A test
+asserts the literal, and the live Trust Inspector classifies the resulting
+artifact as `wrprc_providers`, which is the empirical confirmation that the
+printed form is the expected one.
+
+### Annex F/G profile constraints
+
+Both profiles, as implemented:
+
+- JSON LoTE, `LoTEVersionIdentifier: 1`, `SchemeTerritory: EU`
+- `HistoricalInformationPeriod` **shall not** be present
+- `ServiceStatus` and `StatusStartingTime` **shall not** be used
+- The **ServiceUniqueIdentifier extension is not used**, unlike Annex D/E, so no
+  `ServiceInformationExtensions` container is emitted at all — an empty
+  container would breach clause 6.6.9, which requires every container to state
+  its criticality
+- Self pointer in `PointersToOtherLoTE`, `MimeType: application/jose`
+- `NextUpdate` at most six months after the issue time
+- Signature: Compact JAdES Baseline B
+- Entity role URI `<prefix>/<CC>`, where `<CC>` is the **Responsible Member
+  State** that mandates the provider — not the provider's own country
+
+### What listing means, and what it does not
+
+Neither profile publishes a service status, so the list carries no way to say
+"this provider was withdrawn". Presence of an entity in the current version is
+itself the statement that the provider is currently mandated by the Responsible
+Member State; a provider that loses its mandate is removed from the next version.
+The onboarding form and the administration review page both state this in words,
+because the artifact cannot.
+
+### Collected but not published: the registration identifier
+
+The Annex F/G onboarding forms collect the official registration identifier
+"where available". It is stored with the application and shown on the
+administration review page, and it is **not** published in the LoTE. The
+authoring model has no field for it: `TrustedEntityInformation` offers `TEName`,
+`TETradeName`, `TEAddress`, `TEInformationURI` and `TEInformationExtensions`, and
+placing a registration identifier in any of them would be an inference this
+project cannot check — the ETSI PDF is unreachable (etsi.org returns HTTP 403)
+and the live Inspector reports no check about it. If a future Inspector check
+asks for one, the field is already collected.
+
 ## Service digital identity (clause 6.6.3)
 
 Confirmed against `schemas/etsi/1960201_json_schema.json` (the vendored ETSI
@@ -99,8 +178,8 @@ schema listed above), the two profile constant modules and a published artefact.
 `OtherIds` — each with `minItems: 1`. This publisher populates
 `X509Certificates` only, from the single `certificatePem` field per service.
 
-- **Annex E (Wallet Provider)** and **Annex D (PID Provider), Table D.3** require
-  an X.509 service digital identity. Neither requires the certificate to be
+- **Annex E (Wallet Provider)**, **Annex D (PID Provider), Table D.3**, and the
+  Annex F/G profiles all require an X.509 service digital identity. Neither requires the certificate to be
   issued by a CA, and neither requires a verifiable certification path. The
   publisher never builds or verifies one, so a **self-signed** certificate is
   conformant input and is supported as the simplest testing option; a CA-issued
@@ -126,7 +205,8 @@ way so the upgrade is not mistaken for data loss.
 Established empirically against the Trust Inspector
 (`https://trust-inspector.credimi.io`, `POST /api/audit/artifact`) and recorded
 here because several are lexical or structural rules that the pinned JSON schema
-does not enforce.
+does not enforce. Except where a row says otherwise, each rule applies to all
+four implemented profiles.
 
 | Rule | Where it is applied |
 |------|--------------------|
@@ -137,7 +217,8 @@ does not enforce.
 | clause 6.3.11 `PolicyOrLegalNotice` mandatory for explicit scheme information | `SigningConfigEntry.policyUri` |
 | Annex D/E self pointer in `PointersToOtherLoTE`, carrying the signing certificate and `MimeType: application/jose` | `compileForProfile()` |
 | clause 6.5.3 entity reachable by `mailto:`, HTTP(S) and `tel:` | `buildAuthoringEntity()` from the `entityEmail`/`entityTelephone` form fields |
-| Annex D/E entity country-role URI `http://uri.etsi.org/19602/ListOfTrustedEntities/{WalletProvider,PIDProvider}/<CC>` | `buildAuthoringEntity()`; PID uses the responsible Member State |
+| Entity country-role URI `http://uri.etsi.org/19602/ListOfTrustedEntities/{PIDProvider,WalletProvider,WRPACProvider,WRPRCProvider}/<CC>` | `buildAuthoringEntity()`; every profile except Annex E uses the responsible Member State |
+| Annex F/G omit the ServiceUniqueIdentifier extension entirely | `requiresServiceUniqueIdentifier` in `src/core/profiles/registry.ts`, applied in `buildAuthoringEntity()` and `compileForProfile()` |
 | clause 6.6.3 `X509Certificates[].val` strict Base64 DER | `buildAuthoringEntity()` |
 | clause 6.6.9 extension containers state criticality (`Critical`) | `compileForProfile()` |
 | Annex D/E service certificate subject `O` = Trusted Entity Name | `checkCertificateSubjectOrganisation()` in the submission parser |
@@ -154,6 +235,11 @@ document, so they are properties of the operator's signing material:
 Both are stated on the Create Trusted List form.
 
 ### What stays unchecked
+
+For Annex F/G, `ts119602.service.extensions` reports `not_applicable` rather
+than `pass`, because those profiles emit no extension container. A clean Annex
+F/G list therefore reaches 69 passed / 0 failed where a clean Annex D/E list
+reaches 70 passed / 0 failed.
 
 `ts119602.scheme.pointers.authentication`,
 `ts119602.scheme.distribution_consistency`,

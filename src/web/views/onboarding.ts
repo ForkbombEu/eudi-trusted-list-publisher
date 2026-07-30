@@ -13,6 +13,8 @@ import {
 const ONBOARDING_ROUTES: Partial<Record<ProfileFamily, string>> = {
   "wallet-providers": "/onboarding/wallet-provider",
   "pid-providers": "/onboarding/pid-provider",
+  "wrpac-providers": "/onboarding/wrpac-provider",
+  "wrprc-providers": "/onboarding/wrprc-provider",
 };
 
 export function onboardingCatalogueHtml(): string {
@@ -78,8 +80,41 @@ interface FormProfile {
   issuanceLabel: string;
   revocationLabel: string;
   extraEntityFields: string;
+  /**
+   * The entity's public HTTP(S) URI. Annex D/E collect an information page;
+   * Annex F/G collect the provider's policies and terms URL.
+   */
+  informationField: { name: string; label: string; help: string };
+  /** Rendered directly after the information field. */
+  extraUriFields: string;
+  /** Annex D/E only; Annex F/G services carry no unique identifier. */
+  requiresServiceUniqueIdentifier: boolean;
   /** What this profile's service certificate is used for. */
   certificatePurpose: string;
+  /** Shown above the actions when the profile publishes no service status. */
+  mandateNote: string;
+}
+
+/** The Responsible Member State field, shared by Annex D, F and G. */
+function memberStateField(
+  v: Record<string, string>,
+  errors: Record<string, string> | undefined,
+  help: string,
+  placeholder: string,
+): string {
+  return `
+    <div class="form-group">
+      <label for="responsibleMemberState">Responsible Member State <span class="required">*</span></label>
+      <input type="text" id="responsibleMemberState" name="responsibleMemberState" required
+        maxlength="2" pattern="[A-Z]{2}" placeholder="e.g. ${escape(placeholder)}"
+        value="${escape(v.responsibleMemberState ?? "")}">
+      <span class="field-help">${escape(help)}</span>
+      ${
+        errors?.responsibleMemberState
+          ? `<span class="field-error">${escape(errors.responsibleMemberState)}</span>`
+          : ""
+      }
+    </div>`;
 }
 
 const WALLET_PROFILE: FormProfile = {
@@ -94,9 +129,17 @@ const WALLET_PROFILE: FormProfile = {
   issuanceLabel: "Wallet Solution Issuance",
   revocationLabel: "Wallet Solution Revocation",
   extraEntityFields: "",
+  informationField: {
+    name: "entityInformationURI",
+    label: "Information URI",
+    help: "Public URI with information about the entity.",
+  },
+  extraUriFields: "",
+  requiresServiceUniqueIdentifier: true,
   certificatePurpose:
     "The certificate used to authenticate and validate components of the " +
     "wallet unit supplied under the wallet solution.",
+  mandateNote: "",
 };
 
 const PID_PROFILE = (
@@ -114,23 +157,96 @@ const PID_PROFILE = (
   serviceTypeHelp: "Select the PID service type.",
   issuanceLabel: "PID Issuance",
   revocationLabel: "PID Revocation",
+  informationField: {
+    name: "entityInformationURI",
+    label: "Information URI",
+    help: "Public URI with information about the entity.",
+  },
+  extraUriFields: "",
+  requiresServiceUniqueIdentifier: true,
   certificatePurpose:
     "The certificate used to verify signatures or seals created by the PID " +
     "Provider on issued PID.",
-  extraEntityFields: `
-    <div class="form-group">
-      <label for="responsibleMemberState">Responsible Member State <span class="required">*</span></label>
-      <input type="text" id="responsibleMemberState" name="responsibleMemberState" required
-        maxlength="2" pattern="[A-Z]{2}" placeholder="e.g. DK"
-        value="${escape(v.responsibleMemberState ?? "")}">
-      <span class="field-help">ISO 3166-1 alpha-2 code of the Member State responsible for this PID provider.</span>
-      ${
-        errors?.responsibleMemberState
-          ? `<span class="field-error">${escape(errors.responsibleMemberState)}</span>`
-          : ""
-      }
-    </div>`,
+  mandateNote: "",
+  extraEntityFields: memberStateField(
+    v,
+    errors,
+    "ISO 3166-1 alpha-2 code of the Member State responsible for this PID provider.",
+    "DK",
+  ),
 });
+
+/**
+ * Annex F (WRPAC) and Annex G (WRPRC) share their whole form: only the wording,
+ * the route and the certificate purpose differ. Both collect the mandating
+ * Member State, an optional official registration identifier, the policies and
+ * terms URL and an optional further information page, and neither collects a
+ * service unique identifier.
+ */
+function relyingPartyProfile(
+  options: {
+    title: string;
+    action: string;
+    certificateKind: string;
+    serviceKindLabel: string;
+    entityHelp: string;
+    listLabel: string;
+  },
+  v: Record<string, string>,
+  errors?: Record<string, string>,
+): FormProfile {
+  const fieldError = (name: string): string =>
+    errors?.[name]
+      ? `<span class="field-error">${escape(errors[name] ?? "")}</span>`
+      : "";
+  return {
+    title: options.title,
+    action: options.action,
+    entityHelp: options.entityHelp,
+    listHelp: `Choose the ${options.listLabel} list of the Member State that mandates this provider.`,
+    noListsMessage: `No ${options.listLabel} lists are configured. Add entries to your signing-config.`,
+    serviceTypeHelp: `Select the ${options.serviceKindLabel} service type. Register issuance, revocation, or both.`,
+    issuanceLabel: `${options.serviceKindLabel} Issuance`,
+    revocationLabel: `${options.serviceKindLabel} Revocation`,
+    requiresServiceUniqueIdentifier: false,
+    certificatePurpose: `The certificate used to verify signatures or seals created by the ${options.serviceKindLabel} Provider on issued ${options.certificateKind}.`,
+    informationField: {
+      name: "entityPolicyURI",
+      label: "Policies and Terms URL",
+      help:
+        "Public URL of the policies and terms under which the provider issues " +
+        "certificates. Published as the entity's information URI.",
+    },
+    extraUriFields: `
+    <div class="form-group">
+      <label for="additionalInformationURI">Additional Information URL</label>
+      <input type="url" id="additionalInformationURI" name="additionalInformationURI"
+        value="${escape(v.additionalInformationURI ?? "")}" maxlength="500">
+      <span class="field-help">Optional. Published beside the policies URL when supplied.</span>
+      ${fieldError("additionalInformationURI")}
+    </div>`,
+    mandateNote:
+      "Being listed states that this provider is currently mandated by the " +
+      "Responsible Member State. These profiles publish no service status and " +
+      "no status starting time: a provider that loses its mandate is removed " +
+      "from the next version of the list rather than marked withdrawn.",
+    extraEntityFields: `${memberStateField(
+      v,
+      errors,
+      "ISO 3166-1 alpha-2 code of the Member State that mandates this provider. It is published in the entity role URI.",
+      "PL",
+    )}
+    <div class="form-group">
+      <label for="registrationIdentifier">Official Registration Identifier</label>
+      <input type="text" id="registrationIdentifier" name="registrationIdentifier"
+        value="${escape(v.registrationIdentifier ?? "")}" maxlength="120">
+      <span class="field-help">Where available: the identifier under which the
+        entity is registered in an official register. Recorded with the
+        application for review.</span>
+      ${fieldError("registrationIdentifier")}
+    </div>`,
+  };
+}
 
 export function walletProviderFormHtml(
   values?: Record<string, string>,
@@ -147,6 +263,58 @@ export function pidProviderFormHtml(
 ): string {
   return providerFormHtml(
     PID_PROFILE(values ?? {}, errors),
+    values,
+    errors,
+    listOptions,
+  );
+}
+
+export function wrpacProviderFormHtml(
+  values?: Record<string, string>,
+  errors?: Record<string, string>,
+  listOptions?: ListOption[],
+): string {
+  return providerFormHtml(
+    relyingPartyProfile(
+      {
+        title: "WRPAC Provider Application",
+        action: "/onboarding/wrpac-provider",
+        certificateKind: "wallet-relying-party access certificates",
+        serviceKindLabel: "WRPAC",
+        entityHelp:
+          "The legal entity applying to be listed as a provider of " +
+          "Wallet-Relying-Party Access Certificates (WRPAC).",
+        listLabel: "WRPAC Providers",
+      },
+      values ?? {},
+      errors,
+    ),
+    values,
+    errors,
+    listOptions,
+  );
+}
+
+export function wrprcProviderFormHtml(
+  values?: Record<string, string>,
+  errors?: Record<string, string>,
+  listOptions?: ListOption[],
+): string {
+  return providerFormHtml(
+    relyingPartyProfile(
+      {
+        title: "WRPRC Provider Application",
+        action: "/onboarding/wrprc-provider",
+        certificateKind: "wallet-relying-party registration certificates",
+        serviceKindLabel: "WRPRC",
+        entityHelp:
+          "The legal entity applying to be listed as a provider of " +
+          "Wallet-Relying-Party Registration Certificates (WRPRC).",
+        listLabel: "WRPRC Providers",
+      },
+      values ?? {},
+      errors,
+    ),
     values,
     errors,
     listOptions,
@@ -254,12 +422,13 @@ ${profile.extraEntityFields}
     </fieldset>
 
     <div class="form-group">
-      <label for="entityInformationURI">Information URI <span class="required">*</span></label>
-      <input type="url" id="entityInformationURI" name="entityInformationURI" required
-        value="${escape(v.entityInformationURI ?? "")}" maxlength="500">
-      <span class="field-help">Public URI with information about the entity.</span>
-      ${fieldError("entityInformationURI")}
+      <label for="${escape(profile.informationField.name)}">${escape(profile.informationField.label)} <span class="required">*</span></label>
+      <input type="url" id="${escape(profile.informationField.name)}" name="${escape(profile.informationField.name)}" required
+        value="${escape(v[profile.informationField.name] ?? "")}" maxlength="500">
+      <span class="field-help">${escape(profile.informationField.help)}</span>
+      ${fieldError(profile.informationField.name)}
     </div>
+${profile.extraUriFields}
 
     <div class="form-group">
       <label for="entityEmail">Email Address <span class="required">*</span></label>
@@ -301,6 +470,15 @@ ${profile.extraEntityFields}
       <li><code>{SERVICE_PROVIDER_AGREEMENT}.md</code></li>
     </ul>
   </div>
+
+  ${
+    profile.mandateNote
+      ? `<div class="card">
+    <h2>Mandate</h2>
+    <p class="field-help">${escape(profile.mandateNote)}</p>
+  </div>`
+      : ""
+  }
 
   <div class="form-actions">
     <button type="submit" class="btn btn-primary btn-md">Submit Application</button>
@@ -437,13 +615,17 @@ function serviceBlockHtml(
       Never upload the private key.</span>
     ${e("certificatePem")}
   </div>
-  <div class="form-group">
+  ${
+    profile.requiresServiceUniqueIdentifier
+      ? `<div class="form-group">
     <label>Service Unique Identifier (URI) <span class="required">*</span></label>
     <input type="url" name="${escape(f("serviceUniqueIdentifier"))}" required
       value="${escape(v[f("serviceUniqueIdentifier")] ?? "")}" maxlength="500">
     <span class="field-help">Unique URI identifying this service instance.</span>
     ${e("serviceUniqueIdentifier")}
-  </div>
+  </div>`
+      : ""
+  }
 </div>
 `;
 }

@@ -112,36 +112,40 @@ async function importSigningKey(): Promise<globalThis.CryptoKey> {
 }
 
 describe("List Family Catalogue", () => {
-  it("contains exactly seven intended families", () => {
-    expect(LIST_FAMILIES).toHaveLength(7);
+  it("contains exactly the six TS 119 602 families", () => {
+    expect(LIST_FAMILIES).toHaveLength(6);
   });
 
   it("has the correct family labels", () => {
     const labels = LIST_FAMILIES.map((f) => f.label);
-    expect(labels).toContain("PID Providers");
-    expect(labels).toContain("Non-qualified EAA Providers");
-    expect(labels).toContain("QEAA Providers");
-    expect(labels).toContain("Wallet Providers");
-    expect(labels).toContain("WRPAC / Access CA Providers");
-    expect(labels).toContain("WRPRC Providers");
-    expect(labels).toContain("Registrars");
-  });
-
-  it("enables exactly Wallet and PID Providers", () => {
-    const enabled = getEnabledFamilies();
-    expect(enabled.map((family) => [family.key, family.label])).toEqual([
-      ["wallet-providers", "Wallet Providers"],
-      ["pid-providers", "PID Providers"],
+    expect(labels).toEqual([
+      "PID Providers",
+      "Wallet Providers",
+      "WRPAC Providers",
+      "WRPRC Providers",
+      "Pub-EAA Providers",
+      "Registrars and Registers",
     ]);
   });
 
-  it("keeps the other five families disabled with 'Not implemented yet'", () => {
-    for (const f of LIST_FAMILIES) {
-      if (f.key !== "wallet-providers" && f.key !== "pid-providers") {
-        expect(f.enabled).toBe(false);
-        expect(f.notImplementedNote).toBe("Not implemented yet");
-      }
-    }
+  it("enables PID, Wallet, WRPAC and WRPRC Providers", () => {
+    const enabled = getEnabledFamilies();
+    expect(enabled.map((family) => [family.key, family.label])).toEqual([
+      ["pid-providers", "PID Providers"],
+      ["wallet-providers", "Wallet Providers"],
+      ["wrpac-providers", "WRPAC Providers"],
+      ["wrprc-providers", "WRPRC Providers"],
+    ]);
+  });
+
+  it("keeps Pub-EAA and Registrars disabled with 'Not implemented yet'", () => {
+    const disabled = LIST_FAMILIES.filter((family) => !family.enabled);
+    expect(disabled.map((family) => family.key)).toEqual([
+      "pub-eaa-providers",
+      "registrars",
+    ]);
+    for (const family of disabled)
+      expect(family.notImplementedNote).toBe("Not implemented yet");
   });
 
   it("findFamily resolves both enabled families", () => {

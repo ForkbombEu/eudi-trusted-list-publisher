@@ -14,7 +14,6 @@ import {
   emptySettings,
   loadSigningConfig,
   findSigningConfig,
-  getWalletProviderConfigs,
   getFamilyConfigs,
   signingConfigDisplay,
   ApplicationService,
@@ -22,9 +21,12 @@ import {
   type CreateListResult,
   type PublisherSettings,
   type SigningConfig,
-  type PIDProviderApplicantData,
-  type WalletProviderApplicantData,
 } from "../core/authoring/index.js";
+import {
+  isEnabledProfileFamily,
+  PROFILE_REGISTRY,
+  type EnabledProfileFamily,
+} from "../core/profiles/registry.js";
 import {
   certificateGuideHtml,
   CERTIFICATE_GUIDE_PATH,
@@ -51,6 +53,66 @@ const MIME: Record<string, string> = {
 
 const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ADMIN_COOKIE = "tlp_admin_token";
+
+type OnboardingViews = typeof import("./views/onboarding.js");
+type OnboardingFormRenderer = (
+  values?: Record<string, string>,
+  errors?: Record<string, string>,
+  listOptions?: { key: string; label: string }[],
+) => string;
+
+/**
+ * One onboarding form per implemented family. The routes are singular and the
+ * registry keys plural, and each family renders its own view, so the mapping is
+ * declared once here instead of being repeated in the GET and POST handlers.
+ */
+const ONBOARDING_FORMS: ReadonlyArray<{
+  readonly path: string;
+  readonly family: EnabledProfileFamily;
+  readonly title: string;
+  readonly render: (views: OnboardingViews) => OnboardingFormRenderer;
+}> = Object.freeze([
+  {
+    path: "/onboarding/pid-provider",
+    family: "pid-providers",
+    title: "PID Provider Application",
+    render: (views) => views.pidProviderFormHtml,
+  },
+  {
+    path: "/onboarding/wallet-provider",
+    family: "wallet-providers",
+    title: "Wallet Provider Application",
+    render: (views) => views.walletProviderFormHtml,
+  },
+  {
+    path: "/onboarding/wrpac-provider",
+    family: "wrpac-providers",
+    title: "WRPAC Provider Application",
+    render: (views) => views.wrpacProviderFormHtml,
+  },
+  {
+    path: "/onboarding/wrprc-provider",
+    family: "wrprc-providers",
+    title: "WRPRC Provider Application",
+    render: (views) => views.wrprcProviderFormHtml,
+  },
+]);
+
+function onboardingFormFor(
+  path: string,
+): (typeof ONBOARDING_FORMS)[number] | undefined {
+  return ONBOARDING_FORMS.find((form) => form.path === path);
+}
+
+function onboardingFormForFamily(
+  family: EnabledProfileFamily,
+): (typeof ONBOARDING_FORMS)[number] {
+  const form = ONBOARDING_FORMS.find(
+    (candidate) => candidate.family === family,
+  );
+  if (!form) throw new Error(`No onboarding form for family '${family}'.`);
+  return form;
+}
 
 function escapeHtml(s: string): string {
   return s
@@ -462,8 +524,13 @@ export function createWebServer(config: ServerConfig) {
   let settingsStore: SettingsStore | null = null;
   let signingConfig: SigningConfig | null = null;
   let appService: ApplicationService | null = null;
-  let walletProviderLists: string[] = [];
-  let pidProviderLists: string[] = [];
+  /** Configured list keys per implemented family, rebuilt on every reload. */
+  let familyListKeys: Record<EnabledProfileFamily, string[]> = {
+    "pid-providers": [],
+    "wallet-providers": [],
+    "wrpac-providers": [],
+    "wrprc-providers": [],
+  };
 
   if (guiEnabled && config.authoringDir) {
     authoringStore = new AuthoringStore({ authoringDir: config.authoringDir });
@@ -481,12 +548,20 @@ export function createWebServer(config: ServerConfig) {
   function reloadSigningConfig(): void {
     if (!signingConfigPath) return;
     signingConfig = loadSigningConfig(signingConfigPath);
-    walletProviderLists = getWalletProviderConfigs(signingConfig).map(
-      (entry) => entry.listKey,
-    );
-    pidProviderLists = getFamilyConfigs(signingConfig, "pid-providers").map(
-      (entry) => entry.listKey,
-    );
+    const loaded = signingConfig;
+    familyListKeys = {
+      "pid-providers": [],
+      "wallet-providers": [],
+      "wrpac-providers": [],
+      "wrprc-providers": [],
+    };
+    for (const family of Object.keys(
+      familyListKeys,
+    ) as EnabledProfileFamily[]) {
+      familyListKeys[family] = getFamilyConfigs(loaded, family).map(
+        (entry) => entry.listKey,
+      );
+    }
     if (authoringStore)
       appService = new ApplicationService(
         authoringStore,
@@ -516,6 +591,17 @@ export function createWebServer(config: ServerConfig) {
 
   function guiPage(title: string, body: string): string {
     return page(title, body);
+  }
+
+  /** Target-list options offered on one family's onboarding form. */
+  function listOptionsFor(
+    family: EnabledProfileFamily,
+  ): { key: string; label: string }[] {
+    if (!signingConfig) return [];
+    return getFamilyConfigs(signingConfig, family).map((entry) => ({
+      key: entry.listKey,
+      label: `${entry.schemeOperatorName} (${entry.listKey})`,
+    }));
   }
 
   /** Configured Trusted Lists grouped by the family they belong to. */
@@ -1342,10 +1428,13 @@ ${versionDownloadsHtml(listKey, sequence)}
       .map((defect) => defect.trim())
       .filter(Boolean);
     const family = single("family");
-    if (family !== "wallet-providers" && family !== "pid-providers")
+    if (!isEnabledProfileFamily(family))
       return {
         success: false,
-        error: "family must be wallet-providers or pid-providers.",
+        error: `family must be one of: ${Object.values(PROFILE_REGISTRY)
+          .filter((profile) => profile.enabled)
+          .map((profile) => profile.family)
+          .join(", ")}.`,
       };
     const result = await createTrustedList(
       {
@@ -1798,54 +1887,19 @@ ${versionDownloadsHtml(listKey, sequence)}
       return;
     }
 
-    if (path === "/onboarding/wallet-provider") {
+    const onboardingForm = onboardingFormFor(path);
+    if (onboardingForm) {
       import("../web/views/onboarding.js")
         .then((mod) => {
           sendHtml(
             res,
             200,
             guiPage(
-              "Wallet Provider Application",
-              mod.walletProviderFormHtml(
+              onboardingForm.title,
+              onboardingForm.render(mod)(
                 {},
                 {},
-                signingConfig
-                  ? getWalletProviderConfigs(signingConfig).map((e) => ({
-                      key: e.listKey,
-                      label: `${e.schemeOperatorName} (${e.listKey})`,
-                    }))
-                  : [],
-              ),
-            ),
-          );
-          logRequest("GET", path, 200, requestId);
-        })
-        .catch(() => {
-          send500(res, requestId);
-          logRequest("GET", path, 500, requestId);
-        });
-      return;
-    }
-
-    if (path === "/onboarding/pid-provider") {
-      import("../web/views/onboarding.js")
-        .then((mod) => {
-          sendHtml(
-            res,
-            200,
-            guiPage(
-              "PID Provider Application",
-              mod.pidProviderFormHtml(
-                {},
-                {},
-                signingConfig
-                  ? getFamilyConfigs(signingConfig, "pid-providers").map(
-                      (entry) => ({
-                        key: entry.listKey,
-                        label: `${entry.schemeOperatorName} (${entry.listKey})`,
-                      }),
-                    )
-                  : [],
+                listOptionsFor(onboardingForm.family),
               ),
             ),
           );
@@ -1961,12 +2015,14 @@ ${outcome}
         return;
       }
 
-      if (path === "/onboarding/wallet-provider") {
-        await handleSubmitApplication(res, body, requestId, "wallet-providers");
-        return;
-      }
-      if (path === "/onboarding/pid-provider") {
-        await handleSubmitApplication(res, body, requestId, "pid-providers");
+      const submissionForm = onboardingFormFor(path);
+      if (submissionForm) {
+        await handleSubmitApplication(
+          res,
+          body,
+          requestId,
+          submissionForm.family,
+        );
         return;
       }
 
@@ -2057,24 +2113,19 @@ ${outcome}
     res: ServerResponse,
     body: string,
     requestId: string,
-    family: "wallet-providers" | "pid-providers",
+    family: EnabledProfileFamily,
   ): Promise<void> {
+    const form = onboardingFormForFamily(family);
     if (!appService) {
       send500(res, requestId);
-      logRequest(
-        "POST",
-        `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`,
-        500,
-        requestId,
-      );
+      logRequest("POST", form.path, 500, requestId);
       return;
     }
 
     const fields = parseFormBody(body);
 
     let targetListKey = fields["targetListKey"] ?? "";
-    const configuredLists =
-      family === "pid-providers" ? pidProviderLists : walletProviderLists;
+    const configuredLists = familyListKeys[family];
     if (!targetListKey && configuredLists.length === 1) {
       targetListKey = configuredLists[0]!;
     }
@@ -2094,63 +2145,24 @@ ${outcome}
             res,
             400,
             guiPage(
-              family === "pid-providers"
-                ? "PID Provider Application"
-                : "Wallet Provider Application",
-              (family === "pid-providers"
-                ? mod.pidProviderFormHtml
-                : mod.walletProviderFormHtml)(
-                formValues,
-                errMap,
-                signingConfig
-                  ? getFamilyConfigs(signingConfig, family).map((e) => ({
-                      key: e.listKey,
-                      label: `${e.schemeOperatorName} (${e.listKey})`,
-                    }))
-                  : [],
-              ),
+              form.title,
+              form.render(mod)(formValues, errMap, listOptionsFor(family)),
             ),
           );
-          logRequest(
-            "POST",
-            `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`,
-            400,
-            requestId,
-          );
+          logRequest("POST", form.path, 400, requestId);
         })
         .catch(() => {
           send500(res, requestId);
-          logRequest(
-            "POST",
-            `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`,
-            500,
-            requestId,
-          );
+          logRequest("POST", form.path, 500, requestId);
         });
       return;
     }
 
-    const applicantData = result.applicantData;
-    const app =
-      family === "pid-providers"
-        ? isPidApplicantData(applicantData)
-          ? appService.createApp(targetListKey, applicantData, "pid-providers")
-          : (() => {
-              throw new Error(
-                "PID Provider submission did not produce PID applicant data.",
-              );
-            })()
-        : isWalletApplicantData(applicantData)
-          ? appService.createApp(
-              targetListKey,
-              applicantData,
-              "wallet-providers",
-            )
-          : (() => {
-              throw new Error(
-                "Wallet Provider submission did not produce Wallet applicant data.",
-              );
-            })();
+    const app = appService.createApp(
+      targetListKey,
+      result.applicantData,
+      family,
+    );
 
     const auto = await appService.autoApproveIfEnabled(app);
     const query = auto.applied
@@ -2161,24 +2173,7 @@ ${outcome}
 
     res.writeHead(303, { Location: `/onboarding/submitted/${app.id}${query}` });
     res.end();
-    logRequest(
-      "POST",
-      `/onboarding/${family === "pid-providers" ? "pid-provider" : "wallet-provider"}`,
-      303,
-      requestId,
-    );
-  }
-
-  function isPidApplicantData(
-    applicantData: WalletProviderApplicantData | PIDProviderApplicantData,
-  ): applicantData is PIDProviderApplicantData {
-    return "responsibleMemberState" in applicantData;
-  }
-
-  function isWalletApplicantData(
-    applicantData: WalletProviderApplicantData | PIDProviderApplicantData,
-  ): applicantData is WalletProviderApplicantData {
-    return !("responsibleMemberState" in applicantData);
+    logRequest("POST", form.path, 303, requestId);
   }
 
   function redirectWithParams(

@@ -1,7 +1,11 @@
 openapi: "3.1.0"
 info:
   title: Credimi EUDI Trusted Lists API
-  description: Read-only API for published TS 119 602 JSON Wallet Provider LoTEs.
+  description: >-
+    API for published TS 119 602 JSON Lists of Trusted Entities: PID Providers
+    (Annex D), Wallet Providers (Annex E), WRPAC Providers (Annex F) and WRPRC
+    Providers (Annex G). Reading is public; Trusted List creation requires the
+    administrator token.
   version: "0.1.0"
   contact:
     name: Credimi
@@ -299,7 +303,13 @@ components:
       properties:
         family:
           type: string
-          enum: [wallet-providers, pid-providers]
+          enum:
+            [
+              pid-providers,
+              wallet-providers,
+              wrpac-providers,
+              wrprc-providers,
+            ]
         schemeName:
           type: string
           description: Name of the Trusted List, published as SchemeName.

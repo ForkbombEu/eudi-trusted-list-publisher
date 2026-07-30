@@ -217,7 +217,7 @@ describe("Phase 5 PID Provider acceptance", () => {
     expect(getEnabledProfile("pid-providers").enabled).toBe(true);
     expect(
       Object.values(PROFILE_REGISTRY).filter((profile) => !profile.enabled),
-    ).toHaveLength(5);
+    ).toHaveLength(2);
 
     const profile = getProfile("pid-providers");
     expect(profile).toMatchObject({
@@ -365,7 +365,7 @@ describe("Phase 5 PID Provider acceptance", () => {
         (entry) => entry.listKey,
       ),
     ).toEqual(["wallet_list"]);
-    for (const family of ["unknown", "qeaa-providers"]) {
+    for (const family of ["unknown", "pub-eaa-providers"]) {
       writeFileSync(
         configPath,
         JSON.stringify({

@@ -1,10 +1,11 @@
 import {
   APPLICATION_SCHEMA_VERSION,
-  type PIDProviderApplicantData,
-  type PIDProviderApplication,
+  type ApplicantDataByFamily,
+  type ApplicationByFamily,
   type ProviderServiceInput,
+  type SupervisedApplicantData,
   type WalletProviderApplicantData,
-  type WalletProviderApplication,
+  type WalletRelyingPartyApplicantData,
 } from "./application-model.js";
 import {
   getEnabledProfile,
@@ -26,40 +27,65 @@ export interface SubmissionFailure {
   applicantData: null;
   preservedFields: SubmissionFields;
 }
-export interface WalletSubmissionSuccess {
+export interface SubmissionSuccess<F extends EnabledProfileFamily> {
   valid: true;
   errors: [];
-  applicantData: WalletProviderApplicantData;
+  applicantData: ApplicantDataByFamily[F];
   preservedFields: SubmissionFields;
 }
-export interface PIDSubmissionSuccess {
-  valid: true;
-  errors: [];
-  applicantData: PIDProviderApplicantData;
-  preservedFields: SubmissionFields;
-}
+export type WalletSubmissionSuccess = SubmissionSuccess<"wallet-providers">;
+export type PIDSubmissionSuccess = SubmissionSuccess<"pid-providers">;
 export type SubmissionParseResult =
-  SubmissionFailure | WalletSubmissionSuccess | PIDSubmissionSuccess;
+  SubmissionFailure | SubmissionSuccess<EnabledProfileFamily>;
 
-const SERVICE_FIELD =
-  /^service\[(\d+)\]\.(serviceType|serviceName|certificatePem|serviceUniqueIdentifier)$/;
+/**
+ * Families whose applicant declares the Member State responsible for it. For
+ * PID Providers that Member State supervises the provider; for WRPAC and WRPRC
+ * Providers it is the Member State whose mandate the provider currently holds.
+ */
+const SUPERVISED_FAMILIES: readonly EnabledProfileFamily[] = [
+  "pid-providers",
+  "wrpac-providers",
+  "wrprc-providers",
+];
 
-function parseForFamily(
+/**
+ * Annex F/G collect the provider's policies and terms URL, its optional
+ * official registration identifier and an optional further information page,
+ * in place of the single information URI Annex D/E collect.
+ */
+const WALLET_RELYING_PARTY_FAMILIES: readonly EnabledProfileFamily[] = [
+  "wrpac-providers",
+  "wrprc-providers",
+];
+
+function isUrl(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Parses and validates one posted onboarding form. The family decides which
+ * fields exist: anything else in the body is reported as an unknown field
+ * rather than ignored, so a form and a parser that have drifted apart are
+ * visible immediately.
+ */
+export function parseAndValidateSubmission<
+  F extends EnabledProfileFamily = "wallet-providers",
+>(
   fields: SubmissionFields,
   targetListKey: string,
-  family: "wallet-providers",
-): WalletSubmissionSuccess | SubmissionFailure;
-function parseForFamily(
-  fields: SubmissionFields,
-  targetListKey: string,
-  family: "pid-providers",
-): PIDSubmissionSuccess | SubmissionFailure;
-function parseForFamily(
-  fields: SubmissionFields,
-  targetListKey: string,
-  family: EnabledProfileFamily,
-): SubmissionParseResult {
-  getEnabledProfile(family);
+  family?: F,
+): SubmissionSuccess<F> | SubmissionFailure {
+  const resolved = (family ?? "wallet-providers") as EnabledProfileFamily;
+  const profile = getEnabledProfile(resolved);
+  const supervised = SUPERVISED_FAMILIES.includes(resolved);
+  const relyingParty = WALLET_RELYING_PARTY_FAMILIES.includes(resolved);
+
   const errors: SubmissionFieldError[] = [];
   const preservedFields: SubmissionFields = {};
   const allowed = new Set<string>([
@@ -70,11 +96,29 @@ function parseForFamily(
     "entityLocality",
     "entityPostalCode",
     "entityCountry",
-    "entityInformationURI",
     "entityEmail",
     "entityTelephone",
-    ...(family === "pid-providers" ? ["responsibleMemberState"] : []),
+    ...(supervised ? ["responsibleMemberState"] : []),
+    ...(relyingParty
+      ? [
+          "registrationIdentifier",
+          "entityPolicyURI",
+          "additionalInformationURI",
+        ]
+      : ["entityInformationURI"]),
   ]);
+  const serviceSubfields = [
+    "serviceType",
+    "serviceName",
+    "certificatePem",
+    ...(profile.requiresServiceUniqueIdentifier
+      ? ["serviceUniqueIdentifier"]
+      : []),
+  ];
+  const serviceField = new RegExp(
+    `^service\\[(\\d+)\\]\\.(${serviceSubfields.join("|")})$`,
+  );
+
   const addError = (field: string, message: string): void => {
     errors.push({ field, message });
   };
@@ -84,7 +128,7 @@ function parseForFamily(
     return value;
   };
   for (const key of Object.keys(fields))
-    if (!allowed.has(key) && !SERVICE_FIELD.test(key))
+    if (!allowed.has(key) && !serviceField.test(key))
       addError(key, "Unknown form field.");
   if (!targetListKey) addError("targetListKey", "Target list key is required.");
   const entityName = field("entityName");
@@ -99,18 +143,45 @@ function parseForFamily(
   if (!entityCountry) addError("entityCountry", "Country is required.");
   else if (!/^[A-Z]{2}$/.test(entityCountry))
     addError("entityCountry", "Country must be a 2-letter ISO code (e.g. IT).");
-  const entityInformationURI = field("entityInformationURI");
-  if (!entityInformationURI)
-    addError("entityInformationURI", "Information URI is required.");
-  else {
-    try {
-      new URL(entityInformationURI);
-    } catch {
-      addError("entityInformationURI", "Information URI must be a valid URL.");
-    }
-  }
+
   /*
-    Annex D/E require a contactable entity: the published list carries the
+    One field carries the entity's public HTTP(S) URI in every family. Annex D/E
+    call it the information URI; Annex F/G collect the policies and terms URL,
+    which the published list uses in the same place.
+  */
+  const informationFieldName = relyingParty
+    ? "entityPolicyURI"
+    : "entityInformationURI";
+  const entityInformationURI = field(informationFieldName);
+  if (!entityInformationURI)
+    addError(
+      informationFieldName,
+      relyingParty
+        ? "Policies and terms URL is required."
+        : "Information URI is required.",
+    );
+  else if (!isUrl(entityInformationURI))
+    addError(
+      informationFieldName,
+      relyingParty
+        ? "Policies and terms URL must be a valid URL."
+        : "Information URI must be a valid URL.",
+    );
+
+  const registrationIdentifier = relyingParty
+    ? field("registrationIdentifier")
+    : "";
+  const additionalInformationURI = relyingParty
+    ? field("additionalInformationURI")
+    : "";
+  if (additionalInformationURI && !isUrl(additionalInformationURI))
+    addError(
+      "additionalInformationURI",
+      "Additional information URL must be a valid URL.",
+    );
+
+  /*
+    Annex D/E/F/G require a contactable entity: the published list carries the
     email as a mailto URI and the telephone number as a tel URI.
   */
   const entityEmail = field("entityEmail");
@@ -125,9 +196,10 @@ function parseForFamily(
       "entityTelephone",
       "Telephone number must be in international form, e.g. +39 02 1234567.",
     );
+
   const serviceIndices = new Set<number>();
   for (const key of Object.keys(fields)) {
-    const match = SERVICE_FIELD.exec(key);
+    const match = serviceField.exec(key);
     if (match) serviceIndices.add(Number(match[1]));
   }
   if (serviceIndices.size === 0)
@@ -161,47 +233,48 @@ function parseForFamily(
       );
       if (mismatch) addError(`${prefix}certificatePem`, mismatch);
     }
-    const serviceUniqueIdentifier = field(`${prefix}serviceUniqueIdentifier`);
-    if (!serviceUniqueIdentifier)
-      addError(
-        `${prefix}serviceUniqueIdentifier`,
-        "Service unique identifier is required.",
-      );
-    else {
-      try {
-        new URL(serviceUniqueIdentifier);
-      } catch {
+    let serviceUniqueIdentifier: string | undefined;
+    if (profile.requiresServiceUniqueIdentifier) {
+      serviceUniqueIdentifier = field(`${prefix}serviceUniqueIdentifier`);
+      if (!serviceUniqueIdentifier)
+        addError(
+          `${prefix}serviceUniqueIdentifier`,
+          "Service unique identifier is required.",
+        );
+      else if (!isUrl(serviceUniqueIdentifier))
         addError(
           `${prefix}serviceUniqueIdentifier`,
           "Service unique identifier must be a valid URL/URI.",
         );
-      }
     }
     if (
       (serviceType === "issuance" || serviceType === "revocation") &&
       serviceName &&
       certificatePem &&
-      serviceUniqueIdentifier
+      (!profile.requiresServiceUniqueIdentifier || serviceUniqueIdentifier)
     )
       services.push({
         serviceType,
         serviceName,
         certificatePem,
-        serviceUniqueIdentifier,
+        ...(profile.requiresServiceUniqueIdentifier
+          ? { serviceUniqueIdentifier }
+          : {}),
       });
   }
-  const responsibleMemberState =
-    family === "pid-providers" ? field("responsibleMemberState") : undefined;
-  if (
-    family === "pid-providers" &&
-    !/^[A-Z]{2}$/.test(responsibleMemberState ?? "")
-  )
+
+  const responsibleMemberState = supervised
+    ? field("responsibleMemberState")
+    : undefined;
+  if (supervised && !/^[A-Z]{2}$/.test(responsibleMemberState ?? ""))
     addError(
       "responsibleMemberState",
       "Responsible Member State must be a 2-letter ISO code.",
     );
+
   if (errors.length > 0)
     return { valid: false, errors, applicantData: null, preservedFields };
+
   const common: WalletProviderApplicantData = {
     entityName,
     entityTradeName: entityTradeName || undefined,
@@ -214,86 +287,62 @@ function parseForFamily(
     entityTelephone,
     services,
   };
-  return family === "pid-providers"
-    ? {
-        valid: true,
-        errors: [],
-        applicantData: {
-          ...common,
-          responsibleMemberState: responsibleMemberState ?? "",
-        },
-        preservedFields,
-      }
-    : { valid: true, errors: [], applicantData: common, preservedFields };
-}
-
-export function parseAndValidateSubmission(
-  fields: SubmissionFields,
-  targetListKey: string,
-  family?: "wallet-providers",
-): WalletSubmissionSuccess | SubmissionFailure;
-export function parseAndValidateSubmission(
-  fields: SubmissionFields,
-  targetListKey: string,
-  family: "pid-providers",
-): PIDSubmissionSuccess | SubmissionFailure;
-export function parseAndValidateSubmission(
-  fields: SubmissionFields,
-  targetListKey: string,
-  family: EnabledProfileFamily,
-): SubmissionParseResult;
-export function parseAndValidateSubmission(
-  fields: SubmissionFields,
-  targetListKey: string,
-  family: EnabledProfileFamily = "wallet-providers",
-): SubmissionParseResult {
-  return family === "pid-providers"
-    ? parseForFamily(fields, targetListKey, family)
-    : parseForFamily(fields, targetListKey, family);
-}
-
-export function createApplicationRecord(
-  id: string,
-  targetListKey: string,
-  applicantData: WalletProviderApplicantData,
-  family?: "wallet-providers",
-): WalletProviderApplication;
-export function createApplicationRecord(
-  id: string,
-  targetListKey: string,
-  applicantData: PIDProviderApplicantData,
-  family: "pid-providers",
-): PIDProviderApplication;
-export function createApplicationRecord(
-  id: string,
-  targetListKey: string,
-  applicantData: WalletProviderApplicantData | PIDProviderApplicantData,
-  family: EnabledProfileFamily = "wallet-providers",
-): WalletProviderApplication | PIDProviderApplication {
-  getEnabledProfile(family);
-  const submittedAt = new Date().toISOString();
-  if (family === "pid-providers") {
-    if (!("responsibleMemberState" in applicantData))
-      throw new Error(
-        "PID Provider applications require responsibleMemberState.",
-      );
+  if (relyingParty) {
+    const relyingPartyData: WalletRelyingPartyApplicantData = {
+      ...common,
+      responsibleMemberState: responsibleMemberState ?? "",
+      registrationIdentifier: registrationIdentifier || undefined,
+      additionalInformationURI: additionalInformationURI || undefined,
+    };
     return {
-      id,
-      schemaVersion: APPLICATION_SCHEMA_VERSION,
-      family,
-      targetListKey,
-      state: "submitted",
-      submittedAt,
-      applicantData,
+      valid: true,
+      errors: [],
+      applicantData: relyingPartyData as ApplicantDataByFamily[F],
+      preservedFields,
+    };
+  }
+  if (supervised) {
+    const supervisedData: SupervisedApplicantData = {
+      ...common,
+      responsibleMemberState: responsibleMemberState ?? "",
+    };
+    return {
+      valid: true,
+      errors: [],
+      applicantData: supervisedData as ApplicantDataByFamily[F],
+      preservedFields,
     };
   }
   return {
+    valid: true,
+    errors: [],
+    applicantData: common as ApplicantDataByFamily[F],
+    preservedFields,
+  };
+}
+
+export function createApplicationRecord<
+  F extends EnabledProfileFamily = "wallet-providers",
+>(
+  id: string,
+  targetListKey: string,
+  applicantData: ApplicantDataByFamily[F],
+  family?: F,
+): ApplicationByFamily[F] {
+  const resolved = (family ?? "wallet-providers") as EnabledProfileFamily;
+  getEnabledProfile(resolved);
+  if (
+    SUPERVISED_FAMILIES.includes(resolved) &&
+    !("responsibleMemberState" in applicantData)
+  )
+    throw new Error(`${resolved} applications require responsibleMemberState.`);
+  return {
     id,
     schemaVersion: APPLICATION_SCHEMA_VERSION,
-    family,
+    family: resolved,
     targetListKey,
     state: "submitted",
-    submittedAt,
+    submittedAt: new Date().toISOString(),
     applicantData,
-  };
+  } as ApplicationByFamily[F];
 }

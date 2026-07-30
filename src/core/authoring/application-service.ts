@@ -1,7 +1,11 @@
 import { createHash, createPrivateKey } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { compileForProfile } from "../compile/compile.js";
-import { getProfile, profileForLoTEType } from "../profiles/registry.js";
+import {
+  getProfile,
+  profileForLoTEType,
+  type EnabledProfileFamily,
+} from "../profiles/registry.js";
 import type { AuthoringEntity, AuthoringInput } from "../model/authoring.js";
 import type { LoTEDocument } from "../model/types.js";
 import {
@@ -15,10 +19,10 @@ import { verify } from "../verification/verification.js";
 import { publish, PublicationError } from "../publication/manifest.js";
 import { canTransition, buildAuthoringEntity } from "./application-model.js";
 import type {
-  PIDProviderApplicantData,
+  ApplicantDataByFamily,
+  ApplicationByFamily,
   PublicationRecord,
   TrustedEntityApplication,
-  WalletProviderApplicantData,
   WalletProviderApplication,
 } from "./application-model.js";
 import { AuthoringStore } from "./authoring-store.js";
@@ -26,6 +30,7 @@ import type { SettingsStore } from "./settings-store.js";
 import { findSigningConfig } from "./signing-config.js";
 import type { SigningConfig, SigningConfigEntry } from "./signing-config.js";
 import {
+  createApplicationRecord,
   parseAndValidateSubmission,
   type SubmissionFields,
   type SubmissionParseResult,
@@ -127,56 +132,24 @@ export class ApplicationService {
     }
     return { applied: true, published: true };
   }
-  submitApplication(
+  submitApplication<F extends EnabledProfileFamily = "wallet-providers">(
     formFields: SubmissionFields,
     targetListKey: string,
-    family: "wallet-providers" | "pid-providers" = "wallet-providers",
+    family?: F,
   ): SubmissionParseResult {
     return parseAndValidateSubmission(formFields, targetListKey, family);
   }
-  createApp(
+  createApp<F extends EnabledProfileFamily = "wallet-providers">(
     targetListKey: string,
-    applicantData: WalletProviderApplicantData,
-    family?: "wallet-providers",
-  ): import("./application-model.js").WalletProviderApplication;
-  createApp(
-    targetListKey: string,
-    applicantData: PIDProviderApplicantData,
-    family: "pid-providers",
-  ): import("./application-model.js").PIDProviderApplication;
-  createApp(
-    targetListKey: string,
-    applicantData: WalletProviderApplicantData | PIDProviderApplicantData,
-    family: "wallet-providers" | "pid-providers" = "wallet-providers",
-  ): TrustedEntityApplication {
-    const id = this.authoringStore.createId();
-    const submittedAt = new Date().toISOString();
-    const app: TrustedEntityApplication =
-      family === "pid-providers"
-        ? "responsibleMemberState" in applicantData
-          ? {
-              id,
-              schemaVersion: 1,
-              family,
-              targetListKey,
-              state: "submitted",
-              submittedAt,
-              applicantData,
-            }
-          : (() => {
-              throw new Error(
-                "PID Provider applications require responsibleMemberState.",
-              );
-            })()
-        : {
-            id,
-            schemaVersion: 1,
-            family,
-            targetListKey,
-            state: "submitted",
-            submittedAt,
-            applicantData,
-          };
+    applicantData: ApplicantDataByFamily[F],
+    family?: F,
+  ): ApplicationByFamily[F] {
+    const app = createApplicationRecord(
+      this.authoringStore.createId(),
+      targetListKey,
+      applicantData,
+      family,
+    );
     this.authoringStore.save(app);
     return app;
   }
@@ -480,9 +453,22 @@ export class ApplicationService {
       return { success: false, error: "No publications exist for this list." };
     }
     const data = app.applicantData;
-    const candidateIds = new Set(
-      data.services.map((service) => service.serviceUniqueIdentifier),
+    /*
+      Reconciliation identifies the published entity by its complete service
+      identifier set. Annex F/G services have no identifiers, so there is
+      nothing to match on and the operation is refused rather than matching the
+      first entity that also has none.
+    */
+    const candidateIdentifiers = data.services.map(
+      (service) => service.serviceUniqueIdentifier,
     );
+    if (candidateIdentifiers.some((identifier) => !identifier))
+      return {
+        success: false,
+        error:
+          "Reconciliation is not available for this family: its services carry no unique identifiers, so a published entity cannot be identified unambiguously.",
+      };
+    const candidateIds = new Set(candidateIdentifiers as string[]);
     // Find an entity whose service set EXACTLY matches all candidate IDs
     let matchEntity;
     const latestEntities: AuthoringEntity[] = latest.entities ?? [];

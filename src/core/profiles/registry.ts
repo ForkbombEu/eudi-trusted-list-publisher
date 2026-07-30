@@ -15,16 +15,36 @@ import {
   PID_SERVICE_TYPE_ISSUANCE,
   PID_SERVICE_TYPE_REVOCATION,
 } from "./pid-provider/constants.js";
+import {
+  WRPAC_PROVIDER_LOTE_TYPE,
+  WRPAC_PROVIDER_ROLE_URI_PREFIX,
+  WRPAC_PROVIDER_SCHEME_RULES,
+  WRPAC_PROVIDER_STATUS_DETN,
+  WRPAC_SERVICE_TYPE_ISSUANCE,
+  WRPAC_SERVICE_TYPE_REVOCATION,
+} from "./wrpac-provider/constants.js";
+import {
+  WRPRC_PROVIDER_LOTE_TYPE,
+  WRPRC_PROVIDER_ROLE_URI_PREFIX,
+  WRPRC_PROVIDER_SCHEME_RULES,
+  WRPRC_PROVIDER_STATUS_DETN,
+  WRPRC_SERVICE_TYPE_ISSUANCE,
+  WRPRC_SERVICE_TYPE_REVOCATION,
+} from "./wrprc-provider/constants.js";
 
+/**
+ * The six families of List of Trusted Entities that TS 119 602 profiles. The
+ * order is the order the standard's annexes and the catalogue present them.
+ */
 export type ProfileFamily =
-  | "wallet-providers"
   | "pid-providers"
-  | "non-qualified-eaa-providers"
-  | "qeaa-providers"
+  | "wallet-providers"
   | "wrpac-providers"
   | "wrprc-providers"
+  | "pub-eaa-providers"
   | "registrars";
-export type EnabledProfileFamily = "wallet-providers" | "pid-providers";
+export type EnabledProfileFamily =
+  "pid-providers" | "wallet-providers" | "wrpac-providers" | "wrprc-providers";
 
 export interface TrustedEntityProfile {
   readonly family: ProfileFamily;
@@ -34,9 +54,21 @@ export interface TrustedEntityProfile {
   readonly statusDeterminationApproach?: string;
   readonly schemeRules?: string;
   readonly allowedServiceTypes: readonly string[];
-  /** `<prefix>/<country code>` identifies the entity role; Annex D/E. */
+  /** `<prefix>/<country code>` identifies the entity role; Annex D/E/F/G. */
   readonly roleUriPrefix?: string;
   readonly maxNextUpdateMonths?: number;
+  /**
+   * Annex D and Annex E require the ServiceUniqueIdentifier extension; Annex F
+   * and Annex G do not use it, so the onboarding forms of those families do not
+   * ask for one and the compiler emits no extension container.
+   */
+  readonly requiresServiceUniqueIdentifier: boolean;
+  /**
+   * The country the entity role URI names. `entity` is the entity's own
+   * country (Annex E); `responsible-member-state` is the Member State that
+   * supervises or mandates it (Annex D, F, G).
+   */
+  readonly roleCountrySource: "entity" | "responsible-member-state";
   readonly signatureProfile: "JAdES-Compact-B";
   readonly notImplementedNote?: string;
 }
@@ -47,6 +79,8 @@ const disabled = (family: ProfileFamily, label: string): TrustedEntityProfile =>
     label,
     enabled: false,
     allowedServiceTypes: Object.freeze([]),
+    requiresServiceUniqueIdentifier: false,
+    roleCountrySource: "entity" as const,
     signatureProfile: "JAdES-Compact-B",
     notImplementedNote: "Not implemented yet",
   });
@@ -54,21 +88,6 @@ const disabled = (family: ProfileFamily, label: string): TrustedEntityProfile =>
 export const PROFILE_REGISTRY: Readonly<
   Record<ProfileFamily, TrustedEntityProfile>
 > = Object.freeze({
-  "wallet-providers": Object.freeze({
-    family: "wallet-providers",
-    label: "Wallet Providers",
-    enabled: true,
-    loTEType: WALLET_PROVIDER_LOTE_TYPE,
-    statusDeterminationApproach: WALLET_PROVIDER_STATUS_DETN,
-    schemeRules: WALLET_PROVIDER_SCHEME_RULES,
-    allowedServiceTypes: Object.freeze([
-      SERVICE_TYPE_ISSUANCE,
-      SERVICE_TYPE_REVOCATION,
-    ]),
-    roleUriPrefix: WALLET_PROVIDER_ROLE_URI_PREFIX,
-    maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
-    signatureProfile: "JAdES-Compact-B",
-  }),
   "pid-providers": Object.freeze({
     family: "pid-providers",
     label: "PID Providers",
@@ -82,17 +101,77 @@ export const PROFILE_REGISTRY: Readonly<
     ]),
     roleUriPrefix: PID_PROVIDER_ROLE_URI_PREFIX,
     maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
+    requiresServiceUniqueIdentifier: true,
+    roleCountrySource: "responsible-member-state",
     signatureProfile: "JAdES-Compact-B",
   }),
-  "non-qualified-eaa-providers": disabled(
-    "non-qualified-eaa-providers",
-    "Non-qualified EAA Providers",
-  ),
-  "qeaa-providers": disabled("qeaa-providers", "QEAA Providers"),
-  "wrpac-providers": disabled("wrpac-providers", "WRPAC / Access CA Providers"),
-  "wrprc-providers": disabled("wrprc-providers", "WRPRC Providers"),
-  registrars: disabled("registrars", "Registrars"),
+  "wallet-providers": Object.freeze({
+    family: "wallet-providers",
+    label: "Wallet Providers",
+    enabled: true,
+    loTEType: WALLET_PROVIDER_LOTE_TYPE,
+    statusDeterminationApproach: WALLET_PROVIDER_STATUS_DETN,
+    schemeRules: WALLET_PROVIDER_SCHEME_RULES,
+    allowedServiceTypes: Object.freeze([
+      SERVICE_TYPE_ISSUANCE,
+      SERVICE_TYPE_REVOCATION,
+    ]),
+    roleUriPrefix: WALLET_PROVIDER_ROLE_URI_PREFIX,
+    maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
+    requiresServiceUniqueIdentifier: true,
+    roleCountrySource: "entity",
+    signatureProfile: "JAdES-Compact-B",
+  }),
+  "wrpac-providers": Object.freeze({
+    family: "wrpac-providers",
+    label: "WRPAC Providers",
+    enabled: true,
+    loTEType: WRPAC_PROVIDER_LOTE_TYPE,
+    statusDeterminationApproach: WRPAC_PROVIDER_STATUS_DETN,
+    schemeRules: WRPAC_PROVIDER_SCHEME_RULES,
+    allowedServiceTypes: Object.freeze([
+      WRPAC_SERVICE_TYPE_ISSUANCE,
+      WRPAC_SERVICE_TYPE_REVOCATION,
+    ]),
+    roleUriPrefix: WRPAC_PROVIDER_ROLE_URI_PREFIX,
+    maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
+    requiresServiceUniqueIdentifier: false,
+    roleCountrySource: "responsible-member-state",
+    signatureProfile: "JAdES-Compact-B",
+  }),
+  "wrprc-providers": Object.freeze({
+    family: "wrprc-providers",
+    label: "WRPRC Providers",
+    enabled: true,
+    loTEType: WRPRC_PROVIDER_LOTE_TYPE,
+    statusDeterminationApproach: WRPRC_PROVIDER_STATUS_DETN,
+    schemeRules: WRPRC_PROVIDER_SCHEME_RULES,
+    allowedServiceTypes: Object.freeze([
+      WRPRC_SERVICE_TYPE_ISSUANCE,
+      WRPRC_SERVICE_TYPE_REVOCATION,
+    ]),
+    roleUriPrefix: WRPRC_PROVIDER_ROLE_URI_PREFIX,
+    maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
+    requiresServiceUniqueIdentifier: false,
+    roleCountrySource: "responsible-member-state",
+    signatureProfile: "JAdES-Compact-B",
+  }),
+  "pub-eaa-providers": disabled("pub-eaa-providers", "Pub-EAA Providers"),
+  registrars: disabled("registrars", "Registrars and Registers"),
 });
+
+const ENABLED_FAMILIES: readonly EnabledProfileFamily[] = Object.freeze([
+  "pid-providers",
+  "wallet-providers",
+  "wrpac-providers",
+  "wrprc-providers",
+]);
+
+export function isEnabledProfileFamily(
+  value: string,
+): value is EnabledProfileFamily {
+  return (ENABLED_FAMILIES as readonly string[]).includes(value);
+}
 
 export function parseProfileFamily(family: string): ProfileFamily | undefined {
   return Object.prototype.hasOwnProperty.call(PROFILE_REGISTRY, family)
@@ -114,10 +193,7 @@ export function getEnabledProfile(family: string): TrustedEntityProfile & {
   readonly enabled: true;
 } {
   const profile = getProfile(family);
-  if (
-    profile.family !== "wallet-providers" &&
-    profile.family !== "pid-providers"
-  )
+  if (!isEnabledProfileFamily(profile.family))
     throw new Error(`List family is not implemented: ${family}`);
   return profile as TrustedEntityProfile & {
     readonly family: EnabledProfileFamily;

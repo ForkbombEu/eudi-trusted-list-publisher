@@ -103,6 +103,18 @@ export function adminApplicationDetailHtml(
 ): string {
   const data = app.applicantData;
   const p = params ?? {};
+  /*
+    Annex F/G applications carry three fields the other families do not, and
+    their public URI is a policies and terms URL rather than an information
+    page, so the label differs too.
+  */
+  const relyingPartyData =
+    app.family === "wrpac-providers" || app.family === "wrprc-providers"
+      ? app.applicantData
+      : null;
+  const relyingParty = relyingPartyData !== null;
+  const responsibleMemberState =
+    "responsibleMemberState" in data ? data.responsibleMemberState : null;
 
   let messages = "";
   if (p.error) messages += `<div class="error-msg">${escape(p.error)}</div>`;
@@ -120,7 +132,11 @@ export function adminApplicationDetailHtml(
     <table class="kv-table">
       <tr><th>Type</th><td>${escape(svc.serviceType)}</td></tr>
       <tr><th>Name</th><td>${escape(svc.serviceName)}</td></tr>
-      <tr><th>Unique Identifier</th><td><code>${escape(svc.serviceUniqueIdentifier)}</code></td></tr>
+      ${
+        svc.serviceUniqueIdentifier
+          ? `<tr><th>Unique Identifier</th><td><code>${escape(svc.serviceUniqueIdentifier)}</code></td></tr>`
+          : ""
+      }
       <tr><th>Certificate</th><td><pre class="cert-preview">${escape(svc.certificatePem)}</pre></td></tr>
     </table>
   </div>`,
@@ -179,12 +195,22 @@ ${pubInfo}
     ${data.entityLocality ? `<tr><th>Locality</th><td>${escape(data.entityLocality)}</td></tr>` : ""}
     ${data.entityPostalCode ? `<tr><th>Postal Code</th><td>${escape(data.entityPostalCode)}</td></tr>` : ""}
     <tr><th>Country</th><td>${escape(data.entityCountry)}</td></tr>
-    <tr><th>Information URI</th><td><code>${escape(data.entityInformationURI)}</code></td></tr>
+    <tr><th>${relyingParty ? "Policies and Terms URL" : "Information URI"}</th><td><code>${escape(data.entityInformationURI)}</code></td></tr>
+    ${
+      relyingPartyData?.additionalInformationURI
+        ? `<tr><th>Additional Information URL</th><td><code>${escape(relyingPartyData.additionalInformationURI)}</code></td></tr>`
+        : ""
+    }
     <tr><th>Email</th><td><code>${escape(data.entityEmail)}</code></td></tr>
     <tr><th>Telephone</th><td><code>${escape(data.entityTelephone)}</code></td></tr>
     ${
-      app.family === "pid-providers"
-        ? `<tr><th>Responsible Member State</th><td>${escape(app.applicantData.responsibleMemberState)}</td></tr>`
+      relyingPartyData?.registrationIdentifier
+        ? `<tr><th>Official Registration Identifier</th><td><code>${escape(relyingPartyData.registrationIdentifier)}</code></td></tr>`
+        : ""
+    }
+    ${
+      responsibleMemberState
+        ? `<tr><th>Responsible Member State</th><td>${escape(responsibleMemberState)}</td></tr>`
         : ""
     }
   </table>
@@ -223,6 +249,16 @@ ${
 
 <div class="card">
   <h2>Actions</h2>
+  ${
+    relyingParty
+      ? `<p class="field-help">Approving this application states that the provider
+         is <strong>currently mandated</strong> by the Responsible Member State
+         (${escape(responsibleMemberState ?? "—")}). These profiles publish no
+         ServiceStatus and no StatusStartingTime: presence in the current list
+         version is the statement, and a provider that loses its mandate is
+         removed from the next version rather than marked withdrawn.</p>`
+      : ""
+  }
   ${actions}
 </div>
 

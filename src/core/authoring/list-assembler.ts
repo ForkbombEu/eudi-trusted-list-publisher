@@ -156,7 +156,12 @@ function convertEntity(entity: TrustedEntity): AuthoringEntity {
       */
       return certificateDerBase64(certificate.val);
     });
-    let serviceUniqueIdentifier = "";
+    /*
+      Absent for Annex F/G, which do not use the extension. It stays undefined
+      rather than empty so the recompiled service omits the container exactly as
+      the stored one does.
+    */
+    let serviceUniqueIdentifier: string | undefined;
     for (const extension of service.ServiceInformationExtensions ?? []) {
       for (const key of Object.keys(extension)) {
         if (key !== "ServiceUniqueIdentifier" && key !== "Critical")
@@ -349,18 +354,23 @@ export function checkServiceIdentifierUniqueness(
   existingEntities: readonly AuthoringEntity[],
   candidateEntity: AuthoringEntity,
 ): UniquenessResult {
+  /*
+    Annex F/G services carry no unique identifier, so there is nothing to be
+    unique about: those services are skipped rather than all collapsing onto one
+    empty key and colliding with each other.
+  */
   const existing = new Set<string>();
   for (const entity of existingEntities)
     for (const service of entity.services)
-      existing.add(service.serviceUniqueIdentifier);
+      if (service.serviceUniqueIdentifier)
+        existing.add(service.serviceUniqueIdentifier);
   const candidates = new Set<string>();
   for (const service of candidateEntity.services) {
-    if (
-      candidates.has(service.serviceUniqueIdentifier) ||
-      existing.has(service.serviceUniqueIdentifier)
-    )
-      return { ok: false, duplicate: service.serviceUniqueIdentifier };
-    candidates.add(service.serviceUniqueIdentifier);
+    const identifier = service.serviceUniqueIdentifier;
+    if (!identifier) continue;
+    if (candidates.has(identifier) || existing.has(identifier))
+      return { ok: false, duplicate: identifier };
+    candidates.add(identifier);
   }
   return { ok: true };
 }

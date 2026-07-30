@@ -4,7 +4,7 @@ import type { ProfileFamily } from "../../core/profiles/registry.js";
 /**
  * Colour coding for Trusted List Families and for individual Trusted Lists.
  *
- * A family always renders in the same colour because the seven families are a
+ * A family always renders in the same colour because the six families are a
  * closed set. Individual list keys come from the deployment's signing
  * configuration, so their colour is derived deterministically from the key:
  * the same list key always maps to the same swatch on every page.
@@ -17,12 +17,11 @@ import type { ProfileFamily } from "../../core/profiles/registry.js";
 export const LIST_SWATCH_COUNT = 8;
 
 const FAMILY_SLUGS: Readonly<Record<ProfileFamily, string>> = Object.freeze({
-  "wallet-providers": "wallet",
   "pid-providers": "pid",
-  "non-qualified-eaa-providers": "eaa",
-  "qeaa-providers": "qeaa",
+  "wallet-providers": "wallet",
   "wrpac-providers": "wrpac",
   "wrprc-providers": "wrprc",
+  "pub-eaa-providers": "pubeaa",
   registrars: "registrar",
 });
 
