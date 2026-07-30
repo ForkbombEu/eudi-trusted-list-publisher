@@ -27,6 +27,16 @@ export interface SigningConfigEntry {
   schemeOperatorWebsite: string;
   schemeInformationUris: string[];
   policyUri: string;
+  /**
+   * Defect IDs this list is deliberately generated with. Absent or empty for an
+   * ordinary list.
+   *
+   * The selection is stored on the list rather than applied once at creation so
+   * that entities registered later — a developer onboarding an Issuer or
+   * Verifier to test their runtime detection — are published through the same
+   * mutations. A list declared broken stays broken for every version it emits.
+   */
+  defects?: string[];
 }
 export interface SigningConfig {
   lists: SigningConfigEntry[];
@@ -114,7 +124,24 @@ function parseEntry(value: unknown): SigningConfigEntry {
     schemeOperatorWebsite: stringField(record, "schemeOperatorWebsite"),
     schemeInformationUris: uriListField(record),
     policyUri: stringField(record, "policyUri"),
+    ...defectsField(record),
   };
+}
+
+/**
+ * Optional, and read defensively: an unreadable defect selection must not stop
+ * a list from loading, because the signing configuration is also what an
+ * ordinary healthy list depends on.
+ */
+function defectsField(
+  record: Record<string, unknown>,
+): { defects?: string[] } {
+  const value = record.defects;
+  if (!Array.isArray(value)) return {};
+  const defects = value.filter(
+    (entry): entry is string => typeof entry === "string" && entry.trim() !== "",
+  );
+  return defects.length > 0 ? { defects } : {};
 }
 export function loadSigningConfig(path: string): SigningConfig {
   if (!existsSync(path)) return { lists: [] };

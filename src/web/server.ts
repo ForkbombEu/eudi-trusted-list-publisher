@@ -33,7 +33,14 @@ import {
   CERTIFICATE_GUIDE_TITLE,
 } from "./views/certificate-guide.js";
 import {
+  brokenBadge,
+  brokenColumnHtml,
+  brokenListSectionHtml,
+  defectIdsFromFixture,
+} from "./views/broken-list.js";
+import {
   inspectorPanelHtml,
+  fixturePanelHtml,
   parseInspectorEvaluation,
   versionDownloadsHtml,
 } from "./views/inspector-panel.js";
@@ -610,11 +617,13 @@ export function createWebServer(config: ServerConfig) {
   /** Target-list options offered on one family's onboarding form. */
   function listOptionsFor(
     family: EnabledProfileFamily,
-  ): { key: string; label: string }[] {
+  ): { key: string; label: string; defects?: string[] }[] {
     if (!signingConfig) return [];
     return getFamilyConfigs(signingConfig, family).map((entry) => ({
       key: entry.listKey,
       label: `${entry.schemeOperatorName} (${entry.listKey})`,
+      /* Persisted on the entry, so a broken list is marked before it is chosen. */
+      defects: entry.defects ?? [],
     }));
   }
 
@@ -1035,15 +1044,26 @@ over the published Lists of Trusted Entities.</p>
         const family = signingConfig
           ? findSigningConfig(signingConfig, key)?.family
           : undefined;
+        /*
+          The defect selection is read from the version's own fixture metadata
+          rather than the signing configuration, so the column is correct in
+          read-only mode too, where no signing configuration is loaded.
+        */
+        const defectIds = defectIdsFromFixture(
+          s.readFixtureMetadata(key, latest.sequenceNumber),
+        );
         rows += `
-      <tr>
-        <td><a href="/lists/${escapeHtml(key)}">${listChip(key)}</a></td>
+      <tr${defectIds.length > 0 ? ' class="catalogue-row-broken"' : ""}>
+        <td><a href="/lists/${escapeHtml(key)}">${listChip(key)}</a>${
+          defectIds.length > 0 ? ` ${brokenBadge()}` : ""
+        }</td>
         <td>${family ? familyChip(family) : "&mdash;"}</td>
         <td>${escapeHtml(String(latest.sequenceNumber))}</td>
         <td>${escapeHtml(latest.issueDate)}</td>
         <td>${escapeHtml(latest.nextUpdateDate)}</td>
         <td>${latest.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
         <td><strong>not evaluated</strong></td>
+        <td class="catalogue-broken">${brokenColumnHtml(defectIds)}</td>
         <td class="catalogue-open">${openLinks(s, key, latest.sequenceNumber)}</td>
       </tr>`;
       }
@@ -1056,7 +1076,7 @@ over the published Lists of Trusted Entities.</p>
           `<h1>Published Lists</h1>${lead}
         <div class="trust-notice"><strong>Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
         <table class="catalogue-table">
-        <thead><tr><th>Trusted List</th><th>Trusted List Family</th><th>Latest Seq</th><th>Issue Date</th><th>Next Update</th><th>Signature</th><th>Trust</th><th>Open</th></tr></thead>
+        <thead><tr><th>Trusted List</th><th>Trusted List Family</th><th>Latest Seq</th><th>Issue Date</th><th>Next Update</th><th>Signature</th><th>Trust</th><th>Broken</th><th>Open</th></tr></thead>
         <tbody>${rows}</tbody>
         </table>`,
         ),
@@ -1092,12 +1112,21 @@ over the published Lists of Trusted Entities.</p>
       const family = signingConfig
         ? findSigningConfig(signingConfig, listKey)?.family
         : undefined;
+      const latestVersion = index.versions[index.versions.length - 1];
+      const listDefects = latestVersion
+        ? defectIdsFromFixture(
+            s.readFixtureMetadata(listKey, latestVersion.sequenceNumber),
+          )
+        : [];
       sendHtml(
         res,
         200,
         page(
           `List: ${listKey}`,
-          `<h1>Trusted List: ${listChip(listKey)}</h1>
+          `<h1>Trusted List: ${listChip(listKey)}${
+            listDefects.length > 0 ? ` ${brokenBadge()}` : ""
+          }</h1>
+        ${brokenListSectionHtml(listDefects)}
         ${family ? `<p>Trusted List Family: ${familyChip(family)}</p>` : ""}
         <div class="trust-notice"><strong>Trust not evaluated.</strong></div>
         <table class="catalogue-table">
@@ -1158,6 +1187,7 @@ over the published Lists of Trusted Entities.</p>
         page(
           `Version ${sequence} — ${listKey}`,
           `<h1>Version ${sequence} — ${listChip(listKey)}</h1>
+${fixturePanelHtml(s.readFixtureMetadata(listKey, sequence))}
 <div class="trust-notice"><strong>Signer trust: not evaluated.</strong> Cryptographic signature is ${manifest.signatureValid ? "valid" : "INVALID"}.</div>
 <div class="card"><h2>List Information</h2>
 <table class="kv-table">
@@ -1580,6 +1610,10 @@ ${versionDownloadsHtml(listKey, sequence)}
           inspectorStatus: inspectorStatusLabel(result.inspector.summary),
           inspectorProfile: result.inspector.summary.profile,
           inspectorLevel: result.inspector.summary.conformanceLevel,
+          defects: result.entry.defects ?? [],
+          expectedInspectorFailures: result.fixture?.expectedInspectorFailures,
+          actualInspectorFailures: result.fixture?.actualInspectorFailures,
+          missingFailures: result.fixture?.missingFailures,
         }),
       ),
     );
@@ -1653,6 +1687,13 @@ ${versionDownloadsHtml(listKey, sequence)}
         sequenceNumber: result.sequenceNumber,
         versionUrl: `/lists/${result.listKey}/versions/${result.sequenceNumber}`,
         inspector: result.inspector.summary,
+        /*
+          The GUI and the API create the same artifacts, so the API reports the
+          same negative-fixture evidence the confirmation page shows.
+        */
+        intentionallyBroken: (result.entry.defects ?? []).length > 0,
+        defects: result.entry.defects ?? [],
+        ...(result.fixture ? { fixture: result.fixture } : {}),
       },
       "no-store",
     );

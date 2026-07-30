@@ -862,3 +862,41 @@ textarea:focus {
     justify-content: center;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Intentionally broken Trusted Lists.
+
+   A broken list is visually indistinguishable from a healthy one that happens
+   to be failing, so it carries an explicit marker everywhere it is named or
+   offered for selection.
+   --------------------------------------------------------------------------- */
+
+.badge-warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The whole catalogue row is tinted, so a broken list reads as different
+   before the eye reaches the Broken column. */
+.catalogue-row-broken > td {
+  background: color-mix(in oklch, var(--warning-bg) 35%, transparent);
+}
+
+.catalogue-broken {
+  max-width: 22rem;
+}
+
+.broken-defect-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85em;
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+
+.broken-defect-list li {
+  /* The normative reference is the title attribute, so the cursor says so. */
+  cursor: help;
+}

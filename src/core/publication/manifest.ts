@@ -7,6 +7,16 @@ export interface PublicationInput {
   compactJws: string;
   certificatePem: string;
   clock?: Date;
+  /**
+   * Publishes an artifact whose structure does not validate, recording the
+   * findings instead of refusing.
+   *
+   * This exists for intentionally broken test fixtures, where a schema
+   * violation is the point of the artifact. It relaxes *structural* validation
+   * only: the signature must still verify and the certificate must still be
+   * current, so a broken fixture is never also an unauthenticated one.
+   */
+  allowInvalidStructure?: boolean;
 }
 
 export interface SignerInfo {
@@ -45,6 +55,12 @@ export interface PublicationResult {
   sequenceNumber: number;
   manifest: Manifest;
   loteJson: string;
+  /**
+   * Structural findings that were recorded rather than fatal. Only populated
+   * under `allowInvalidStructure`; empty for an ordinary publication, which
+   * cannot reach this point with an invalid structure at all.
+   */
+  structuralFindings: string[];
 }
 
 function deriveListKey(document: LoTEDocument): string {
@@ -154,13 +170,13 @@ export async function publish(
   const loteJsonSha256 = sha256(loteJson);
 
   const etsiResult = await validateEtsiStruct(document);
+  const structuralFindings = etsiResult.valid
+    ? []
+    : etsiResult.findings.map((f) => `${f.path}: ${f.message}`);
 
-  if (!etsiResult.valid) {
-    const reasons = etsiResult.findings
-      .map((f) => `${f.path}: ${f.message}`)
-      .join("; ");
+  if (!etsiResult.valid && !input.allowInvalidStructure) {
     throw new PublicationError(
-      `ETSI schema validation failed: ${reasons}`,
+      `ETSI schema validation failed: ${structuralFindings.join("; ")}`,
       "ETSI_SCHEMA_INVALID",
     );
   }
@@ -191,7 +207,7 @@ export async function publish(
     certificateValidFrom: signer.validFrom,
     certificateValidTo: signer.validTo,
     signatureValid: true,
-    etsiSchemaValid: true,
+    etsiSchemaValid: etsiResult.valid,
     signerTrustStatus: "not_evaluated",
   };
 
@@ -200,5 +216,6 @@ export async function publish(
     sequenceNumber: info.LoTESequenceNumber,
     manifest,
     loteJson,
+    structuralFindings,
   };
 }

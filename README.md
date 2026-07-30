@@ -406,6 +406,112 @@ read, unknown families, unsafe list keys and non-boolean values are dropped so a
 hand-edited file cannot break the administration pages. Writes are atomic, and
 the posted form is the complete new state: a box left unticked turns its flag off.
 
+## Intentionally broken Trusted Lists
+
+Broken lists exist so EUDI implementations — wallets, Issuers, Verifiers — can
+register against a list that is *known* to violate a specific clause and confirm
+their runtime detects it. **A failing Trust Inspector verdict on one of these
+lists is the deliverable, not an error.**
+
+Currently implemented for the **Pub-EAA (Annex H)** family.
+
+### How a broken list is generated
+
+The list is compiled **healthy first**, then cloned and mutated, so every broken
+fixture is a stated delta from a known-good baseline:
+
+1. Compile the healthy document.
+2. Apply the selected **pre-sign** mutations to a clone (schema, profile,
+   lifecycle, certificate and content defects).
+3. Sign it.
+4. Apply the selected **post-sign** mutations (signature defects), which re-sign
+   rather than edit the serialization — a hand-edited JWS fails cryptographic
+   verification first and would mask the defect under test.
+5. Publish, submit the final Compact JAdES to the Trust Inspector, and store the
+   complete evaluation.
+
+Local schema and profile validation failures are **recorded, not fatal**: for a
+broken fixture a schema violation is the point. The signature must still verify
+and the certificate must still be current, so a broken fixture is never also an
+unauthenticated one, and the manifest hashes still cover the artifacts exactly
+as published.
+
+### The defect catalogue
+
+| Defect ID | Stage | Primary expected Inspector rule |
+|-----------|-------|--------------------------------|
+| `non_strict_timestamps` | pre-sign | `ts119602.syntax.date_time` |
+| `scheme_name_without_territory` | pre-sign | `ts119602.scheme.name` |
+| `missing_scheme_information_uri` | pre-sign | `ts119602.structure.scheme_information_presence` |
+| `missing_policy_or_legal_notice` | pre-sign | `ts119602.scheme.policy_or_legal_notice` |
+| `missing_operator_email` | pre-sign | `ts119602.scheme.operator_address` |
+| `missing_self_pointer` | pre-sign | `ts119602.profile.pub_eaa_providers.scheme_information` |
+| `pem_service_certificate` | pre-sign | `ts119602.service.digital_identity` |
+| `extension_without_criticality` | pre-sign | `ts119602.service.extensions` |
+| `signer_organisation_mismatch` | post-sign | `json_lote.signature.jades_signer_subject.organization` |
+| `jades_without_signing_time` | post-sign | `json_lote.signature.jades_signing_time` |
+
+Expected rule IDs were taken from live Inspector evaluations, not guessed. They
+remain an *expectation*: the stored metadata always reports expected against
+actual, so a drifting Inspector rule set is visible rather than hidden.
+
+**Annex H note.** Annex H forbids `PointersToOtherLoTE`, so a healthy Pub-EAA
+list already omits it and "omit the self pointer" would change nothing. For this
+family the defect is inverted — it *injects* the prohibited pointer. The runtime
+consequence a developer tests for is the same.
+
+### Defects persist on the list
+
+The selection is stored on the signing-configuration entry, not applied once at
+creation. **Every later version of the list is mutated the same way**, including
+the version published when a developer's Issuer or Verifier is approved into it.
+A list declared broken stays broken. Without this, a developer registering into
+a broken list would get a clean entry back and the service-level defects would
+never reach them.
+
+Because a newly created list is empty, broken fixtures are seeded with one
+deterministic synthetic entity so the service-level defects have something to
+mutate. The healthy baseline stays empty, which is what keeps its verdict clean.
+
+### Evidence stored beside each version
+
+`fixture.json` sits next to `inspector.json`, outside the integrity-checked set
+for the same reason: it is evidence *about* the version. It records the selected
+defects, every mutation and whether it landed, local validation failures, and
+expected against actual Inspector failures split into matched, missing,
+additional and known-unrelated. Cascading failures are expected — one mutation
+can trip several rules — so an additional failure is reported, not treated as
+wrong.
+
+### Generating the fixture suite
+
+```sh
+npm run build
+node scripts/generate-pub-eaa-fixtures.mjs           # real generator, live Inspector
+node scripts/generate-pub-eaa-fixtures.mjs --dry-run # list what would be created
+```
+
+This produces `pub-eaa-healthy`, one `pub-eaa-broken-<defect-id>` per defect and
+`pub-eaa-broken-combined`. Each fixture is signed by its own certificate whose
+subject organisation equals its scheme operator name — sharing one would make
+every list fail the signer-organisation rule and drown the defect under test.
+
+All paths come from the environment; none are hardcoded:
+
+| Variable | Default | Holds |
+|----------|---------|-------|
+| `TLP_SIGNING_CONFIG` | `./.local-signing/signing-config.json` | the signing configuration the fixtures are appended to |
+| `TLP_FIXTURE_KEY_DIR` | `./.local-signing/fixtures` | per-fixture signing key and certificate pairs |
+| `TLP_FIXTURE_REPORT` | `./.local-signing/fixture-report.json` | the run report |
+| `TLP_PUBLICATION_DIR` | `./publications` | the published fixtures |
+
+The run report is a human-readable summary of the generation: derived list keys,
+Inspector verdicts, and expected against actual failures per fixture. **Nothing
+in the application reads it** — it is an operator-facing record of one run, and
+deleting it affects nothing.
+
+Reruns are idempotent: a fixture is deleted and regenerated from scratch.
+
 ## Deployment
 
 Reference deployment: the Node app under pm2 listening on `TLP_PORT`, behind

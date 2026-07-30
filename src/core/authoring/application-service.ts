@@ -12,7 +12,7 @@ import type {
   AuthoringServiceHistoryInstance,
 } from "../model/authoring.js";
 import { subjectKeyIdentifierBase64 } from "../model/x509-ski.js";
-import { toUtcDateTime } from "../model/lexical.js";
+import { certificateDerBase64, toUtcDateTime } from "../model/lexical.js";
 import type { LoTEDocument } from "../model/types.js";
 import {
   InspectorClient,
@@ -52,6 +52,12 @@ import {
   restateServiceStatusTimes,
   schemeDescriptorFor,
 } from "./list-assembler.js";
+import {
+  applyPostSignDefects,
+  applyPreSignDefects,
+  buildFixtureMetadata,
+  type AppliedMutation,
+} from "./defects.js";
 
 export type ServiceResult<T> =
   | { success: true; data: T; message?: string; warning?: string }
@@ -423,8 +429,17 @@ export class ApplicationService {
     targetListKey: string,
   ): Promise<CommitOutcome> {
     const compileResult = compileForProfile(family, input);
+    /*
+      A list declared broken stays broken for every version it emits. The defect
+      selection lives on the signing configuration entry rather than being
+      applied once at creation, so an entity registered later — a developer
+      onboarding an Issuer or Verifier to test that their runtime rejects a bad
+      list — is published through the same mutations.
+    */
+    const defects = listEntry.defects ?? [];
+    const broken = defects.length > 0;
     const etsiResult = await validateEtsiStruct(compileResult.document);
-    if (!etsiResult.valid) {
+    if (!etsiResult.valid && !broken) {
       const reasons = etsiResult.findings
         .map((f) => `${f.path}: ${f.message}`)
         .join("; ");
@@ -441,21 +456,59 @@ export class ApplicationService {
       false,
       ["sign"],
     );
+
+    const signingTime = new Date();
+    const preSign = broken
+      ? applyPreSignDefects(compileResult.document, defects, {
+          family,
+          schemeTerritory: listEntry.schemeTerritory,
+          distributionPointUri: listEntry.distributionPointUri,
+          loTEType:
+            compileResult.document.LoTE.ListAndSchemeInformation.LoTEType ?? "",
+          schemeOperatorName: listEntry.schemeOperatorName,
+          signingCertificateDer: certificateDerBase64(certPem),
+        })
+      : { document: compileResult.document, mutations: [] as AppliedMutation[] };
+
+    const localValidationFailures: string[] = [];
+    if (broken) {
+      const mutatedEtsi = await validateEtsiStruct(preSign.document);
+      if (!mutatedEtsi.valid)
+        localValidationFailures.push(
+          ...mutatedEtsi.findings.map((f) => `${f.path}: ${f.message}`),
+        );
+    }
+
     const signed = await signLote({
-      document: compileResult.document,
+      document: preSign.document,
       key: signingKey,
       certificatePem: certPem,
+      signingTime,
     });
+    const postSign = broken
+      ? await applyPostSignDefects(signed.compact, defects, {
+          certificatePem: certPem,
+          signingKey,
+          document: preSign.document,
+          signingTime,
+          schemeOperatorName: listEntry.schemeOperatorName,
+        })
+      : {
+          compact: signed.compact,
+          certificatePem: certPem,
+          mutations: [] as AppliedMutation[],
+        };
     const verifyResult = await verify({
-      compactJws: signed.compact,
-      certificatePem: certPem,
+      compactJws: postSign.compact,
+      certificatePem: postSign.certificatePem,
     });
     if (!verifyResult.valid) {
       return { success: false, error: "Post-sign verification failed." };
     }
     const pubResult = await publish({
-      compactJws: signed.compact,
-      certificatePem: certPem,
+      compactJws: postSign.compact,
+      certificatePem: postSign.certificatePem,
+      allowInvalidStructure: broken,
     });
     if (pubResult.listKey !== targetListKey) {
       return {
@@ -466,7 +519,7 @@ export class ApplicationService {
     const manifestJson = JSON.stringify(pubResult.manifest, null, 2);
     const storeResult = await this.publicationStore.store(
       pubResult,
-      signed.compact,
+      postSign.compact,
       pubResult.loteJson,
       manifestJson,
     );
@@ -476,12 +529,33 @@ export class ApplicationService {
       reached does not fail the publication — it is recorded as unavailable,
       which the version page reports as such rather than as conformance.
     */
-    await this.evaluateWithInspector(
+    const evaluation = await this.evaluateWithInspector(
       pubResult.listKey,
       pubResult.sequenceNumber,
-      signed.compact,
-      compileResult.document,
+      postSign.compact,
+      preSign.document,
     );
+    if (broken) {
+      try {
+        this.publicationStore.writeFixtureMetadata(
+          pubResult.listKey,
+          pubResult.sequenceNumber,
+          JSON.stringify(
+            buildFixtureMetadata(
+              defects,
+              [...preSign.mutations, ...postSign.mutations],
+              [...localValidationFailures, ...pubResult.structuralFindings],
+              evaluation?.summary.locallyDecidableFailures ?? [],
+              signingTime,
+            ),
+            null,
+            2,
+          ),
+        );
+      } catch {
+        /* evidence only; the published version is already committed */
+      }
+    }
     return {
       success: true,
       pubResult,

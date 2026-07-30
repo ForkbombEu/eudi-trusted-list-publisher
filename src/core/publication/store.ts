@@ -646,6 +646,58 @@ export class PublicationStore {
     this.fs.renameSync(tmpPath, path);
   }
 
+  /**
+   * Negative-fixture metadata for an intentionally broken version: which
+   * defects were selected, which mutations landed, and expected against actual
+   * Inspector failures.
+   *
+   * Like the Inspector evaluation it is deliberately outside the
+   * integrity-checked set. The manifest hashes still cover `lote.json` and
+   * `lote.jades` exactly as published — intentionally broken bytes included —
+   * so a fixture is tamper-evident in the same way a healthy version is.
+   */
+  fixtureMetadataPath(listKey: string, sequenceNumber: number): string {
+    return join(this.versionDir(listKey, sequenceNumber), "fixture.json");
+  }
+
+  /** True when a version was generated as an intentionally broken fixture. */
+  hasFixtureMetadata(listKey: string, sequenceNumber: number): boolean {
+    try {
+      return this.fs.existsSync(this.fixtureMetadataPath(listKey, sequenceNumber));
+    } catch {
+      return false;
+    }
+  }
+
+  writeFixtureMetadata(
+    listKey: string,
+    sequenceNumber: number,
+    metadataJson: string,
+  ): void {
+    const path = this.fixtureMetadataPath(listKey, sequenceNumber);
+    if (!this.fs.existsSync(this.versionDir(listKey, sequenceNumber)))
+      throw new Error(
+        `Cannot store fixture metadata for "${listKey}" sequence ${sequenceNumber}: the version does not exist.`,
+      );
+    const tmpPath = `${path}.tmp_${randomBytes(6).toString("hex")}`;
+    this.fs.writeFileSync(tmpPath, metadataJson, { encoding: "utf-8" });
+    this.fs.renameSync(tmpPath, path);
+  }
+
+  /** Returns the stored fixture metadata, or null when the version is healthy. */
+  readFixtureMetadata(
+    listKey: string,
+    sequenceNumber: number,
+  ): string | null {
+    const path = this.fixtureMetadataPath(listKey, sequenceNumber);
+    if (!this.fs.existsSync(path)) return null;
+    try {
+      return this.fs.readFileSync(path, "utf-8");
+    } catch {
+      return null;
+    }
+  }
+
   /** Returns the stored evaluation, or null when none was ever stored. */
   readInspectorEvaluation(
     listKey: string,

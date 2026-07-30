@@ -171,3 +171,74 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+/**
+ * Banner and evidence panel for an intentionally broken test fixture.
+ *
+ * A version generated with defects is labelled prominently, because the rest of
+ * the page reports a failing Inspector verdict and an invalid schema, and a
+ * reader has to be able to tell an expected failure from a real one. Nothing is
+ * rendered for an ordinary version.
+ */
+export function fixturePanelHtml(metadataJson: string | null): string {
+  if (!metadataJson) return "";
+  let metadata: {
+    selectedDefects?: string[];
+    mutations?: { defectId: string; applied: boolean; detail: string }[];
+    localValidationFailures?: string[];
+    expectedInspectorFailures?: string[];
+    actualInspectorFailures?: string[];
+    matchedFailures?: string[];
+    missingFailures?: string[];
+    additionalFailures?: string[];
+    knownUnrelatedFailures?: string[];
+  };
+  try {
+    metadata = JSON.parse(metadataJson) as typeof metadata;
+  } catch {
+    return "";
+  }
+  const defects = metadata.selectedDefects ?? [];
+  const rules = (values: string[] | undefined): string =>
+    !values || values.length === 0
+      ? "<em>none</em>"
+      : values.map((v) => `<code>${escapeHtml(v)}</code>`).join("<br>");
+  const mutations = (metadata.mutations ?? [])
+    .map(
+      (mutation) =>
+        `<tr><td><code>${escapeHtml(mutation.defectId)}</code></td><td>${
+          mutation.applied ? "applied" : "<strong>not applied</strong>"
+        }</td><td>${escapeHtml(mutation.detail)}</td></tr>`,
+    )
+    .join("");
+  return `
+<div class="notice notice-warning"><strong>Intentionally broken test fixture.</strong>
+This version was generated with ${defects.length} deliberate defect${
+    defects.length === 1 ? "" : "s"
+  }: ${defects.map((d) => `<code>${escapeHtml(d)}</code>`).join(", ")}.
+A failing Trust Inspector verdict below is the expected outcome, not a
+publication error.</div>
+<div class="card">
+  <h2>Negative fixture</h2>
+  <table class="kv-table">
+    <tr><th>Expected Inspector failures</th><td>${rules(metadata.expectedInspectorFailures)}</td></tr>
+    <tr><th>Matched</th><td>${rules(metadata.matchedFailures)}</td></tr>
+    <tr><th>Expected but not reported</th><td>${rules(metadata.missingFailures)}</td></tr>
+    <tr><th>Additional failures</th><td>${rules(metadata.additionalFailures)}</td></tr>
+    ${
+      (metadata.knownUnrelatedFailures ?? []).length > 0
+        ? `<tr><th>Known unrelated failures</th><td>${rules(metadata.knownUnrelatedFailures)}</td></tr>`
+        : ""
+    }
+    <tr><th>Local validation failures</th><td>${rules(metadata.localValidationFailures)}</td></tr>
+  </table>
+  ${
+    mutations
+      ? `<h3>Mutations</h3><table class="catalogue-table"><thead><tr><th>Defect</th><th>Status</th><th>Detail</th></tr></thead><tbody>${mutations}</tbody></table>`
+      : ""
+  }
+  <p class="field-help">Cascading failures are expected: one mutation can trip
+  several rules. Additional failures are listed rather than hidden so a drifting
+  Inspector rule set stays visible.</p>
+</div>`;
+}

@@ -57,6 +57,12 @@ version.</p>
 export interface ListOption {
   key: string;
   label: string;
+  /**
+   * Defect IDs the list is deliberately generated with, empty for an ordinary
+   * list. An applicant choosing a target list must be able to see that it is an
+   * intentionally broken test fixture before onboarding to it.
+   */
+  defects?: string[];
 }
 
 /**
@@ -450,7 +456,8 @@ function providerFormHtml(
   } else if (opts.length === 1) {
     listSelect = `
       <input type="hidden" name="targetListKey" value="${escape(opts[0]!.key)}">
-      <p><strong>Target List:</strong> ${listChip(opts[0]!.key)} &mdash; ${escape(opts[0]!.label)}</p>
+      <p><strong>Target List:</strong> ${listChip(opts[0]!.key)} &mdash; ${escape(opts[0]!.label)}${brokenMarker(opts[0]!)}</p>
+      ${brokenListWarning(opts.filter(isBroken))}
       <p class="field-help">${escape(profile.listHelp)}</p>`;
   } else {
     listSelect = `
@@ -461,10 +468,13 @@ function providerFormHtml(
           ${opts
             .map(
               (o) =>
-                `<option value="${escape(o.key)}" ${v.targetListKey === o.key ? "selected" : ""}>${escape(o.label)}</option>`,
+                `<option value="${escape(o.key)}" ${v.targetListKey === o.key ? "selected" : ""}>${escape(
+                  isBroken(o) ? `\u26A0 BROKEN \u2014 ${o.label}` : o.label,
+                )}</option>`,
             )
             .join("")}
         </select>
+        ${brokenListWarning(opts.filter(isBroken))}
         <span class="field-help">${escape(profile.listHelp)}</span>
         ${fieldError("targetListKey")}
       </div>`;
@@ -770,3 +780,33 @@ function computeNextServiceIndex(
 }
 
 export { computeNextServiceIndex };
+
+/** True when a target list was generated as an intentionally broken fixture. */
+function isBroken(option: ListOption): boolean {
+  return (option.defects ?? []).length > 0;
+}
+
+function brokenMarker(option: ListOption): string {
+  return isBroken(option)
+    ? ` <span class="badge badge-warning" title="Intentionally broken test fixture">&#9888; Broken</span>`
+    : "";
+}
+
+/**
+ * Names the broken lists on offer. Onboarding to one is legitimate — it is how a
+ * developer tests that their runtime rejects a bad list — so this explains
+ * rather than blocks.
+ */
+function brokenListWarning(broken: readonly ListOption[]): string {
+  if (broken.length === 0) return "";
+  const names = broken
+    .map((option) => `<code>${escape(option.key)}</code>`)
+    .join(", ");
+  return `<p class="notice notice-warning"><strong>&#9888; Intentionally broken
+  test fixture${broken.length === 1 ? "" : "s"} in this list:</strong> ${names}.
+  ${broken.length === 1 ? "This list is" : "These lists are"} deliberately
+  non-conformant and exist${broken.length === 1 ? "s" : ""} so an implementation
+  can be tested against a list that is known to be bad. Anything registered into
+  ${broken.length === 1 ? "it" : "them"} is published through the same defects.
+  Do not onboard here for production use.</p>`;
+}

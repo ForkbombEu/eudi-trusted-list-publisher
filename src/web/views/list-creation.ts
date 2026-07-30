@@ -9,10 +9,11 @@ import { familyChip, listChip } from "./colors.js";
  * The administration form that creates a Trusted List, and the confirmation
  * shown after one is created.
  *
- * The broken-list options are visible because the operator needs to know what
- * will be offered, but they are disabled: broken generation is a separate
- * deliverable, and a checkbox that silently produced a healthy list would be
- * worse than one that is plainly not ready.
+ * The broken-list options generate an intentionally broken test fixture: the
+ * list is compiled healthy, cloned, mutated by the selected defects, signed and
+ * published. A failing Trust Inspector verdict on such a list is the expected
+ * outcome, so the confirmation states plainly which defects were applied rather
+ * than presenting the failure as an error.
  */
 
 export interface CreateListFormValues {
@@ -32,7 +33,7 @@ function defectOptions(): string {
   return LIST_DEFECTS.map(
     (defect) => `
       <label class="tl-broken-option">
-        <input type="checkbox" name="defects" value="${escape(defect.id)}" disabled>
+        <input type="checkbox" name="defects" value="${escape(defect.id)}">
         <span><strong>${escape(defect.label)}</strong>
         <span class="field-help">${escape(defect.description)}</span></span>
       </label>`,
@@ -169,10 +170,15 @@ ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
       </label>
     </div>
     <fieldset>
-      <legend>Broken <span class="badge badge-neutral">Not implemented yet</span></legend>
-      <p class="field-help">Each defect below will be selectable on its own and
-      combinable with the others in one list. Generation of deliberately broken
-      lists is not implemented yet, so the options are disabled.</p>
+      <legend>Broken <span class="badge badge-warning">Intentionally broken test fixture</span></legend>
+      <p class="field-help">Select one defect, or several to combine them. The
+      list is generated healthy first, then mutated, signed and published, and
+      the Trust Inspector verdict is stored beside it. A failing verdict is the
+      expected outcome for these lists, not a publication error &mdash; they
+      exist so an implementation can be tested against a list that is known to
+      be bad. The selection is remembered, so every later version of the list,
+      including one published when an entity is registered, is mutated the same
+      way.</p>
       <div class="tl-broken-options">${defectOptions()}
       </div>
     </fieldset>
@@ -194,11 +200,26 @@ export interface CreatedListSummary {
   inspectorStatus: string;
   inspectorProfile?: string;
   inspectorLevel?: string;
+  /** Defect IDs applied, empty for a healthy list. */
+  defects?: string[];
+  expectedInspectorFailures?: string[];
+  actualInspectorFailures?: string[];
+  missingFailures?: string[];
 }
 
 export function createdListHtml(summary: CreatedListSummary): string {
+  const defects = summary.defects ?? [];
+  const broken = defects.length > 0;
   return `
 <h1>Trusted List created</h1>
+${
+  broken
+    ? `<div class="notice notice-warning"><strong>Intentionally broken test
+fixture.</strong> This list was generated with ${defects.length} selected
+defect${defects.length > 1 ? "s" : ""}. A failing Trust Inspector verdict is the
+expected outcome, not a publication error.</div>`
+    : ""
+}
 <div class="card">
   <table class="kv-table">
     <tr><th>Trusted List</th><td>${listChip(summary.listKey)}</td></tr>
@@ -216,6 +237,18 @@ export function createdListHtml(summary: CreatedListSummary): string {
         ? `<tr><th>Conformance level</th><td>${escape(summary.inspectorLevel)}</td></tr>`
         : ""
     }
+    ${
+      broken
+        ? `<tr><th>Selected defects</th><td>${defectLabels(defects)}</td></tr>
+    <tr><th>Expected failures</th><td>${ruleList(summary.expectedInspectorFailures)}</td></tr>
+    <tr><th>Actual failures</th><td>${ruleList(summary.actualInspectorFailures)}</td></tr>
+    ${
+      (summary.missingFailures ?? []).length > 0
+        ? `<tr><th>Expected but not reported</th><td>${ruleList(summary.missingFailures)}</td></tr>`
+        : ""
+    }`
+        : ""
+    }
   </table>
   <p class="version-downloads">
     <a class="btn btn-primary btn-md" href="/lists/${encodeURIComponent(summary.listKey)}/versions/${summary.sequenceNumber}">Open version page</a>
@@ -224,6 +257,21 @@ export function createdListHtml(summary: CreatedListSummary): string {
   </p>
 </div>
 `;
+}
+
+/** Defect IDs rendered with their catalogue labels. */
+function defectLabels(ids: readonly string[]): string {
+  return ids
+    .map((id) => {
+      const defect = LIST_DEFECTS.find((candidate) => candidate.id === id);
+      return `<code>${escape(id)}</code>${defect ? ` &mdash; ${escape(defect.label)}` : ""}`;
+    })
+    .join("<br>");
+}
+
+function ruleList(rules: readonly string[] | undefined): string {
+  if (!rules || rules.length === 0) return "<em>none</em>";
+  return rules.map((rule) => `<code>${escape(rule)}</code>`).join("<br>");
 }
 
 function escape(s: string): string {

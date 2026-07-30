@@ -24,6 +24,16 @@ import {
   InspectorClient,
   type InspectorEvaluation,
 } from "../inspector/inspector.js";
+import {
+  applyPostSignDefects,
+  applyPreSignDefects,
+  buildFixtureMetadata,
+  fixtureSeedEntity,
+  mintCertificate,
+  FIXTURE_ENTITY_NAME,
+  type AppliedMutation,
+  type FixtureMetadata,
+} from "./defects.js";
 
 /**
  * Creation of a Trusted List: the operator declares the list, and the publisher
@@ -134,6 +144,8 @@ export interface CreateListSuccess {
   entry: SigningConfigEntry;
   sequenceNumber: number;
   inspector: InspectorEvaluation;
+  /** Present only for an intentionally broken list. */
+  fixture?: FixtureMetadata;
 }
 export type CreateListResult =
   CreateListSuccess | { success: false; error: string };
@@ -216,11 +228,6 @@ function validateRequest(request: CreateListRequest): string | null {
   const unknown = request.defects.filter((defect) => !isKnownDefect(defect));
   if (unknown.length > 0)
     return `Unknown defect${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}.`;
-  if (request.defects.length > 0)
-    return (
-      "Broken Trusted List generation is not implemented yet. Create the list " +
-      "without defects, or wait for the broken-profile generator."
-    );
   if (!existsSync(request.keyFile))
     return `Signing key file not found: ${request.keyFile}`;
   if (!existsSync(request.certFile))
@@ -276,6 +283,7 @@ export async function createTrustedList(
       error: `Publications already exist for list key "${listKey}".`,
     };
 
+  const broken = request.defects.length > 0;
   const uris = schemeUrisFor(request.baseUrl);
   const entry: SigningConfigEntry = {
     listKey,
@@ -293,6 +301,8 @@ export async function createTrustedList(
     schemeOperatorWebsite: uris.website,
     schemeInformationUris: uris.schemeInformationUris,
     policyUri: uris.policyUri,
+    /* Persisted so every later version of this list is mutated the same way. */
+    ...(broken ? { defects: [...request.defects] } : {}),
   };
 
   const now = (deps.now ?? (() => new Date()))();
@@ -353,19 +363,82 @@ export async function createTrustedList(
     listIssueDateTime: toUtcDateTime(now),
     nextUpdate: toUtcDateTime(nextUpdate),
     loTESequenceNumber: 1,
-    entities: [],
+    /*
+      A healthy list starts empty, which is what lets it be assessed before
+      anyone applies to it. A broken one is seeded with a single synthetic
+      entity, because the service-level defects have nothing to mutate
+      otherwise.
+    */
+    entities: broken
+      ? [
+          fixtureSeedEntity(
+            request.family,
+            /*
+              Annex H requires the service certificate's subject organisation to
+              match the entity name, so the seed gets its own certificate rather
+              than reusing the list signing certificate. Falling back to the
+              signing certificate keeps generation working without openssl, at
+              the cost of one extra recorded failure.
+            */
+            certificateDerBase64(
+              mintCertificate({
+                commonName: `${FIXTURE_ENTITY_NAME} Issuance`,
+                organisation: FIXTURE_ENTITY_NAME,
+                country: entry.schemeOperatorCountry,
+              })?.certificatePem ?? certPem,
+            ),
+            toUtcDateTime(now),
+            entry.schemeOperatorCountry,
+          ),
+        ]
+      : [],
   };
 
   try {
+    /*
+      The healthy document is always generated first, then cloned and mutated.
+      A broken fixture is therefore always a stated delta from a known-good
+      baseline rather than a separately assembled document.
+    */
     const compiled = compileForProfile(request.family, input);
     const etsi = await validateEtsiStruct(compiled.document);
-    if (!etsi.valid)
+    if (!etsi.valid && !broken)
       return {
         success: false,
         error: `ETSI validation failed: ${etsi.findings
           .map((finding) => `${finding.path}: ${finding.message}`)
           .join("; ")}`,
       };
+
+    const preSign = broken
+      ? applyPreSignDefects(compiled.document, request.defects, {
+          family: request.family,
+          schemeTerritory: entry.schemeTerritory,
+          distributionPointUri: entry.distributionPointUri,
+          loTEType:
+            compiled.document.LoTE.ListAndSchemeInformation.LoTEType ?? "",
+          schemeOperatorName: entry.schemeOperatorName,
+          signingCertificateDer: certificateDerBase64(certPem),
+        })
+      : { document: compiled.document, mutations: [] as AppliedMutation[] };
+
+    /*
+      Local validation of the mutated document is recorded, never fatal: for a
+      broken fixture a schema violation is the deliverable. The findings are
+      kept so the fixture can say which rules failed here as well as at the
+      Inspector.
+    */
+    const localValidationFailures: string[] = [];
+    if (broken) {
+      const mutatedEtsi = await validateEtsiStruct(preSign.document);
+      if (!mutatedEtsi.valid)
+        localValidationFailures.push(
+          ...mutatedEtsi.findings.map(
+            (finding) => `${finding.path}: ${finding.message}`,
+          ),
+        );
+    }
+
     const privateKey = createPrivateKey(keyPem);
     const signingKey = await crypto.subtle.importKey(
       "jwk",
@@ -375,20 +448,41 @@ export async function createTrustedList(
       ["sign"],
     );
     const signed = await signLote({
-      document: compiled.document,
+      document: preSign.document,
       key: signingKey,
       certificatePem: certPem,
       signingTime: now,
     });
+
+    const postSign = broken
+      ? await applyPostSignDefects(signed.compact, request.defects, {
+          certificatePem: certPem,
+          signingKey,
+          document: preSign.document,
+          signingTime: now,
+          schemeOperatorName: entry.schemeOperatorName,
+        })
+      : {
+          compact: signed.compact,
+          certificatePem: certPem,
+          mutations: [] as AppliedMutation[],
+        };
+
+    /*
+      The signature must verify even for a broken fixture, against whichever
+      certificate actually signed it. A fixture that fails to verify at all
+      would mask the specific defect under test behind a generic bad signature.
+    */
     const verified = await verify({
-      compactJws: signed.compact,
-      certificatePem: certPem,
+      compactJws: postSign.compact,
+      certificatePem: postSign.certificatePem,
     });
     if (!verified.valid)
       return { success: false, error: "Post-sign verification failed." };
     const published = await publish({
-      compactJws: signed.compact,
-      certificatePem: certPem,
+      compactJws: postSign.compact,
+      certificatePem: postSign.certificatePem,
+      allowInvalidStructure: broken,
     });
     if (published.listKey !== listKey)
       return {
@@ -397,17 +491,17 @@ export async function createTrustedList(
       };
     await deps.publicationStore.store(
       published,
-      signed.compact,
+      postSign.compact,
       published.loteJson,
       JSON.stringify(published.manifest, null, 2),
     );
     const client = deps.inspectorClient ?? new InspectorClient();
     const inspector = await client.assess({
-      compactJades: signed.compact,
+      compactJades: postSign.compact,
       source: `${listKey}/versions/1/lote.jades`,
       declared: {
         mimeType: "application/jose",
-        loteType: compiled.document.LoTE.ListAndSchemeInformation.LoTEType,
+        loteType: preSign.document.LoTE.ListAndSchemeInformation.LoTEType,
         schemeOperatorName: entry.schemeOperatorName,
         schemeTerritory: entry.schemeTerritory,
       },
@@ -421,6 +515,27 @@ export async function createTrustedList(
     } catch {
       /* evidence only; the published version is already committed */
     }
+
+    let fixture: FixtureMetadata | undefined;
+    if (broken) {
+      fixture = buildFixtureMetadata(
+        request.defects,
+        [...preSign.mutations, ...postSign.mutations],
+        [...localValidationFailures, ...published.structuralFindings],
+        inspector.summary.locallyDecidableFailures ?? [],
+        now,
+      );
+      try {
+        deps.publicationStore.writeFixtureMetadata(
+          listKey,
+          1,
+          JSON.stringify(fixture, null, 2),
+        );
+      } catch {
+        /* evidence only; the published version is already committed */
+      }
+    }
+
     appendSigningConfigEntry(deps.signingConfigPath, entry);
     return {
       success: true,
@@ -428,6 +543,7 @@ export async function createTrustedList(
       entry,
       sequenceNumber: 1,
       inspector,
+      ...(fixture ? { fixture } : {}),
     };
   } catch (error) {
     return {

@@ -355,6 +355,75 @@ must be clean or explained.
 
 ---
 
+## Artifact Location And Repository Hygiene
+
+Artifacts MUST NOT live in the repository root.
+
+An artifact is any file the software reads or writes at runtime, or that a
+generator, script, or task produces. This includes, but is not limited to:
+
+- signing keys, certificates and signing configuration
+- Trusted List publications and their sidecar evidence
+- generated reports, exports and run summaries
+- authoring stores and mutable application records
+- caches, indexes and local databases
+
+### Rules
+
+Artifacts MUST be separated from code. Code lives in the source tree; artifacts
+live in artifact directories.
+
+Signing material and Trusted List artifacts MUST default to:
+
+```text
+./.local-signing/
+```
+
+Every other class of artifact MUST have its own dedicated directory. Different
+kinds of artifact MUST NOT share one directory.
+
+Every artifact location MUST be defined in `.env`, with the variable documented
+in `.env.example`.
+
+Artifact locations MUST NOT be hardcoded. A path written literally in source, in
+a script, or in a test fixture is a violation, even when it happens to be
+correct.
+
+A default value in code is permitted ONLY as the fallback for an environment
+variable that is absent. The environment variable MUST always take precedence:
+
+```text
+ARTIFACT_DIR from .env  →  documented default  →  never a literal in the code path
+```
+
+Artifact directories MUST be listed in the root `.gitignore`.
+
+### Applies To Scripts
+
+Scripts under `./scripts/` are held to the same rule as application code. A
+one-off generator is still software, and its output is still an artifact.
+
+### Verification
+
+Before completing a task:
+
+```sh
+git status --short
+```
+
+Untracked artifacts in the repository root:
+
+→ FAILURE
+
+An artifact location found hardcoded anywhere in the source tree:
+
+→ FAILURE
+
+→ move the location to `.env`, document it in `.env.example`, and read it from
+  the environment before finishing
+
+---
+
 ## Rolling Task Handoffs
 
 Every coding task MUST maintain a repository-local rolling handoff.

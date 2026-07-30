@@ -835,10 +835,6 @@ describe("Trusted List creation", () => {
         [{ schemeTerritory: "eu" }, /schemeTerritory must be a 2-letter code/],
         [{ keyFile: "/nonexistent/key.pem" }, /Signing key file not found/],
         [{ defects: ["not_a_defect"] }, /Unknown defect/],
-        [
-          { defects: ["missing_self_pointer"] },
-          /Broken Trusted List generation is not implemented yet/,
-        ],
       ];
       for (const [overrides, expected] of cases) {
         const result = await createTrustedList(
@@ -855,7 +851,7 @@ describe("Trusted List creation", () => {
     }
   });
 
-  it("offers every defect on the form, disabled, with the family choice", () => {
+  it("offers every defect on the form, selectable, with the family choice", () => {
     const html = createListFormHtml();
     expect(html).toContain("Wallet Providers");
     expect(html).toContain("PID Providers");
@@ -864,12 +860,13 @@ describe("Trusted List creation", () => {
       expect(html).toContain(`value="${defect.id}"`);
       expect(html).toContain(defect.label);
     }
-    // Every defect checkbox is disabled while generation is unimplemented.
+    /*
+      Broken generation is implemented, so every defect is a live checkbox. A
+      disabled one would silently produce a healthy list.
+    */
     expect(html.match(/name="defects"/g)).toHaveLength(LIST_DEFECTS.length);
-    expect(html.match(/name="defects" value="[a-z_]+" disabled/g)).toHaveLength(
-      LIST_DEFECTS.length,
-    );
-    expect(html).toContain("Not implemented yet");
+    expect(html).not.toContain("disabled");
+    expect(html).toContain("Intentionally broken test fixture");
   });
 });
 
