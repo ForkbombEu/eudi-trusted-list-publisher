@@ -55,7 +55,7 @@ cp examples/signing/signing-config.example.json .local-signing/signing-config.js
 # Edit it with paths to your actual signing key/cert
 
 npm run build
-node dist/src/cli/main.js serve --data-collection-gui
+npm run serve
 ```
 
 When enabled:
