@@ -468,6 +468,17 @@ describe("certificate creation guide", () => {
     expect(html).toContain("CA-issued");
   });
 
+  it("documents the RFC 5280 WRPAC CA certificate requirements", () => {
+    for (const requirement of [
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=critical,keyCertSign",
+      "SubjectKeyIdentifier",
+      "AuthorityKeyIdentifier",
+      "non-self-signed",
+    ])
+      expect(html).toContain(requirement);
+  });
+
   it("keeps the OpenSSL workflow central", () => {
     for (const command of [
       "openssl genpkey",

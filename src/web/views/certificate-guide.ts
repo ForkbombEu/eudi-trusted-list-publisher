@@ -56,6 +56,11 @@ openssl x509 \\
   -fingerprint \\
   -sha256`;
 
+const WRPAC_CA_EXTENSIONS = `# WRPAC Provider CA certificate extensions
+-addext "basicConstraints=critical,CA:TRUE" \\
+-addext "keyUsage=critical,keyCertSign" \\
+-addext "subjectKeyIdentifier=hash"`;
+
 const KEY_MATCH_CHECK = `openssl pkey \\
   -in service-private-key.pem \\
   -pubout \\
@@ -126,8 +131,7 @@ export function certificateGuideHtml(): string {
 <p class="lead">Every service you register in a List of Trusted Entities is
 identified by one X.509 certificate. This page explains which object the
 onboarding form expects, and how to create it with OpenSSL. The field is labelled
-<strong>${escape(CERTIFICATE_FIELD_LABEL)}</strong> on the Wallet Provider and PID
-Provider forms.</p>
+<strong>${escape(CERTIFICATE_FIELD_LABEL)}</strong> on the provider forms.</p>
 
 <div class="notice notice-warning">
   The private key stays with the provider and is never uploaded. Upload
@@ -145,14 +149,31 @@ Provider forms.</p>
   it an entry names a provider but gives nothing to verify against.</p>
   <p>This publisher populates <code>ServiceDigitalIdentity</code> with
   <code>X509Certificates</code> only, and it never builds or verifies a
-  certification path. A <strong>self-signed</strong> certificate is therefore
-  accepted and is the simplest option for testing. A <strong>CA-issued</strong>
-  certificate is equally accepted; in production the certificate is normally
-  issued by the CA your scheme requires.</p>
+  certification path. A <strong>self-signed</strong> certificate is accepted when
+  the applicable profile permits it, and a <strong>CA-issued</strong> certificate
+  is equally accepted. WRPAC submissions have the additional CA-certificate
+  requirements described below.</p>
   <p>The certificate subject must identify the provider. Set the organisation
   (<code>O</code>) to <strong>exactly</strong> the Trusted Entity Name you enter
   during onboarding — the <em>Entity Name</em> field — or the submission is
   rejected.</p>
+</div>
+
+<div class="card">
+  <h2>WRPAC Provider CA certificate</h2>
+  <p>A WRPAC service certificate identifies the CA key used to verify the
+  signatures or seals on access certificates issued by the provider. It must be
+  currently valid and carry the RFC 5280 CA extensions:</p>
+  ${block(WRPAC_CA_EXTENSIONS)}
+  <p><code>basicConstraints</code> must be critical with <code>CA:TRUE</code>.
+  <code>keyUsage</code> must be critical and include <code>keyCertSign</code>;
+  compatible additional usages such as <code>cRLSign</code> are allowed. A
+  non-critical <code>SubjectKeyIdentifier</code> must be present, but it may use
+  any RFC 5280-compatible identifier method rather than one fixed hash.</p>
+  <p>A non-self-signed certificate must also contain a non-critical
+  <code>AuthorityKeyIdentifier</code> with its <code>keyIdentifier</code>. A
+  certificate is treated as self-signed only when its subject and issuer match
+  and its signature verifies with its own public key.</p>
 </div>
 
 <div class="card">
@@ -231,8 +252,8 @@ Provider forms.</p>
 
 <div class="card">
   <h2>What the form rejects</h2>
-  <p>A parseable self-signed or CA-issued X.509 PEM certificate is accepted.
-  Anything else is reported against the certificate field:</p>
+  <p>A parseable X.509 PEM certificate that satisfies its provider profile is
+  accepted. Anything else is reported against the certificate field:</p>
   <table class="kv-table">
     <tbody>
 ${rejectionRows()}

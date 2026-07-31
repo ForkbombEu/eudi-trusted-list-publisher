@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect, vi } from "vitest";
+import { execFileSync } from "node:child_process";
 import { readFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -164,6 +165,154 @@ function tmpDir(): string {
   return path;
 }
 
+const wrpacCertificateDir = tmpDir();
+const emptyOpenSslConfig = join(wrpacCertificateDir, "empty-openssl.cnf");
+writeFileSync(emptyOpenSslConfig, "", "utf-8");
+let wrpacCertificateSequence = 0;
+
+function selfSignedCertificate(extensions: readonly string[]): string {
+  const prefix = join(
+    wrpacCertificateDir,
+    `self-signed-${++wrpacCertificateSequence}`,
+  );
+  const key = `${prefix}-key.pem`;
+  const certificate = `${prefix}-cert.pem`;
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-new",
+      "-newkey",
+      "ec",
+      "-pkeyopt",
+      "ec_paramgen_curve:P-256",
+      "-nodes",
+      "-x509",
+      "-keyout",
+      key,
+      "-out",
+      certificate,
+      "-days",
+      "365",
+      "-sha256",
+      "-subj",
+      "/C=EU/O=Test/CN=WRPAC test CA",
+      "-config",
+      emptyOpenSslConfig,
+      ...extensions.flatMap((extension) => ["-addext", extension]),
+    ],
+    { stdio: "ignore" },
+  );
+  return readFileSync(certificate, "utf-8");
+}
+
+function issuedCertificate(
+  extensions: readonly string[],
+  selfIssued = false,
+  reuseIssuerKey = false,
+): string {
+  const prefix = join(
+    wrpacCertificateDir,
+    `issued-${++wrpacCertificateSequence}`,
+  );
+  const issuerKey = `${prefix}-issuer-key.pem`;
+  const issuerCertificate = `${prefix}-issuer-cert.pem`;
+  const issuerSubject = "/C=EU/O=Test/CN=WRPAC issuer";
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-new",
+      "-newkey",
+      "ec",
+      "-pkeyopt",
+      "ec_paramgen_curve:P-256",
+      "-nodes",
+      "-x509",
+      "-keyout",
+      issuerKey,
+      "-out",
+      issuerCertificate,
+      "-days",
+      "365",
+      "-sha256",
+      "-subj",
+      issuerSubject,
+      "-config",
+      emptyOpenSslConfig,
+      "-addext",
+      "basicConstraints=critical,CA:TRUE",
+      "-addext",
+      "keyUsage=critical,keyCertSign",
+      "-addext",
+      "subjectKeyIdentifier=hash",
+    ],
+    { stdio: "ignore" },
+  );
+
+  const key = `${prefix}-key.pem`;
+  const request = `${prefix}.csr`;
+  const certificate = `${prefix}-cert.pem`;
+  const extensionFile = `${prefix}.ext`;
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-new",
+      ...(reuseIssuerKey
+        ? ["-key", issuerKey]
+        : [
+            "-newkey",
+            "ec",
+            "-pkeyopt",
+            "ec_paramgen_curve:P-256",
+            "-nodes",
+            "-keyout",
+            key,
+          ]),
+      "-out",
+      request,
+      "-subj",
+      selfIssued ? issuerSubject : "/C=EU/O=Test/CN=WRPAC subordinate CA",
+      "-config",
+      emptyOpenSslConfig,
+    ],
+    { stdio: "ignore" },
+  );
+  writeFileSync(extensionFile, `${extensions.join("\n")}\n`, "utf-8");
+  execFileSync(
+    "openssl",
+    [
+      "x509",
+      "-req",
+      "-in",
+      request,
+      "-CA",
+      issuerCertificate,
+      "-CAkey",
+      issuerKey,
+      "-CAcreateserial",
+      "-out",
+      certificate,
+      "-days",
+      "365",
+      "-sha256",
+      "-extfile",
+      extensionFile,
+    ],
+    { stdio: "ignore" },
+  );
+  return readFileSync(certificate, "utf-8");
+}
+
+const VALID_WRPAC_CERTIFICATE = selfSignedCertificate([
+  "basicConstraints=critical,CA:TRUE",
+  "keyUsage=critical,keyCertSign,cRLSign",
+  "subjectKeyIdentifier=01:02:03:04",
+]);
+
+afterAll(() => rmSync(wrpacCertificateDir, { recursive: true, force: true }));
+
 /** Never reaches the network; the profile it reports is the one asked for. */
 function stubInspector(profile: string): InspectorClient {
   return new InspectorClient({
@@ -190,6 +339,7 @@ function stubInspector(profile: string): InspectorClient {
 
 const submissionFields = (
   overrides: Record<string, string> = {},
+  family?: RelyingPartyFamily,
 ): Record<string, string> => ({
   entityName: CERT_ORGANISATION,
   entityStreetAddress: "1 Entity Street",
@@ -200,9 +350,22 @@ const submissionFields = (
   entityPolicyURI: "https://entity.example/policies",
   "service[0].serviceType": "issuance",
   "service[0].serviceName": "Issuance",
-  "service[0].certificatePem": TEST_CERT,
+  "service[0].certificatePem":
+    family === "wrpac-providers" ? VALID_WRPAC_CERTIFICATE : TEST_CERT,
   ...overrides,
 });
+
+function wrpacCertificateError(certificate: string): string | undefined {
+  const parsed = parseAndValidateSubmission(
+    submissionFields({ "service[0].certificatePem": certificate }),
+    "eu_test",
+    "wrpac-providers",
+  );
+  if (parsed.valid) return undefined;
+  return parsed.errors.find(
+    (error) => error.field === "service[0].certificatePem",
+  )?.message;
+}
 
 // ============================================================
 // 1. Catalogue and profile registry
@@ -495,14 +658,192 @@ describe("Annex F/G generation", () => {
 // 3. Submission parsing
 // ============================================================
 describe("Annex F/G submission parsing", () => {
+  it("rejects a WRPAC certificate whose basic constraints do not identify a CA", () => {
+    const certificate = selfSignedCertificate([
+      "basicConstraints=critical,CA:FALSE",
+      "keyUsage=critical,keyCertSign",
+      "subjectKeyIdentifier=hash",
+    ]);
+    expect(wrpacCertificateError(certificate)).toContain("basicConstraints");
+  });
+
+  it("rejects a WRPAC CA certificate whose basic constraints are not critical", () => {
+    const certificate = selfSignedCertificate([
+      "basicConstraints=CA:TRUE",
+      "keyUsage=critical,keyCertSign",
+      "subjectKeyIdentifier=hash",
+    ]);
+    expect(wrpacCertificateError(certificate)).toContain(
+      "basicConstraints must be critical",
+    );
+  });
+
+  it("rejects a WRPAC CA certificate without key usage", () => {
+    const certificate = selfSignedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "subjectKeyIdentifier=hash",
+    ]);
+    expect(wrpacCertificateError(certificate)).toContain("keyUsage");
+  });
+
+  it("rejects a WRPAC CA certificate whose key usage omits keyCertSign", () => {
+    const certificate = selfSignedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=critical,digitalSignature",
+      "subjectKeyIdentifier=hash",
+    ]);
+    expect(wrpacCertificateError(certificate)).toContain("keyCertSign");
+  });
+
+  it("rejects a WRPAC CA certificate whose key usage is not critical", () => {
+    const certificate = selfSignedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=keyCertSign",
+      "subjectKeyIdentifier=hash",
+    ]);
+    expect(wrpacCertificateError(certificate)).toContain(
+      "keyUsage must be critical",
+    );
+  });
+
+  it("rejects a WRPAC CA certificate without a subject key identifier", () => {
+    const certificate = selfSignedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=critical,keyCertSign",
+      "subjectKeyIdentifier=none",
+    ]);
+    expect(wrpacCertificateError(certificate)).toContain(
+      "SubjectKeyIdentifier",
+    );
+  });
+
+  it("rejects a WRPAC CA certificate with a critical subject key identifier", () => {
+    const certificate = selfSignedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=critical,keyCertSign",
+      "subjectKeyIdentifier=critical,hash",
+    ]);
+    expect(wrpacCertificateError(certificate)).toContain(
+      "SubjectKeyIdentifier must be non-critical",
+    );
+  });
+
+  it("rejects a non-self-signed WRPAC CA certificate without an authority key identifier", () => {
+    const certificate = issuedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=critical,keyCertSign",
+      "subjectKeyIdentifier=hash",
+      "authorityKeyIdentifier=none",
+    ]);
+    expect(wrpacCertificateError(certificate)).toContain(
+      "AuthorityKeyIdentifier",
+    );
+  });
+
+  it("rejects an authority key identifier that omits its keyIdentifier", () => {
+    const certificate = issuedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=critical,keyCertSign",
+      "subjectKeyIdentifier=hash",
+      "authorityKeyIdentifier=issuer:always",
+    ]);
+    expect(wrpacCertificateError(certificate)).toContain("keyIdentifier");
+  });
+
+  it("rejects a non-self-signed WRPAC CA certificate with a critical authority key identifier", () => {
+    const certificate = issuedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=critical,keyCertSign",
+      "subjectKeyIdentifier=hash",
+      "authorityKeyIdentifier=critical,keyid",
+    ]);
+    expect(wrpacCertificateError(certificate)).toContain(
+      "AuthorityKeyIdentifier must be non-critical",
+    );
+  });
+
+  it("rejects a critical authority key identifier on a self-signed WRPAC CA", () => {
+    const certificate = issuedCertificate(
+      [
+        "basicConstraints=critical,CA:TRUE",
+        "keyUsage=critical,keyCertSign",
+        "subjectKeyIdentifier=hash",
+        "authorityKeyIdentifier=critical,keyid",
+      ],
+      true,
+      true,
+    );
+    expect(wrpacCertificateError(certificate)).toContain(
+      "AuthorityKeyIdentifier must be non-critical",
+    );
+  });
+
+  it("does not mistake a self-issued CA certificate for a self-signed one", () => {
+    const certificate = issuedCertificate(
+      [
+        "basicConstraints=critical,CA:TRUE",
+        "keyUsage=critical,keyCertSign",
+        "subjectKeyIdentifier=hash",
+        "authorityKeyIdentifier=none",
+      ],
+      true,
+    );
+    expect(wrpacCertificateError(certificate)).toContain(
+      "AuthorityKeyIdentifier",
+    );
+  });
+
+  it("accepts a non-self-signed WRPAC CA certificate with an authority key identifier", () => {
+    const certificate = issuedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=critical,keyCertSign,cRLSign",
+      "subjectKeyIdentifier=01:02:03:04",
+      "authorityKeyIdentifier=keyid",
+    ]);
+    expect(wrpacCertificateError(certificate)).toBeUndefined();
+  });
+
+  it("rejects an expired WRPAC CA certificate", () => {
+    const certificate = selfSignedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=critical,keyCertSign,cRLSign",
+      "subjectKeyIdentifier=01:02:03:04",
+    ]);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
+    try {
+      expect(wrpacCertificateError(certificate)).toContain("expired");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects a WRPAC CA certificate that is not yet valid", () => {
+    const certificate = selfSignedCertificate([
+      "basicConstraints=critical,CA:TRUE",
+      "keyUsage=critical,keyCertSign",
+      "subjectKeyIdentifier=hash",
+    ]);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2020-01-01T00:00:00Z"));
+    try {
+      expect(wrpacCertificateError(certificate)).toContain("not yet valid");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   for (const family of RELYING_PARTY_FAMILIES) {
     it(`${family}: accepts the collected fields`, () => {
       const parsed = parseAndValidateSubmission(
-        submissionFields({
-          entityTradeName: "Trade",
-          registrationIdentifier: "NTRPL-0000123456",
-          additionalInformationURI: "https://entity.example/info",
-        }),
+        submissionFields(
+          {
+            entityTradeName: "Trade",
+            registrationIdentifier: "NTRPL-0000123456",
+            additionalInformationURI: "https://entity.example/info",
+          },
+          family,
+        ),
         "eu_test",
         family,
       );
@@ -517,13 +858,16 @@ describe("Annex F/G submission parsing", () => {
       expect(parsed.applicantData.services[0]).toEqual({
         serviceType: "issuance",
         serviceName: "Issuance",
-        certificatePem: TEST_CERT.trim(),
+        certificatePem:
+          family === "wrpac-providers"
+            ? VALID_WRPAC_CERTIFICATE.trim()
+            : TEST_CERT.trim(),
       });
     });
 
     it(`${family}: treats the registration identifier and extra URL as optional`, () => {
       const parsed = parseAndValidateSubmission(
-        submissionFields(),
+        submissionFields({}, family),
         "eu_test",
         family,
       );
@@ -534,7 +878,7 @@ describe("Annex F/G submission parsing", () => {
     });
 
     it(`${family}: requires the Responsible Member State and policies URL`, () => {
-      const fields = submissionFields();
+      const fields = submissionFields({}, family);
       delete fields.responsibleMemberState;
       delete fields.entityPolicyURI;
       const parsed = parseAndValidateSubmission(fields, "eu_test", family);
@@ -546,7 +890,7 @@ describe("Annex F/G submission parsing", () => {
 
     it(`${family}: rejects a malformed additional information URL`, () => {
       const parsed = parseAndValidateSubmission(
-        submissionFields({ additionalInformationURI: "not a url" }),
+        submissionFields({ additionalInformationURI: "not a url" }, family),
         "eu_test",
         family,
       );
@@ -562,9 +906,13 @@ describe("Annex F/G submission parsing", () => {
     */
     it(`${family}: reports a posted service unique identifier as unknown`, () => {
       const parsed = parseAndValidateSubmission(
-        submissionFields({
-          "service[0].serviceUniqueIdentifier": "https://entity.example/svc/1",
-        }),
+        submissionFields(
+          {
+            "service[0].serviceUniqueIdentifier":
+              "https://entity.example/svc/1",
+          },
+          family,
+        ),
         "eu_test",
         family,
       );
@@ -578,7 +926,7 @@ describe("Annex F/G submission parsing", () => {
 
     it(`${family}: still requires an X.509 certificate whose O is the entity`, () => {
       const parsed = parseAndValidateSubmission(
-        submissionFields({ entityName: "Someone Else" }),
+        submissionFields({ entityName: "Someone Else" }, family),
         "eu_test",
         family,
       );
@@ -627,6 +975,8 @@ describe("Annex F/G views", () => {
     expect(html).toContain(
       "The certificate used to verify signatures or seals created by the WRPAC Provider on issued wallet-relying-party access certificates.",
     );
+    expect(html).toContain("RFC 5280 CA certificate");
+    expect(html).toContain("keyCertSign");
     expect(html).toContain("Policies and Terms URL");
     expect(html).toContain('name="registrationIdentifier"');
     expect(html).toContain('name="additionalInformationURI"');

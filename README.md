@@ -225,9 +225,12 @@ information URI, plus one or more services. Each service needs a type, a name, a
 **Service Digital Identity Certificate (PEM)** and a unique service URI.
 The certificate may be self-signed or CA-issued; its subject organisation (`O`)
 must be exactly the entity name entered on the form, and the private key is never
-uploaded. Anything that is not an X.509 PEM certificate — a private key, a public
-key, a signing request, a PKCS#12 bundle — is rejected with a message naming what
-was supplied. Use **+ Add Service** to add more services; blocks are renumbered
+uploaded. WRPAC submissions must use a currently valid RFC 5280 CA certificate
+with critical `basicConstraints`/`CA:TRUE`, critical `keyUsage` containing
+`keyCertSign`, an SKI, and an AKI key identifier when it is not self-signed.
+Anything that is not an X.509 PEM certificate — a private key, a public key, a
+signing request, a PKCS#12 bundle — is rejected with a message naming what was
+supplied. Use **+ Add Service** to add more services; blocks are renumbered
 automatically and every block after the first has a **Remove service** button.
 Submitting returns an application ID to quote when following up.
 
@@ -239,6 +242,7 @@ certificate field on both onboarding forms. It explains what
 PKCS#8, PKCS#10, PKCS#12/PFX and DER, and gives the OpenSSL commands to create a
 self-signed test certificate, to check that a certificate matches its private
 key, to create a CSR for a CA, and to convert or extract a certificate to PEM.
+It also gives the RFC 5280 extension requirements for a WRPAC CA certificate.
 
 ### Administration (`/admin`)
 
@@ -305,7 +309,8 @@ specification is available at `/openapi.yaml` and `/openapi.json`.
 1. Applicant navigates to `/onboarding` and selects one of the five available
    families: PID, Wallet, WRPAC, WRPRC or Pub-EAA Providers
 2. Applicant submits entity details, addresses, and one X.509 PEM certificate per
-   service (self-signed or CA-issued; see `/docs/certificate-creation`). The
+   service (self-signed or CA-issued; see `/docs/certificate-creation`). WRPAC
+   certificates must satisfy the RFC 5280 CA checks described above. The
    certificate is optional for Pub-EAA Providers, which may supply more than one
    provided they share a public key and a subject
 3. Applicant receives a confirmed application ID

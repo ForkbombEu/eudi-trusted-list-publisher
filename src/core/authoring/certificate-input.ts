@@ -1,5 +1,20 @@
 import { X509Certificate } from "node:crypto";
 import { publicKeyFingerprint } from "../model/x509-ski.js";
+import {
+  readCertificateExtension,
+  readDerElement,
+  readDerSequence,
+} from "../model/x509-extensions.js";
+
+const OID_BASIC_CONSTRAINTS = Buffer.from([0x55, 0x1d, 0x13]);
+const OID_KEY_USAGE = Buffer.from([0x55, 0x1d, 0x0f]);
+const OID_SUBJECT_KEY_IDENTIFIER = Buffer.from([0x55, 0x1d, 0x0e]);
+const OID_AUTHORITY_KEY_IDENTIFIER = Buffer.from([0x55, 0x1d, 0x23]);
+const TAG_BOOLEAN = 0x01;
+const TAG_BIT_STRING = 0x03;
+const TAG_OCTET_STRING = 0x04;
+const TAG_SEQUENCE = 0x30;
+const TAG_CONTEXT_KEY_IDENTIFIER = 0x80;
 
 /**
  * Classification of whatever the applicant pasted into the Service Digital
@@ -252,5 +267,89 @@ export function checkCertificateSubjectOrganisation(
       `Trusted Entity Name is "${expected}". Set O to exactly the Trusted ` +
       `Entity Name.`
     );
+  return null;
+}
+
+/**
+ * A WRPAC service identity is the CA certificate whose public key verifies the
+ * access certificates issued by the provider.
+ */
+export function checkWrpacCaCertificate(
+  certificate: X509Certificate,
+): string | null {
+  const basicConstraints = readCertificateExtension(
+    certificate,
+    OID_BASIC_CONSTRAINTS,
+  );
+  const encodedConstraints = basicConstraints
+    ? readDerElement(basicConstraints.value, 0)
+    : null;
+  const ca =
+    encodedConstraints?.tag === TAG_SEQUENCE
+      ? readDerSequence(encodedConstraints.contents)[0]
+      : null;
+  if (
+    !ca ||
+    ca.tag !== TAG_BOOLEAN ||
+    ca.contents.length !== 1 ||
+    ca.contents[0] === 0
+  )
+    return "The WRPAC certificate must contain basicConstraints with CA:TRUE.";
+  if (!basicConstraints?.critical)
+    return "The WRPAC certificate basicConstraints must be critical.";
+  const keyUsage = readCertificateExtension(certificate, OID_KEY_USAGE);
+  if (!keyUsage)
+    return "The WRPAC certificate must contain keyUsage with keyCertSign.";
+  const usageBits = readDerElement(keyUsage.value, 0);
+  if (
+    !usageBits ||
+    usageBits.tag !== TAG_BIT_STRING ||
+    usageBits.contents.length < 2 ||
+    (usageBits.contents[1]! & 0x04) === 0
+  )
+    return "The WRPAC certificate keyUsage must contain keyCertSign.";
+  if (!keyUsage.critical)
+    return "The WRPAC certificate keyUsage must be critical.";
+  const subjectKeyIdentifier = readCertificateExtension(
+    certificate,
+    OID_SUBJECT_KEY_IDENTIFIER,
+  );
+  if (!subjectKeyIdentifier)
+    return "The WRPAC certificate must contain a SubjectKeyIdentifier.";
+  const identifier = readDerElement(subjectKeyIdentifier.value, 0);
+  if (
+    !identifier ||
+    identifier.tag !== TAG_OCTET_STRING ||
+    identifier.contents.length === 0
+  )
+    return "The WRPAC certificate must contain a SubjectKeyIdentifier.";
+  if (subjectKeyIdentifier.critical)
+    return "The WRPAC certificate SubjectKeyIdentifier must be non-critical.";
+  const selfSigned =
+    certificate.subject === certificate.issuer &&
+    certificate.verify(certificate.publicKey);
+  const authorityKeyIdentifier = readCertificateExtension(
+    certificate,
+    OID_AUTHORITY_KEY_IDENTIFIER,
+  );
+  if (authorityKeyIdentifier?.critical)
+    return "The WRPAC certificate AuthorityKeyIdentifier must be non-critical.";
+  if (!selfSigned) {
+    if (!authorityKeyIdentifier)
+      return "A non-self-signed WRPAC certificate must contain an AuthorityKeyIdentifier keyIdentifier.";
+    const encodedAuthority = readDerElement(authorityKeyIdentifier.value, 0);
+    const authorityIdentifier =
+      encodedAuthority?.tag === TAG_SEQUENCE
+        ? readDerSequence(encodedAuthority.contents).find(
+            (element) => element.tag === TAG_CONTEXT_KEY_IDENTIFIER,
+          )
+        : null;
+    if (!authorityIdentifier || authorityIdentifier.contents.length === 0)
+      return "A non-self-signed WRPAC certificate must contain an AuthorityKeyIdentifier keyIdentifier.";
+  }
+  if (Date.now() > certificate.validToDate.getTime())
+    return "The WRPAC certificate has expired.";
+  if (Date.now() < certificate.validFromDate.getTime())
+    return "The WRPAC certificate is not yet valid.";
   return null;
 }

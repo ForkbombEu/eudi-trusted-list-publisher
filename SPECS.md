@@ -514,8 +514,9 @@ while `renumber()` recomputes the headings and hides the remove button on
 whichever block is currently first. The certificate field is labelled
 `Service Digital Identity Certificate (X.509 PEM)` and links the Certificate
 creation guide; the publisher stores the certificate as the service's digital
-identity and never builds or verifies a certification path, so a self-signed and
-a CA-issued certificate are equally acceptable.
+identity and never builds or verifies a certification path. WRPAC is the one
+profile with an additional submission-time rule: its identity must be a current
+RFC 5280 CA certificate suitable for verifying issued access certificates.
 
 ### Certificate input
 
@@ -542,8 +543,13 @@ it, so the page cannot drift from the form.
 
 `checkCertificateSubjectOrganisation()` then requires the subject `O` to equal
 the submitted entity name exactly, and names both values when it does not.
-`parseAndValidateSubmission()` applies both checks per service and reports them
-on `service[i].certificatePem`.
+`checkWrpacCaCertificate()` additionally requires critical `basicConstraints`
+with `CA:TRUE`, critical `keyUsage` containing `keyCertSign`, non-critical SKI,
+non-critical AKI with `keyIdentifier` for a non-self-signed certificate, and a
+current validity interval. Self-signing is established by matching subject and
+issuer plus verification with the certificate's own public key. The parser
+applies the WRPAC check only to Annex F and reports every failure on
+`service[i].certificatePem`; it does not build a path or check revocation.
 
 ### Trust Inspector integration
 
@@ -622,7 +628,8 @@ the data-collection GUI is enabled and linked from the footer Resources column
 and from the certificate field on both onboarding forms. It explains what
 `ServiceDigitalIdentity` is for, distinguishes PEM/PKCS#8/PKCS#10/PKCS#12/DER,
 and carries the OpenSSL workflows: self-signed creation, key/certificate match
-verification, CSR creation, DER-to-PEM and PKCS#12 extraction.
+verification, CSR creation, DER-to-PEM and PKCS#12 extraction. A separate WRPAC
+section documents its RFC 5280 CA extensions and the conditional AKI rule.
 
 ### Auto-approval settings
 
@@ -666,6 +673,13 @@ posted body is reported as an unknown field. The authoring store validates a
 stored record against the family it claims, so a record with an identifier the
 profile does not use, or without a Responsible Member State the profile
 requires, is rejected rather than half-read.
+
+For WRPAC submissions, `parseAndValidateSubmission()` also validates that every
+service certificate is a currently valid RFC 5280 CA certificate: critical
+`basicConstraints` with `CA:TRUE`, critical `keyUsage` containing
+`keyCertSign`, non-critical SKI, and non-critical AKI with `keyIdentifier` when
+the certificate is not cryptographically self-signed. This is deliberately not
+applied to WRPRC or another family.
 
 `ONBOARDING_FORMS` in `src/web/server.ts` declares one route, family, title and
 view per implemented family, and both the GET and POST handlers read it, so

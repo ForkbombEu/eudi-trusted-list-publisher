@@ -1,4 +1,9 @@
 import { createHash, X509Certificate } from "node:crypto";
+import {
+  readCertificateExtension,
+  readDerElement,
+  readDerSequence,
+} from "./x509-extensions.js";
 
 /**
  * Subject key identifiers for the Annex H ServiceHistory, where the superseded
@@ -18,99 +23,34 @@ import { createHash, X509Certificate } from "node:crypto";
 /** DER tags this reader distinguishes. */
 const TAG_BIT_STRING = 0x03;
 const TAG_OCTET_STRING = 0x04;
-const TAG_OID = 0x06;
 const TAG_SEQUENCE = 0x30;
-/** [3] EXPLICIT — the extensions member of TBSCertificate. */
-const TAG_EXTENSIONS = 0xa3;
 
 /** id-ce-subjectKeyIdentifier, 2.5.29.14. */
 const OID_SUBJECT_KEY_IDENTIFIER = Buffer.from([0x55, 0x1d, 0x0e]);
-
-interface DerElement {
-  tag: number;
-  /** Contents, excluding tag and length. */
-  contents: Buffer;
-  /** Offset just past this element in its parent. */
-  end: number;
-}
-
-/** Reads one DER element at `offset`, or null when the encoding is unusable. */
-function readElement(der: Buffer, offset: number): DerElement | null {
-  if (offset + 2 > der.length) return null;
-  const tag = der[offset]!;
-  const first = der[offset + 1]!;
-  let length = first;
-  let contentsAt = offset + 2;
-  if (first & 0x80) {
-    const lengthBytes = first & 0x7f;
-    // Indefinite length and lengths beyond four bytes never occur in DER certificates.
-    if (lengthBytes === 0 || lengthBytes > 4) return null;
-    if (offset + 2 + lengthBytes > der.length) return null;
-    length = 0;
-    for (let index = 0; index < lengthBytes; index += 1)
-      length = length * 256 + der[offset + 2 + index]!;
-    contentsAt = offset + 2 + lengthBytes;
-  }
-  const end = contentsAt + length;
-  if (end > der.length) return null;
-  return { tag, contents: der.subarray(contentsAt, end), end };
-}
-
-/** Reads the elements of a constructed element's contents, in order. */
-function readSequence(contents: Buffer): DerElement[] {
-  const elements: DerElement[] = [];
-  let offset = 0;
-  while (offset < contents.length) {
-    const element = readElement(contents, offset);
-    if (!element) break;
-    elements.push(element);
-    offset = element.end;
-  }
-  return elements;
-}
 
 /**
  * Returns the contents of the SubjectKeyIdentifier extension, or null when the
  * certificate does not carry one.
  */
-function subjectKeyIdentifierExtension(der: Buffer): Buffer | null {
-  const certificate = readElement(der, 0);
-  if (!certificate || certificate.tag !== TAG_SEQUENCE) return null;
-  const tbs = readElement(certificate.contents, 0);
-  if (!tbs || tbs.tag !== TAG_SEQUENCE) return null;
-  const extensionsMember = readSequence(tbs.contents).find(
-    (element) => element.tag === TAG_EXTENSIONS,
+function subjectKeyIdentifierExtension(
+  certificate: X509Certificate,
+): Buffer | null {
+  const extension = readCertificateExtension(
+    certificate,
+    OID_SUBJECT_KEY_IDENTIFIER,
   );
-  if (!extensionsMember) return null;
-  const extensions = readElement(extensionsMember.contents, 0);
-  if (!extensions || extensions.tag !== TAG_SEQUENCE) return null;
-  for (const extension of readSequence(extensions.contents)) {
-    if (extension.tag !== TAG_SEQUENCE) continue;
-    const parts = readSequence(extension.contents);
-    const oid = parts[0];
-    if (!oid || oid.tag !== TAG_OID) continue;
-    if (!oid.contents.equals(OID_SUBJECT_KEY_IDENTIFIER)) continue;
-    /*
-      Extension ::= SEQUENCE { extnID, critical BOOLEAN DEFAULT FALSE,
-      extnValue OCTET STRING }, so extnValue is always the last member whether
-      or not the optional criticality flag is encoded.
-    */
-    const value = parts[parts.length - 1];
-    if (!value || value.tag !== TAG_OCTET_STRING) return null;
-    /* extnValue wraps the KeyIdentifier, itself an OCTET STRING. */
-    const identifier = readElement(value.contents, 0);
-    if (!identifier || identifier.tag !== TAG_OCTET_STRING) return null;
-    return identifier.contents;
-  }
-  return null;
+  if (!extension) return null;
+  const identifier = readDerElement(extension.value, 0);
+  if (!identifier || identifier.tag !== TAG_OCTET_STRING) return null;
+  return identifier.contents;
 }
 
 /** SHA-1 of the subject public key BIT STRING contents (RFC 5280 method 1). */
 function derivedKeyIdentifier(certificate: X509Certificate): Buffer | null {
   const spki = certificate.publicKey.export({ format: "der", type: "spki" });
-  const sequence = readElement(spki, 0);
+  const sequence = readDerElement(spki, 0);
   if (!sequence || sequence.tag !== TAG_SEQUENCE) return null;
-  const bitString = readSequence(sequence.contents).find(
+  const bitString = readDerSequence(sequence.contents).find(
     (element) => element.tag === TAG_BIT_STRING,
   );
   if (!bitString || bitString.contents.length < 2) return null;
@@ -135,7 +75,7 @@ export function subjectKeyIdentifierBase64(certificate: string): string {
       ? certificate
       : Buffer.from(certificate, "base64"),
   );
-  const fromExtension = subjectKeyIdentifierExtension(Buffer.from(parsed.raw));
+  const fromExtension = subjectKeyIdentifierExtension(parsed);
   const identifier = fromExtension ?? derivedKeyIdentifier(parsed);
   if (!identifier || identifier.length === 0)
     throw new Error(

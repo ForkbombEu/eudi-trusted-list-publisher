@@ -100,6 +100,8 @@ interface FormProfile {
   requiresServiceCertificate: boolean;
   /** What this profile's service certificate is used for. */
   certificatePurpose: string;
+  /** Optional profile-specific replacement for the shared certificate note. */
+  certificateExplanation?: string;
   /**
    * Shown in a closing card: what being listed means in this profile, said in
    * words because the artifact cannot say it in every family.
@@ -207,6 +209,8 @@ function relyingPartyProfile(
     action: string;
     certificateKind: string;
     serviceKindLabel: string;
+    certificateRequirements?: string;
+    certificateExplanation?: string;
     entityHelp: string;
     listLabel: string;
   },
@@ -228,7 +232,12 @@ function relyingPartyProfile(
     revocationLabel: `${options.serviceKindLabel} Revocation`,
     requiresServiceUniqueIdentifier: false,
     requiresServiceCertificate: true,
-    certificatePurpose: `The certificate used to verify signatures or seals created by the ${options.serviceKindLabel} Provider on issued ${options.certificateKind}.`,
+    certificatePurpose:
+      `The certificate used to verify signatures or seals created by the ${options.serviceKindLabel} Provider on issued ${options.certificateKind}.` +
+      (options.certificateRequirements
+        ? ` ${options.certificateRequirements}`
+        : ""),
+    certificateExplanation: options.certificateExplanation,
     informationField: {
       name: "entityPolicyURI",
       label: "Policies and Terms URL",
@@ -398,6 +407,10 @@ export function wrpacProviderFormHtml(
         action: "/onboarding/wrpac-provider",
         certificateKind: "wallet-relying-party access certificates",
         serviceKindLabel: "WRPAC",
+        certificateRequirements:
+          "Supply an RFC 5280 CA certificate with critical basicConstraints CA:TRUE, critical keyUsage containing keyCertSign, and a SubjectKeyIdentifier; a non-self-signed certificate also needs an AuthorityKeyIdentifier.",
+        certificateExplanation:
+          "The certificate is published as the service ServiceDigitalIdentity and must identify the provider: set the organisation (O) to exactly the Entity Name entered above. A self-signed or issuer-signed CA certificate is accepted when it satisfies the WRPAC checks; this publisher does not otherwise build or verify its certification path.",
         entityHelp:
           "The legal entity applying to be listed as a provider of " +
           "Wallet-Relying-Party Access Certificates (WRPAC).",
@@ -579,7 +592,9 @@ ${profile.extraUriFields}
       ${renderAllServices(profile, v, errors)}
     </div>
     <button type="button" class="btn btn-outline btn-sm" id="add-service-btn" style="margin-top:1rem;">+ Add Service</button>
-    <p class="field-help">${CERTIFICATE_EXPLANATION}</p>
+    <p class="field-help">${escape(
+      profile.certificateExplanation ?? CERTIFICATE_EXPLANATION,
+    )}</p>
   </div>
 
   <div class="card">
