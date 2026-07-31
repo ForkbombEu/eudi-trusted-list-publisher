@@ -683,6 +683,15 @@ mean a fourth branch.
 `compileForProfile()` emits each of them only where the profile declares them and
 refuses them elsewhere, so a stray status cannot reach an Annex D–G list.
 
+Annex H.3 makes `TETradeName` mandatory for every Pub-EAA trusted entity. The
+application-to-authoring mapping puts the official registration identifier in
+that component when one exists and always puts the legal-basis URI there. The
+URI is `OJ:` followed by `EU` for Union law or an EU Member State's ISO 3166-1
+alpha-2 code for national law, followed by the unique law identifier. The
+profile compiler and `schemas/profiles/pub-eaa-schema.json` both reject a
+Pub-EAA entity whose `TETradeName` omits that formatted legal reference. The
+vendored generic ETSI schema remains unchanged.
+
 `src/core/model/x509-ski.ts` produces the `X509SKI` values a history instance
 publishes. Node's `X509Certificate` exposes neither the SubjectKeyIdentifier
 extension nor a derived identifier, so the module walks the certificate DER for

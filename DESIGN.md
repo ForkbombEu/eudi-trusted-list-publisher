@@ -179,9 +179,10 @@ The onboarding form differs from the Annex F/G form in three visible ways, each
 because the profile differs:
 
 - a **Legal Basis Reference** field, required, because Annex H asks which Union
-  or national act the notification rests on. The help text says it is published
-  as an `OJ:` URI and that the prefix is added for the applicant — the form asks
-  for the citation, not for a URI;
+  or national act the notification rests on. The citation starts with `EU` or
+  the relevant EU Member State's ISO country code, followed by the law
+  identifier. The help text says it is published as an `OJ:` URI in
+  `TETradeName` and that the scheme prefix is added for the applicant;
 - the certificate field is **not** marked required, because Annex H is the only
   implemented profile whose service digital identity is optional. It is the
   absence of the asterisk that says so, and the help text explains that more than

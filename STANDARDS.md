@@ -57,6 +57,10 @@ Retrieval date: 2026-07-28. Tests must never fetch schemas from the network.
   `1960201-jsonSchema.json` but the actual filename is `1960201_json_schema.json`.
   This is a minor naming inconsistency in the upstream repository. Our validation
   resolves this by loading all schema files into a single Ajv instance.
+- The vendored schema describes the generic LoTE structure, where `TETradeName`
+  is optional. `schemas/profiles/pub-eaa-schema.json` is the local Annex H.3
+  overlay: validation applies it only to the Pub-EAA LoTE type and requires each
+  entity's `TETradeName` to contain the formatted legal-basis URI.
 
 ## Wallet Provider Profile (Annex E)
 
@@ -186,11 +190,11 @@ Providers of publicly issued electronic attestations of attributes. Constants in
 
 ### How Annex H was established
 
-The ETSI PDF is unreachable (etsi.org returns HTTP 403). The locally decidable
-Annex H rules were read from the Trust Inspector's own evidence in
-`HITL/WP4-LoTE_evaluation.json`, which evaluates the WE BUILD WP4 LoTL and
-carries the complete `ts119602.profile.pub_eaa_providers.*` check set, and were
-then confirmed empirically against the live Inspector on a generated list.
+The locally decidable Annex H rules were initially read from Trust Inspector
+evidence and confirmed empirically against the live Inspector. The Annex H.3
+`TETradeName` rule and its legal-reference syntax were subsequently supplied
+directly from the standard: that normative text takes precedence over the
+earlier placement probes.
 
 ### Annex H profile constraints
 
@@ -213,14 +217,25 @@ then confirmed empirically against the live Inspector on a generated list.
 
 ### The legal-basis reference
 
-Annex H requires the Union or national act under which the attestations are
-issued (`pubEaaLawReferencePresent` in the Inspector's evidence), expressed as an
-`OJ:` URI. This publisher collects the Official Journal reference on the
-onboarding form and publishes it in `TEInformationURI`, beside the country role
-URI: that member is the collection of URIs describing the entity, and `OJ:...` is
-a syntactically valid absolute URI. `legalBasisUri()` adds the scheme prefix;
-`isLegalBasisReference()` rejects a value with whitespace in it, because such a
-value is prose rather than a citation.
+Annex H.3 requires `TETradeName` on every Pub-EAA trusted entity. The component
+contains:
+
+- the official registration identifier, where one exists, with
+  `organizationIdentifier` semantics for a legal entity or `serialNumber`
+  semantics for a natural person; and
+- the Union or national act under which the responsible public sector body is
+  established or designated.
+
+The act is formatted as an `OJ:` URI followed by exactly two jurisdiction
+characters — `EU` for Union law or the ISO 3166-1 alpha-2 code of an EU Member
+State for national law — and then a non-empty identifier that uniquely
+represents the act. `legalBasisUri()` adds the `OJ:` scheme when the applicant
+omits it, while `isLegalBasisReference()` rejects missing identifiers,
+non-Member-State jurisdiction codes and whitespace.
+
+The publisher also retains the legal-basis URI in `TEInformationURI` and
+`TEElectronicAddress` for compatibility with existing readers. Those duplicate
+placements do not replace the mandatory Annex H.3 `TETradeName` value.
 
 ### Certificates
 
@@ -286,40 +301,6 @@ issue time of the version being published. The status itself does not change, an
 the instant a status actually began is what `ServiceHistory` records once that
 status is superseded.
 
-### Unresolved: pubEaaLawReferencePresent
-
-One locally decidable Annex H sub-rule is **not** satisfied by generated lists.
-The Inspector's `ts119602.profile.pub_eaa_providers.trusted_entity` check reports
-`pubEaaLawReferencePresent: false`, which fails the entity check as a whole, so a
-clean Pub-EAA list reaches 68 passed / 1 failed where a clean Annex F/G list
-reaches 69 / 0.
-
-Where the Inspector expects the reference is undetermined. The following were
-probed against the live Inspector and all reported `false`:
-
-- `TEInformationURI` and `TEAddress.TEElectronicAddress`, with
-  `OJ:L_202401183`, `OJ:L:2024:1183`, `OJ:C/2024/1234`, `OJ:JOL_2024_1183_R_0001`,
-  `OJ:32024R1183`, `OJ://L_202401183`, `oj:L_202401183`, `OJ:L 183/1`,
-  `OJ:eli/reg/2024/1183/oj`, `http://data.europa.eu/eli/reg/2024/1183/oj`,
-  `https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=OJ:L_202401183`,
-  `http://publications.europa.eu/resource/oj/JOL_2024_1183_R_0001` and
-  `urn:lex:eu:regulation:2024-04-11;1183`, in first and last positions;
-- `TEInformationExtensions` as plain strings and as `{Critical, <name>}` objects
-  under `LawReference`, `LegalBasis`, `LegalBasisReference`, `PubEAALawReference`,
-  `TELawReference`, `LawReferenceURI`, `OfficialJournalReference`,
-  `NationalLawReference`, `LoTELegalNotice` and `PolicyOrLegalNotice`;
-- service-level `SchemeServiceDefinitionURI`, `ServiceDefinitionURI` and
-  `ServiceSupplyPoints`; scheme-level `SchemeInformationURI` and
-  `PolicyOrLegalNotice`.
-
-The same field reads `true` for a WE BUILD **WRPAC** entity that carries no
-Official Journal reference at all, which suggests it is a shared result member
-that only Annex H evaluates — so the Inspector is the only available oracle and it
-has not revealed the expected location. The reference is published where this
-project can defend it (`TEInformationURI` and `TEElectronicAddress`, in the `OJ:`
-URI form the profile asks for) and the residual failure is reported rather than
-hidden. The ETSI PDF would settle it; etsi.org returns HTTP 403.
-
 ### Identifying the entity to withdraw
 
 Annex H services carry no unique identifier, so the entity is matched by its
@@ -379,7 +360,7 @@ five implemented profiles.
 | Annex D–G self pointer in `PointersToOtherLoTE`, carrying the signing certificate and `MimeType: application/jose`; Annex H omits it | `publishesSelfPointer` in `src/core/profiles/registry.ts`, applied in `compileForProfile()` |
 | Annex H `HistoricalInformationPeriod` = 65535 | `historicalInformationPeriod` in the registry, applied in `compileForProfile()` |
 | Annex H `ServiceStatus` and `StatusStartingTime` on every service; `ServiceHistory` by `X509SKI` only | `usesServiceStatus` in the registry, applied in `buildAuthoringEntity()`, `compileForProfile()` and `ApplicationService.withdrawApplication()` |
-| Annex H legal basis as an `OJ:` URI in `TEInformationURI` | `legalBasisUri()` in `src/core/model/lexical.ts`, applied in `buildAuthoringEntity()` |
+| Annex H.3 mandatory `TETradeName` containing the official registration identifier where one exists and the formatted `OJ:` legal-basis URI | `buildAuthoringEntity()`, `compileForProfile()` and `schemas/profiles/pub-eaa-schema.json` |
 | Annex H certificates for one service share a public key and a subject | `checkCertificateSetConsistency()` in the submission parser |
 | clause 6.5.3 entity reachable by `mailto:`, HTTP(S) and `tel:` | `buildAuthoringEntity()` from the `entityEmail`/`entityTelephone` form fields |
 | Entity country-role URI `http://uri.etsi.org/19602/ListOfTrustedEntities/{PIDProvider,WalletProvider,WRPACProvider,WRPRCProvider,PubEAAProvider}/<CC>` | `buildAuthoringEntity()`; every profile except Annex E uses the responsible Member State |
@@ -402,9 +383,10 @@ Both are stated on the Create Trusted List form.
 
 For Annex F/G, `ts119602.service.extensions` reports `not_applicable` rather
 than `pass`, because those profiles emit no extension container. A clean Annex
-F/G list therefore reaches 69 passed / 0 failed where a clean Annex D/E list
-reaches 70 passed / 0 failed. A clean Annex H list reaches 68 passed / 1 failed:
-the one failure is `pubEaaLawReferencePresent`, described above.
+F/G list therefore has one fewer applicable check than a clean Annex D/E list.
+The former Annex H `pubEaaLawReferencePresent` failure is no longer treated as a
+known unrelated failure: Annex H.3 identifies `TETradeName` as its required
+location, and the local profile schema now checks that placement.
 
 `ts119602.scheme.pointers.authentication`,
 `ts119602.scheme.distribution_consistency`,

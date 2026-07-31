@@ -96,7 +96,7 @@ function applicantData(
     entityTelephone: "+39 02 1234567",
     responsibleMemberState: "IT",
     registrationIdentifier: "NTRIT-0000123456",
-    legalBasisReference: "OJ:L_202401183",
+    legalBasisReference: "OJ:EU32024R1183",
     services: [
       {
         serviceType: "issuance",
@@ -184,7 +184,7 @@ const submissionFields = (
   entityTelephone: "+39 02 1234567",
   responsibleMemberState: "IT",
   entityPolicyURI: "https://entity.example/policies",
-  legalBasisReference: "OJ:L_202401183",
+  legalBasisReference: "OJ:EU32024R1183",
   "service[0].serviceType": "issuance",
   "service[0].serviceName": "Issuance",
   "service[0].certificatePem": TEST_CERT,
@@ -375,18 +375,57 @@ describe("Annex H trusted entity", () => {
     const entity =
       document().LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation;
     expect(entity.TEInformationURI.map((uri) => uri.uriValue)).toContain(
-      "OJ:L_202401183",
+      "OJ:EU32024R1183",
     );
   });
 
-  it("adds the OJ: scheme when the applicant omits it, and strips whitespace", () => {
-    expect(legalBasisUri("C/2024/1234")).toBe("OJ:C/2024/1234");
-    /* The URI builder compacts defensively; the parser rejects such input. */
-    expect(legalBasisUri("OJ: L_2024 01183")).toBe("OJ:L_202401183");
+  it("requires the OJ: reference to identify EU or Member-State law", () => {
+    expect(legalBasisUri("EU32024R1183")).toBe("OJ:EU32024R1183");
+    expect(legalBasisUri("OJ:ITlegge-2024-12")).toBe("OJ:ITlegge-2024-12");
     expect(() => legalBasisUri("   ")).toThrow(/empty/);
-    expect(isLegalBasisReference("OJ:L_202401183")).toBe(true);
-    expect(isLegalBasisReference("C/2024/1234")).toBe(true);
+    expect(() => legalBasisUri("OJ:USlaw-2024-12")).toThrow(
+      /EU or an EU Member State/,
+    );
+    expect(isLegalBasisReference("OJ:EU32024R1183")).toBe(true);
+    expect(isLegalBasisReference("ITlegge-2024-12")).toBe(true);
+    expect(isLegalBasisReference("OJ:EU")).toBe(false);
+    expect(isLegalBasisReference("OJ:USlaw-2024-12")).toBe(false);
+    expect(isLegalBasisReference("OJ: EU32024R1183")).toBe(false);
     expect(isLegalBasisReference("not a reference")).toBe(false);
+  });
+
+  it("publishes the Annex H.3 values in mandatory TETradeName", () => {
+    const information =
+      document().LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation;
+    expect(information.TETradeName).toEqual([
+      { lang: "en", value: "NTRIT-0000123456" },
+      { lang: "en", value: "OJ:EU32024R1183" },
+    ]);
+  });
+
+  it("keeps TETradeName mandatory when no registration identifier exists", () => {
+    const information = document({
+      registrationIdentifier: undefined,
+    }).LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation;
+    expect(information.TETradeName).toEqual([
+      { lang: "en", value: "OJ:EU32024R1183" },
+    ]);
+  });
+
+  it("refuses Pub-EAA compiler input without the Annex H.3 values", () => {
+    const input = normalizeToAuthoringInput(
+      application(),
+      scheme(),
+      ISSUE,
+      NEXT,
+      1,
+    );
+    input.entities[0]!.teTradeName = undefined;
+    expect(() => compileForProfile(FAMILY, input)).toThrow(/TETradeName/);
+    input.entities[0]!.teTradeName = [
+      { lang: "en", value: "NTRIT-0000123456" },
+    ];
+    expect(() => compileForProfile(FAMILY, input)).toThrow(/legal-basis URI/);
   });
 
   it("publishes the role URI and legal basis in the electronic addresses too", () => {
@@ -403,7 +442,7 @@ describe("Annex H trusted entity", () => {
     expect(addresses).toContain(
       "http://uri.etsi.org/19602/ListOfTrustedEntities/PubEAAProvider/IT",
     );
-    expect(addresses).toContain("OJ:L_202401183");
+    expect(addresses).toContain("OJ:EU32024R1183");
     expect(getProfile(FAMILY).entityUrisInElectronicAddress).toBe(true);
     for (const family of [
       "pid-providers",
@@ -428,9 +467,9 @@ describe("Annex H trusted entity", () => {
     });
   });
 
-  it("does not publish the official registration identifier", () => {
+  it("publishes the official registration identifier in TETradeName", () => {
     const json = JSON.stringify(document());
-    expect(json).not.toContain("NTRIT-0000123456");
+    expect(json).toContain("NTRIT-0000123456");
   });
 });
 
@@ -607,7 +646,7 @@ describe("Annex H onboarding submission", () => {
     if (!result.valid) return;
     expect(result.applicantData).toMatchObject({
       responsibleMemberState: "IT",
-      legalBasisReference: "OJ:L_202401183",
+      legalBasisReference: "OJ:EU32024R1183",
       entityInformationURI: "https://entity.example/policies",
     });
   });
@@ -627,7 +666,7 @@ describe("Annex H onboarding submission", () => {
       FAMILY,
     );
     expect(
-      malformed.errors.some((error) => /Official Journal/.test(error.message)),
+      malformed.errors.some((error) => /EU Member State/.test(error.message)),
     ).toBe(true);
   });
 
@@ -708,7 +747,7 @@ describe("Annex H onboarding submission", () => {
         entityTelephone: "+39 02 1234567",
         responsibleMemberState: "PL",
         entityPolicyURI: "https://entity.example/policies",
-        legalBasisReference: "OJ:L_202401183",
+        legalBasisReference: "OJ:EU32024R1183",
         "service[0].serviceType": "issuance",
         "service[0].serviceName": "Issuance",
         "service[0].certificatePem": TEST_CERT,
@@ -731,6 +770,34 @@ describe("Annex H schema validity", () => {
     const result = await validateEtsiStruct(document());
     expect(result.findings).toEqual([]);
     expect(result.valid).toBe(true);
+  });
+
+  it("rejects a Pub-EAA entity without TETradeName", async () => {
+    const doc = document();
+    delete doc.LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation
+      .TETradeName;
+    const result = await validateEtsiStruct(doc);
+    expect(result.valid).toBe(false);
+    expect(
+      result.findings.some((finding) =>
+        /TETradeName/.test(`${finding.path} ${finding.message}`),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a Pub-EAA TETradeName without the formatted law reference", async () => {
+    const doc = document();
+    doc.LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation.TETradeName = [
+      { lang: "en", value: "NTRIT-0000123456" },
+    ];
+    const result = await validateEtsiStruct(doc);
+    expect(result.valid).toBe(false);
+    expect(
+      result.findings.some(
+        (finding) =>
+          /TETradeName/.test(finding.path) || /contain/.test(finding.message),
+      ),
+    ).toBe(true);
   });
 
   it("round-trips status and history without loss", () => {
@@ -1023,7 +1090,7 @@ describe("Annex H views", () => {
     expect(html).toContain("Withdraw notification");
     expect(html).toContain("/withdraw");
     expect(html).toContain("Legal Basis Reference");
-    expect(html).toContain("OJ:L_202401183");
+    expect(html).toContain("OJ:EU32024R1183");
     expect(html).toContain("Official Registration Identifier");
     expect(html).toContain("Policies and Terms URL");
 

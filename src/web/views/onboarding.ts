@@ -331,19 +331,22 @@ function pubEaaProfile(
       <label for="registrationIdentifier">Official Registration Identifier</label>
       <input type="text" id="registrationIdentifier" name="registrationIdentifier"
         value="${escape(v.registrationIdentifier ?? "")}" maxlength="120">
-      <span class="field-help">When available: the identifier under which the
-        entity is registered in an official register. Recorded with the
-        application for review.</span>
+      <span class="field-help">When one exists: the identifier registered in
+        official records that unambiguously identifies the provider. Use
+        organizationIdentifier semantics for a legal entity or serialNumber
+        semantics for a natural person. Published in <code>TETradeName</code>.</span>
       ${fieldError("registrationIdentifier")}
     </div>
     <div class="form-group">
       <label for="legalBasisReference">Legal Basis Reference <span class="required">*</span></label>
       <input type="text" id="legalBasisReference" name="legalBasisReference" required
         value="${escape(v.legalBasisReference ?? "")}" maxlength="200"
-        placeholder="e.g. OJ:L_202401183">
+        placeholder="e.g. EU32024R1183">
       <span class="field-help">The Union or national act under which the
-        attestations are issued, as an Official Journal reference. Published as
-        an <code>OJ:</code> URI; the prefix is added for you.</span>
+        attestations are issued. Start with <code>EU</code> for Union law or the
+        EU Member State's two-letter ISO country code for national law, then the
+        unique law identifier. Published in <code>TETradeName</code> as an
+        <code>OJ:</code> URI; the scheme prefix is added for you.</span>
       ${fieldError("legalBasisReference")}
     </div>`,
   };

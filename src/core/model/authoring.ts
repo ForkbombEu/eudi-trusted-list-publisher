@@ -85,6 +85,11 @@ export interface AuthoringService {
 
 export interface AuthoringEntity {
   teName: AuthoringMultiLang[];
+  /**
+   * Annex H.3 makes this mandatory and uses it for the official registration
+   * identifier, when one exists, and the formatted `OJ:` legal-basis URI.
+   * Other profiles retain the base model's optional component.
+   */
   teTradeName?: AuthoringMultiLang[];
   tePostalAddress: AuthoringPostalAddress[];
   teElectronicAddress: AuthoringElectronicAddress[];

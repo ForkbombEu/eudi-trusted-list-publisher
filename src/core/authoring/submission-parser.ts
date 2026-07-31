@@ -204,7 +204,7 @@ export function parseAndValidateSubmission<
     else if (!isLegalBasisReference(legalBasisReference))
       addError(
         "legalBasisReference",
-        "Legal basis reference must be an Official Journal reference, e.g. OJ:L_202401183 or C/2024/1234.",
+        "Legal basis reference must start with EU for Union law or an EU Member State country code for national law, followed by the law identifier (for example EU32024R1183 or ITlegge-2024-12).",
       );
   }
 

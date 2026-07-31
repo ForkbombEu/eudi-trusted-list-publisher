@@ -103,9 +103,13 @@ export interface WalletRelyingPartyApplicantData extends SupervisedApplicantData
  * the legal basis is the Union or national act the notification rests on.
  */
 export interface PubEAAProviderApplicantData extends SupervisedApplicantData {
-  /** Official registration identifier, when available. */
+  /**
+   * Official registration identifier, when one exists. Annex H.3 publishes it
+   * in TETradeName with organizationIdentifier semantics for a legal entity or
+   * serialNumber semantics for a natural person.
+   */
   registrationIdentifier?: string;
-  /** Official Journal reference, published as an `OJ:` URI. */
+  /** Annex H.3 legal reference, published as an `OJ:` URI in TETradeName. */
   legalBasisReference: string;
 }
 export interface PublicationRecord {
@@ -302,11 +306,29 @@ export function buildAuthoringEntity(
     throw new Error(
       `${profile.label} require a status starting time for every service.`,
     );
+  const registrationIdentifier =
+    "registrationIdentifier" in data
+      ? (data as PubEAAProviderApplicantData).registrationIdentifier
+      : undefined;
+  /*
+    Annex H.3 assigns machine-readable identity data to TETradeName: the
+    official registration identifier when one exists, followed by the legal
+    basis URI. A separately supplied trading name may follow those required
+    values. The legal basis makes the component non-empty in every case.
+  */
+  const tradeNameValues = [
+    ...(profile.requiresLegalBasisReference
+      ? [registrationIdentifier, legalBasis]
+      : []),
+    data.entityTradeName,
+  ].filter((value): value is string => value !== undefined && value.length > 0);
+  const uniqueTradeNameValues = [...new Set(tradeNameValues)];
   return {
     teName: [{ lang: "en", value: data.entityName }],
-    teTradeName: data.entityTradeName
-      ? [{ lang: "en", value: data.entityTradeName }]
-      : undefined,
+    teTradeName:
+      uniqueTradeNameValues.length > 0
+        ? uniqueTradeNameValues.map((value) => ({ lang: "en", value }))
+        : undefined,
     tePostalAddress: [
       {
         lang: "en",

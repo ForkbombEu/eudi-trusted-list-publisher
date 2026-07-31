@@ -482,6 +482,7 @@ export function fixtureSeedEntity(
   country: string,
 ): {
   teName: { lang: string; value: string }[];
+  teTradeName?: { lang: string; value: string }[];
   tePostalAddress: {
     lang: string;
     StreetAddress: string;
@@ -500,16 +501,14 @@ export function fixtureSeedEntity(
   }[];
 } {
   const roleUri = `${PUB_EAA_PROVIDER_ROLE_URI_PREFIX}/${country}`;
-  /*
-    Annex H wants the act the attestations are issued under. The ELI URI for
-    Regulation (EU) 2024/1183 is used rather than the bare `OJ:` form, which the
-    Inspector does not recognise as a law reference.
-  */
-  const legalBasis = "http://data.europa.eu/eli/reg/2024/1183/oj";
+  const legalBasis = "OJ:EU32024R1183";
   const home = "https://fixture-entity.example/pub-eaa";
   const annexH = family === "pub-eaa-providers";
   return {
     teName: [{ lang: "en", value: FIXTURE_ENTITY_NAME }],
+    ...(annexH
+      ? { teTradeName: [{ lang: "en", value: legalBasis }] }
+      : {}),
     tePostalAddress: [
       {
         lang: "en",
@@ -793,22 +792,6 @@ export interface FixtureMetadata {
 }
 
 /**
- * Failures a seeded fixture entity provokes regardless of which defect is
- * selected.
- *
- * `ts119602.profile.pub_eaa_providers.trusted_entity` fires because the
- * Inspector reports `pubEaaLawReferencePresent: false` for the Annex H legal
- * basis this publisher emits. That is a pre-existing defect in the Annex H
- * authoring path — it affects every entity-bearing Pub-EAA list this project
- * has published, not just fixtures — and is out of scope here. It is named so a
- * reader of the fixture metadata is not left wondering which mutation caused
- * it.
- */
-export const KNOWN_UNRELATED_FAILURES: readonly string[] = Object.freeze([
-  "ts119602.profile.pub_eaa_providers.trusted_entity",
-]);
-
-/**
  * Assembles the metadata stored beside an intentionally broken version, pairing
  * what the defect catalogue predicted with what the Inspector actually said.
  */
@@ -821,9 +804,6 @@ export function buildFixtureMetadata(
 ): FixtureMetadata {
   const expected = expectedRuleIdsFor(selectedDefects);
   const comparison = compareFailures(expected, actualInspectorFailures);
-  const known = comparison.additional.filter((rule) =>
-    KNOWN_UNRELATED_FAILURES.includes(rule),
-  );
   return {
     schemaVersion: 1,
     intentionallyBroken: true,
@@ -834,10 +814,8 @@ export function buildFixtureMetadata(
     actualInspectorFailures: [...actualInspectorFailures],
     matchedFailures: comparison.matched,
     missingFailures: comparison.missing,
-    additionalFailures: comparison.additional.filter(
-      (rule) => !KNOWN_UNRELATED_FAILURES.includes(rule),
-    ),
-    knownUnrelatedFailures: known,
+    additionalFailures: comparison.additional,
+    knownUnrelatedFailures: [],
     generatedAt: generatedAt.toISOString(),
   };
 }

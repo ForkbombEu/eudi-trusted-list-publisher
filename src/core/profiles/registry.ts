@@ -114,7 +114,10 @@ export interface TrustedEntityProfile {
    * issued, as an `OJ:` URI.
    */
   readonly requiresLegalBasisReference: boolean;
-  /** Collected "where available" by Annex F, G and H; never published. */
+  /**
+   * Collected "where available" by Annex F, G and H. Annex H.3 publishes it in
+   * TETradeName; Annex F/G retain it only in the reviewed application.
+   */
   readonly collectsRegistrationIdentifier: boolean;
   /** Annex F/G publish a further information page beside the policies URL. */
   readonly collectsAdditionalInformationUri: boolean;

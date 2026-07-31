@@ -73,28 +73,65 @@ export function telUri(telephone: string): string {
   return compact.startsWith("tel:") ? compact : `tel:${compact}`;
 }
 
-/**
- * Annex H expresses the Union or national legal basis of a Pub-EAA provider as
- * an `OJ:` URI. The applicant supplies the Official Journal reference; the
- * scheme prefix is added here so the published value is always a URI, and
- * whitespace is removed because a URI cannot carry any.
- */
-export function legalBasisUri(reference: string): string {
-  const compact = reference.trim().replace(/\s+/g, "");
-  if (!compact) throw new Error("Legal basis reference is empty.");
-  return compact.startsWith("OJ:") ? compact : `OJ:${compact}`;
-}
+/** ISO 3166-1 alpha-2 codes of the 27 EU Member States. */
+export const EU_MEMBER_STATE_CODES: readonly string[] = Object.freeze([
+  "AT",
+  "BE",
+  "BG",
+  "HR",
+  "CY",
+  "CZ",
+  "DK",
+  "EE",
+  "FI",
+  "FR",
+  "DE",
+  "GR",
+  "HU",
+  "IE",
+  "IT",
+  "LV",
+  "LT",
+  "LU",
+  "MT",
+  "NL",
+  "PL",
+  "PT",
+  "RO",
+  "SK",
+  "SI",
+  "ES",
+  "SE",
+]);
+
+const LEGAL_BASIS_IDENTIFIER = /^[A-Za-z0-9._~!$&'()*+,;=:@/%-]+$/;
 
 /**
- * True when the value is an Official Journal reference this project accepts.
- * Whitespace inside the reference is rejected rather than glued together: a
- * value with spaces in it is prose, not a citation.
+ * Annex H.3 expresses the legal basis of a Pub-EAA provider as `OJ:`, followed
+ * by `EU` for Union law or an EU Member State's ISO 3166-1 alpha-2 code for
+ * national law, followed by a non-empty identifier for the act.
  */
 export function isLegalBasisReference(reference: string): boolean {
+  if (!reference || reference !== reference.trim() || /\s/.test(reference))
+    return false;
+  const body = reference.startsWith("OJ:") ? reference.slice(3) : reference;
+  const jurisdiction = body.slice(0, 2);
+  const identifier = body.slice(2);
+  return (
+    (jurisdiction === "EU" || EU_MEMBER_STATE_CODES.includes(jurisdiction)) &&
+    LEGAL_BASIS_IDENTIFIER.test(identifier)
+  );
+}
+
+/** Adds the `OJ:` scheme after validating the complete Annex H.3 reference. */
+export function legalBasisUri(reference: string): string {
   const trimmed = reference.trim();
-  const body = trimmed.startsWith("OJ:") ? trimmed.slice(3) : trimmed;
-  /* Path characters only: the reference becomes the path of an OJ: URI. */
-  return body.length > 0 && /^[A-Za-z0-9._~!$&'()*+,;=:@/%-]+$/.test(body);
+  if (!trimmed) throw new Error("Legal basis reference is empty.");
+  if (!isLegalBasisReference(trimmed))
+    throw new Error(
+      "Legal basis reference must start with EU or an EU Member State country code and include a law identifier.",
+    );
+  return trimmed.startsWith("OJ:") ? trimmed : `OJ:${trimmed}`;
 }
 
 /** `<prefix>/<country code>` role URI for a trusted entity. */

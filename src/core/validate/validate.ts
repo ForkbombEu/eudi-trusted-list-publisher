@@ -20,6 +20,7 @@ const SCHEMAS_DIR = resolve(__dirname, "..", "..", "..", "schemas");
 
 let _authoringValidate: ValidateFunction | undefined;
 let _etsiValidate: ValidateFunction | undefined;
+let _pubEaaValidate: ValidateFunction | undefined;
 
 function loadJson(path: string): unknown {
   return JSON.parse(readFileSync(path, "utf-8"));
@@ -57,6 +58,32 @@ async function getEtsiValidator(): Promise<ValidateFunction> {
     _etsiValidate = ajv.compile(mainSchema);
   }
   return _etsiValidate;
+}
+
+async function getPubEaaValidator(): Promise<ValidateFunction> {
+  if (!_pubEaaValidate) {
+    const ajv = new Ajv({ allErrors: true, strict: false });
+    const schema = loadJson(
+      resolve(SCHEMAS_DIR, "profiles", "pub-eaa-schema.json"),
+    ) as object;
+    _pubEaaValidate = ajv.compile(schema);
+  }
+  return _pubEaaValidate;
+}
+
+function isPubEaaDocument(document: unknown): boolean {
+  if (!document || typeof document !== "object") return false;
+  const lote = (document as Record<string, unknown>)["LoTE"];
+  if (!lote || typeof lote !== "object") return false;
+  const information = (lote as Record<string, unknown>)[
+    "ListAndSchemeInformation"
+  ];
+  return (
+    !!information &&
+    typeof information === "object" &&
+    (information as Record<string, unknown>)["LoTEType"] ===
+      "http://uri.etsi.org/19602/LoTEType/EUPubEAAProvidersList"
+  );
 }
 
 export interface ValidationFinding {
@@ -100,14 +127,22 @@ export async function validateEtsiStruct(
   document: unknown,
 ): Promise<ValidationResult> {
   const validate = await getEtsiValidator();
-  const valid = validate(document);
+  const baseValid = validate(document);
+  const findings = toFindings(validate, "etsi");
+  let profileValid = true;
+  if (isPubEaaDocument(document)) {
+    const validateProfile = await getPubEaaValidator();
+    profileValid = validateProfile(document);
+    findings.push(...toFindings(validateProfile, "etsi-profile"));
+  }
   return {
-    valid,
-    findings: toFindings(validate, "etsi"),
+    valid: baseValid && profileValid,
+    findings,
   };
 }
 
 export function resetValidators(): void {
   _authoringValidate = undefined;
   _etsiValidate = undefined;
+  _pubEaaValidate = undefined;
 }

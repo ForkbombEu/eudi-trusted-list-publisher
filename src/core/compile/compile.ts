@@ -26,6 +26,7 @@ import {
 } from "../profiles/registry.js";
 import {
   certificateDerBase64,
+  isLegalBasisReference,
   normalizeUtcDateTime,
   schemeNameWithTerritory,
 } from "../model/lexical.js";
@@ -79,6 +80,19 @@ function compileEntity(
   entity: AuthoringEntity,
   profile: TrustedEntityProfile,
 ): TrustedEntity {
+  if (profile.requiresLegalBasisReference) {
+    if (!entity.teTradeName || entity.teTradeName.length === 0)
+      throw new Error(`${profile.label} require TETradeName.`);
+    if (
+      !entity.teTradeName.some(
+        (name) =>
+          name.value.startsWith("OJ:") && isLegalBasisReference(name.value),
+      )
+    )
+      throw new Error(
+        `${profile.label} require TETradeName to include the formatted OJ: legal-basis URI.`,
+      );
+  }
   const teInfo: TrustedEntityInformation = {
     TEName: toMultiLang(entity.teName),
     TEAddress: {
