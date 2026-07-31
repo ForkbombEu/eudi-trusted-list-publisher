@@ -56,7 +56,7 @@ openssl x509 \\
   -fingerprint \\
   -sha256`;
 
-const WRPAC_CA_EXTENSIONS = `# WRPAC Provider CA certificate extensions
+const RELYING_PARTY_CA_EXTENSIONS = `# WRPAC / WRPRC Provider CA certificate extensions
 -addext "basicConstraints=critical,CA:TRUE" \\
 -addext "keyUsage=critical,keyCertSign" \\
 -addext "subjectKeyIdentifier=hash"`;
@@ -151,8 +151,8 @@ onboarding form expects, and how to create it with OpenSSL. The field is labelle
   <code>X509Certificates</code> only, and it never builds or verifies a
   certification path. A <strong>self-signed</strong> certificate is accepted when
   the applicable profile permits it, and a <strong>CA-issued</strong> certificate
-  is equally accepted. WRPAC submissions have the additional CA-certificate
-  requirements described below.</p>
+  is equally accepted. WRPAC and WRPRC submissions have the additional
+  CA-certificate requirements described below.</p>
   <p>The certificate subject must identify the provider. Set the organisation
   (<code>O</code>) to <strong>exactly</strong> the Trusted Entity Name you enter
   during onboarding — the <em>Entity Name</em> field — or the submission is
@@ -160,11 +160,11 @@ onboarding form expects, and how to create it with OpenSSL. The field is labelle
 </div>
 
 <div class="card">
-  <h2>WRPAC Provider CA certificate</h2>
-  <p>A WRPAC service certificate identifies the CA key used to verify the
-  signatures or seals on access certificates issued by the provider. It must be
+  <h2>WRPAC and WRPRC Provider CA certificates</h2>
+  <p>A WRPAC or WRPRC service certificate identifies the CA key used to verify
+  the signatures or seals on certificates issued by the provider. It must be
   currently valid and carry the RFC 5280 CA extensions:</p>
-  ${block(WRPAC_CA_EXTENSIONS)}
+  ${block(RELYING_PARTY_CA_EXTENSIONS)}
   <p><code>basicConstraints</code> must be critical with <code>CA:TRUE</code>.
   <code>keyUsage</code> must be critical and include <code>keyCertSign</code>;
   compatible additional usages such as <code>cRLSign</code> are allowed. A

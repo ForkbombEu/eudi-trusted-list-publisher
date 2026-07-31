@@ -468,7 +468,7 @@ describe("certificate creation guide", () => {
     expect(html).toContain("CA-issued");
   });
 
-  it("documents the RFC 5280 WRPAC CA certificate requirements", () => {
+  it("documents the RFC 5280 WRPAC and WRPRC CA certificate requirements", () => {
     for (const requirement of [
       "basicConstraints=critical,CA:TRUE",
       "keyUsage=critical,keyCertSign",

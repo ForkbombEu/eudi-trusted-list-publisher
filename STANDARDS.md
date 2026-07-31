@@ -110,17 +110,18 @@ Wallet-Relying-Party Access Certificate Providers. Constants in
   - `http://uri.etsi.org/19602/SvcType/WRPAC/Issuance`
   - `http://uri.etsi.org/19602/SvcType/WRPAC/Revocation`
 
-### WRPAC service CA certificate
+## WRPAC and WRPRC service CA certificates
 
-The WRPAC service digital identity is the CA certificate whose public key is
-used to verify the signatures or seals on access certificates issued by the
-provider. At submission time the publisher applies the RFC 5280 CA-certificate
-rules that are locally decidable from that certificate:
+The WRPAC and WRPRC service digital identities are the CA certificates whose
+public keys are used to verify the signatures or seals on certificates issued
+by those providers. At submission time the publisher applies the RFC 5280
+CA-certificate rules that are locally decidable from each certificate:
 
 - `basicConstraints` is critical and asserts `CA:TRUE` (clause 4.2.1.9);
 - `keyUsage` is critical and contains `keyCertSign` (clause 4.2.1.3). Requiring
-  criticality is the project's stricter WRPAC rule; RFC 5280 says it SHOULD be
-  critical. Compatible additional usages such as `cRLSign` remain permitted;
+  criticality is the project's stricter WRPAC/WRPRC rule; RFC 5280 says it
+  SHOULD be critical. Compatible additional usages such as `cRLSign` remain
+  permitted;
 - a non-critical, non-empty `SubjectKeyIdentifier` is present (clause 4.2.1.2).
   Its value is not required to use one fixed hash construction because RFC 5280
   permits other unique identifier methods;
@@ -340,11 +341,11 @@ schema listed above), the two profile constant modules and a published artefact.
 
 - **Annex E (Wallet Provider)**, **Annex D (PID Provider), Table D.3**, and the
   Annex F/G profiles all require an X.509 service digital identity; Annex H
-  makes it optional. Annex D/E/G and Annex H do not require the submitted
-  certificate to be a CA certificate. Annex F applies the WRPAC CA-certificate
-  checks above. The publisher does not build or verify a certification path;
-  where a profile permits self-signing, a self-signed certificate remains
-  acceptable.
+  makes it optional. Annex D/E and Annex H do not require the submitted
+  certificate to be a CA certificate. Annex F/G apply the WRPAC/WRPRC
+  CA-certificate checks above. The publisher does not build or verify a
+  certification path; where a profile permits self-signing, a self-signed
+  certificate remains acceptable.
 - No clause fixes the certificate subject. Requiring the subject `O` to equal the
   Trusted Entity Name (`TEName`) is a **project-local authoring rule** that keeps
   the published identity attributable to the listed entity; it is not an ETSI

@@ -34,7 +34,7 @@ export {
   CERTIFICATE_INPUT_MESSAGES,
   checkCertificateSetConsistency,
   checkCertificateSubjectOrganisation,
-  checkWrpacCaCertificate,
+  checkRelyingPartyCaCertificate,
   classifyCertificateInput,
   splitPemCertificates,
 } from "./certificate-input.js";

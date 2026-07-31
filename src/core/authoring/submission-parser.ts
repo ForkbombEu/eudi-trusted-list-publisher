@@ -15,7 +15,7 @@ import {
 import {
   checkCertificateSetConsistency,
   checkCertificateSubjectOrganisation,
-  checkWrpacCaCertificate,
+  checkRelyingPartyCaCertificate,
   classifyCertificateInput,
   splitPemCertificates,
 } from "./certificate-input.js";
@@ -250,9 +250,9 @@ export function parseAndValidateSubmission<
       it satisfies its profile; any other PEM or container content is named in
       the error message so the applicant knows which object they supplied. The
       subject organisation must be the Trusted Entity Name, because the service
-      digital identity has to identify the entity the list vouches for. Annex F
-      additionally requires the current RFC 5280 CA certificate whose public key
-      verifies the access certificates issued by the WRPAC provider.
+      digital identity has to identify the entity the list vouches for. Annex
+      F/G additionally require the current RFC 5280 CA certificate whose public
+      key verifies the certificates issued by the WRPAC or WRPRC provider.
 
       Annex H makes the certificate optional and lets one service publish more
       than one — the attestation-signing certificate or the CA certificate that
@@ -281,8 +281,11 @@ export function parseAndValidateSubmission<
           addError(`${prefix}certificatePem`, mismatch);
           break;
         }
-        if (resolved === "wrpac-providers") {
-          const unusable = checkWrpacCaCertificate(certificate);
+        if (resolved === "wrpac-providers" || resolved === "wrprc-providers") {
+          const unusable = checkRelyingPartyCaCertificate(
+            certificate,
+            resolved === "wrpac-providers" ? "WRPAC" : "WRPRC",
+          );
           if (unusable) {
             addError(`${prefix}certificatePem`, unusable);
             break;

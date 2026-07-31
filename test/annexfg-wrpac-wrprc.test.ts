@@ -305,7 +305,7 @@ function issuedCertificate(
   return readFileSync(certificate, "utf-8");
 }
 
-const VALID_WRPAC_CERTIFICATE = selfSignedCertificate([
+const VALID_RELYING_PARTY_CA_CERTIFICATE = selfSignedCertificate([
   "basicConstraints=critical,CA:TRUE",
   "keyUsage=critical,keyCertSign,cRLSign",
   "subjectKeyIdentifier=01:02:03:04",
@@ -351,7 +351,7 @@ const submissionFields = (
   "service[0].serviceType": "issuance",
   "service[0].serviceName": "Issuance",
   "service[0].certificatePem":
-    family === "wrpac-providers" ? VALID_WRPAC_CERTIFICATE : TEST_CERT,
+    family === undefined ? TEST_CERT : VALID_RELYING_PARTY_CA_CERTIFICATE,
   ...overrides,
 });
 
@@ -667,6 +667,30 @@ describe("Annex F/G submission parsing", () => {
     expect(wrpacCertificateError(certificate)).toContain("basicConstraints");
   });
 
+  it("rejects a WRPRC certificate whose basic constraints do not identify a CA", () => {
+    const certificate = selfSignedCertificate([
+      "basicConstraints=critical,CA:FALSE",
+      "keyUsage=critical,keyCertSign",
+      "subjectKeyIdentifier=hash",
+    ]);
+    const parsed = parseAndValidateSubmission(
+      submissionFields(
+        { "service[0].certificatePem": certificate },
+        "wrprc-providers",
+      ),
+      "eu_test",
+      "wrprc-providers",
+    );
+    expect(parsed.valid).toBe(false);
+    const message = parsed.valid
+      ? ""
+      : parsed.errors.find(
+          (error) => error.field === "service[0].certificatePem",
+        )?.message;
+    expect(message).toContain("WRPRC certificate");
+    expect(message).toContain("basicConstraints");
+  });
+
   it("rejects a WRPAC CA certificate whose basic constraints are not critical", () => {
     const certificate = selfSignedCertificate([
       "basicConstraints=CA:TRUE",
@@ -858,10 +882,7 @@ describe("Annex F/G submission parsing", () => {
       expect(parsed.applicantData.services[0]).toEqual({
         serviceType: "issuance",
         serviceName: "Issuance",
-        certificatePem:
-          family === "wrpac-providers"
-            ? VALID_WRPAC_CERTIFICATE.trim()
-            : TEST_CERT.trim(),
+        certificatePem: VALID_RELYING_PARTY_CA_CERTIFICATE.trim(),
       });
     });
 
@@ -991,6 +1012,8 @@ describe("Annex F/G views", () => {
     expect(html).toContain(
       "The certificate used to verify signatures or seals created by the WRPRC Provider on issued wallet-relying-party registration certificates.",
     );
+    expect(html).toContain("RFC 5280 CA certificate");
+    expect(html).toContain("keyCertSign");
     expect(html).toContain('action="/onboarding/wrprc-provider"');
     expect(html).not.toContain("Service Unique Identifier");
   });

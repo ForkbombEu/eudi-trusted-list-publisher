@@ -437,6 +437,10 @@ export function wrprcProviderFormHtml(
         action: "/onboarding/wrprc-provider",
         certificateKind: "wallet-relying-party registration certificates",
         serviceKindLabel: "WRPRC",
+        certificateRequirements:
+          "Supply an RFC 5280 CA certificate with critical basicConstraints CA:TRUE, critical keyUsage containing keyCertSign, and a SubjectKeyIdentifier; a non-self-signed certificate also needs an AuthorityKeyIdentifier.",
+        certificateExplanation:
+          "The certificate is published as the service ServiceDigitalIdentity and must identify the provider: set the organisation (O) to exactly the Entity Name entered above. A self-signed or issuer-signed CA certificate is accepted when it satisfies the WRPRC checks; this publisher does not otherwise build or verify its certification path.",
         entityHelp:
           "The legal entity applying to be listed as a provider of " +
           "Wallet-Relying-Party Registration Certificates (WRPRC).",

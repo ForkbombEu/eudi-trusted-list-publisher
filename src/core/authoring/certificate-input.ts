@@ -271,11 +271,12 @@ export function checkCertificateSubjectOrganisation(
 }
 
 /**
- * A WRPAC service identity is the CA certificate whose public key verifies the
- * access certificates issued by the provider.
+ * An Annex F/G service identity is the CA certificate whose public key verifies
+ * the certificates issued by the relying-party provider.
  */
-export function checkWrpacCaCertificate(
+export function checkRelyingPartyCaCertificate(
   certificate: X509Certificate,
+  providerKind: "WRPAC" | "WRPRC",
 ): string | null {
   const basicConstraints = readCertificateExtension(
     certificate,
@@ -294,12 +295,12 @@ export function checkWrpacCaCertificate(
     ca.contents.length !== 1 ||
     ca.contents[0] === 0
   )
-    return "The WRPAC certificate must contain basicConstraints with CA:TRUE.";
+    return `The ${providerKind} certificate must contain basicConstraints with CA:TRUE.`;
   if (!basicConstraints?.critical)
-    return "The WRPAC certificate basicConstraints must be critical.";
+    return `The ${providerKind} certificate basicConstraints must be critical.`;
   const keyUsage = readCertificateExtension(certificate, OID_KEY_USAGE);
   if (!keyUsage)
-    return "The WRPAC certificate must contain keyUsage with keyCertSign.";
+    return `The ${providerKind} certificate must contain keyUsage with keyCertSign.`;
   const usageBits = readDerElement(keyUsage.value, 0);
   if (
     !usageBits ||
@@ -307,24 +308,24 @@ export function checkWrpacCaCertificate(
     usageBits.contents.length < 2 ||
     (usageBits.contents[1]! & 0x04) === 0
   )
-    return "The WRPAC certificate keyUsage must contain keyCertSign.";
+    return `The ${providerKind} certificate keyUsage must contain keyCertSign.`;
   if (!keyUsage.critical)
-    return "The WRPAC certificate keyUsage must be critical.";
+    return `The ${providerKind} certificate keyUsage must be critical.`;
   const subjectKeyIdentifier = readCertificateExtension(
     certificate,
     OID_SUBJECT_KEY_IDENTIFIER,
   );
   if (!subjectKeyIdentifier)
-    return "The WRPAC certificate must contain a SubjectKeyIdentifier.";
+    return `The ${providerKind} certificate must contain a SubjectKeyIdentifier.`;
   const identifier = readDerElement(subjectKeyIdentifier.value, 0);
   if (
     !identifier ||
     identifier.tag !== TAG_OCTET_STRING ||
     identifier.contents.length === 0
   )
-    return "The WRPAC certificate must contain a SubjectKeyIdentifier.";
+    return `The ${providerKind} certificate must contain a SubjectKeyIdentifier.`;
   if (subjectKeyIdentifier.critical)
-    return "The WRPAC certificate SubjectKeyIdentifier must be non-critical.";
+    return `The ${providerKind} certificate SubjectKeyIdentifier must be non-critical.`;
   const selfSigned =
     certificate.subject === certificate.issuer &&
     certificate.verify(certificate.publicKey);
@@ -333,10 +334,10 @@ export function checkWrpacCaCertificate(
     OID_AUTHORITY_KEY_IDENTIFIER,
   );
   if (authorityKeyIdentifier?.critical)
-    return "The WRPAC certificate AuthorityKeyIdentifier must be non-critical.";
+    return `The ${providerKind} certificate AuthorityKeyIdentifier must be non-critical.`;
   if (!selfSigned) {
     if (!authorityKeyIdentifier)
-      return "A non-self-signed WRPAC certificate must contain an AuthorityKeyIdentifier keyIdentifier.";
+      return `A non-self-signed ${providerKind} certificate must contain an AuthorityKeyIdentifier keyIdentifier.`;
     const encodedAuthority = readDerElement(authorityKeyIdentifier.value, 0);
     const authorityIdentifier =
       encodedAuthority?.tag === TAG_SEQUENCE
@@ -345,11 +346,11 @@ export function checkWrpacCaCertificate(
           )
         : null;
     if (!authorityIdentifier || authorityIdentifier.contents.length === 0)
-      return "A non-self-signed WRPAC certificate must contain an AuthorityKeyIdentifier keyIdentifier.";
+      return `A non-self-signed ${providerKind} certificate must contain an AuthorityKeyIdentifier keyIdentifier.`;
   }
   if (Date.now() > certificate.validToDate.getTime())
-    return "The WRPAC certificate has expired.";
+    return `The ${providerKind} certificate has expired.`;
   if (Date.now() < certificate.validFromDate.getTime())
-    return "The WRPAC certificate is not yet valid.";
+    return `The ${providerKind} certificate is not yet valid.`;
   return null;
 }
