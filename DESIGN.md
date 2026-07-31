@@ -111,6 +111,12 @@ options are shown but disabled, under a legend carrying the same
 "Not implemented yet" neutral badge the disabled Trusted List Families use, so an
 unavailable capability looks the same everywhere in the product.
 
+When server-side certificate generation is configured, the Signing Material
+card carries one secondary **Generate key and certificate** button. It submits
+the values already entered above, returns to the same form with the key and
+certificate paths filled, and shows the result through the existing success
+notice style. No private-key content is rendered in HTML.
+
 ## Phase 8 WRPAC and WRPRC
 
 The catalogue lists the six TS 119 602 families in annex order — PID, Wallet,

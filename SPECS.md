@@ -592,6 +592,15 @@ manifest uses, so `deriveListKeyFromParts()` computes it up front and the creati
 refuses a collision. The six scheme URIs are derived from one base URL:
 `/scheme`, `/practice-statement`, `/policy`, `/latest`, plus the website itself.
 
+When `TLP_CERTIFICATES_DIR` is configured, the administration form can generate
+its signing material before creation. `generateSigningMaterial()` invokes
+OpenSSL without a shell, creates an EC P-256 key and a one-year self-signed
+certificate, validates that the keys match and that subject `O` equals the
+entered Scheme Operator Name while subject `C` equals the entered
+SchemeTerritory, then atomically installs the pair below a directory named with
+the derived list key. The private key has mode `0600`; an existing directory is
+never overwritten. Only the resulting paths are returned to the form.
+
 Both entry points require the administrator credential:
 
 - `POST /admin/lists/create` — the administration form, cookie session

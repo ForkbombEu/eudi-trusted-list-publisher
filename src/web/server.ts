@@ -18,6 +18,8 @@ import {
   signingConfigDisplay,
   ApplicationService,
   createTrustedList,
+  deriveListKeyFromParts,
+  generateSigningMaterial,
   type CreateListResult,
   type PublisherSettings,
   type SigningConfig,
@@ -247,6 +249,7 @@ export interface ServerConfig {
   adminUser?: string;
   adminPassword?: string;
   signingConfigPath?: string;
+  certificatesDir?: string;
 }
 
 /** Constant-time string comparison that does not leak the compared length. */
@@ -559,6 +562,10 @@ export function createWebServer(config: ServerConfig) {
     settingsStore = new SettingsStore({ settingsDir: config.authoringDir });
   }
   const signingConfigPath = guiEnabled ? config.signingConfigPath : undefined;
+  const certificatesDir =
+    guiEnabled && config.certificatesDir
+      ? resolve(config.certificatesDir)
+      : undefined;
 
   /*
     Creating a Trusted List appends to the signing configuration, so the
@@ -1591,7 +1598,9 @@ ${versionDownloadsHtml(listKey, sequence)}
         400,
         guiPage(
           "Create Trusted List",
-          createListFormHtml(fields, result.error),
+          createListFormHtml(fields, result.error, {
+            canGenerateSigningMaterial: certificatesDir !== undefined,
+          }),
         ),
       );
       logRequest("POST", "/admin/lists/create", 400, requestId);
@@ -1618,6 +1627,72 @@ ${versionDownloadsHtml(listKey, sequence)}
       ),
     );
     logRequest("POST", "/admin/lists/create", 200, requestId);
+  }
+
+  async function handleGenerateSigningMaterial(
+    res: ServerResponse,
+    fields: Record<string, string>,
+    requestId: string,
+  ): Promise<void> {
+    const { createListFormHtml } =
+      await import("../web/views/list-creation.js");
+    const render = (status: number, error?: string, notice?: string): void => {
+      sendHtml(
+        res,
+        status,
+        guiPage(
+          "Create Trusted List",
+          createListFormHtml(fields, error, {
+            canGenerateSigningMaterial: certificatesDir !== undefined,
+            signingMaterialNotice: notice,
+          }),
+        ),
+      );
+      logRequest(
+        "POST",
+        "/admin/lists/generate-signing-material",
+        status,
+        requestId,
+      );
+    };
+    if (!certificatesDir) {
+      render(400, "TLP_CERTIFICATES_DIR is not configured.");
+      return;
+    }
+
+    const schemeOperatorName = fields.schemeOperatorName?.trim() ?? "";
+    const schemeTerritory = fields.schemeTerritory?.trim() ?? "";
+    const listKey = deriveListKeyFromParts(schemeTerritory, schemeOperatorName);
+    if (signingConfig?.lists.some((entry) => entry.listKey === listKey)) {
+      render(400, `A Trusted List with key "${listKey}" already exists.`);
+      return;
+    }
+    if (store.getHighestStoredSequence(listKey) !== null) {
+      render(400, `Publications already exist for list key "${listKey}".`);
+      return;
+    }
+
+    try {
+      const generated = generateSigningMaterial({
+        certificatesDir,
+        schemeOperatorName,
+        schemeTerritory,
+      });
+      fields.keyFile = generated.keyFile;
+      fields.certFile = generated.certFile;
+      render(
+        200,
+        undefined,
+        `Signing material generated for ${generated.listKey}. The paths below are ready to use.`,
+      );
+    } catch (error) {
+      render(
+        400,
+        error instanceof Error
+          ? error.message
+          : "Signing material could not be generated.",
+      );
+    }
   }
 
   /** `POST /api/v1/admin/lists` — same operation, JSON in and JSON out. */
@@ -1861,6 +1936,9 @@ ${versionDownloadsHtml(listKey, sequence)}
               createListFormHtml(
                 {},
                 url.searchParams.get("error") ?? undefined,
+                {
+                  canGenerateSigningMaterial: certificatesDir !== undefined,
+                },
               ),
             ),
           );
@@ -2144,6 +2222,15 @@ ${outcome}
 
       if (path === "/admin/lists/create") {
         await handleCreateTrustedList(res, parseFormBody(body), requestId);
+        return;
+      }
+
+      if (path === "/admin/lists/generate-signing-material") {
+        await handleGenerateSigningMaterial(
+          res,
+          parseFormBody(body),
+          requestId,
+        );
         return;
       }
 

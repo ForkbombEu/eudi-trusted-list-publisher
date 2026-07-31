@@ -90,8 +90,10 @@ template to copy.
 ```
 .local-signing/            # gitignored
 ├── signing-config.json    # the file TLP_SIGNING_CONFIG points at
-├── wallet-signer-key.pem  # private key, referenced by keyFile
-└── wallet-signer-cert.pem # certificate, referenced by certFile
+└── certificates/          # TLP_CERTIFICATES_DIR
+    └── eu_example_operator/
+        ├── signing-key.pem  # mode 0600, referenced by keyFile
+        └── signing-cert.pem # referenced by certFile
 ```
 
 The path is not special — it is simply whatever `TLP_SIGNING_CONFIG` is set to
@@ -200,6 +202,14 @@ signing key and certificate. The list is declared, its first empty version is
 signed and published, and the Inspector assesses it immediately. Deliberately
 broken lists are listed on the form, one checkbox per defect, but generation of
 them is not implemented yet and the options are disabled.
+
+When `TLP_CERTIFICATES_DIR` is configured, the Signing Material card also offers
+**Generate key and certificate**. It takes `O` from the Operator Name and `C`
+from Scheme Territory, creates a self-signed EC P-256 certificate through
+OpenSSL, and prefills the generated server-side paths. Material is stored under
+`<TLP_CERTIFICATES_DIR>/<listKey>/`; existing files are never overwritten and
+the private key is created with mode `0600`. The configured directory must be a
+persistent volume when the server runs in a container.
 
 The signing certificate must have subject `O` equal to the scheme operator name
 and subject `C` equal to the scheme territory (`EU` for Annex D and Annex E), or
@@ -575,6 +585,7 @@ curl -sSI https://lote.credimi.io/healthz   # expect 200, not 308
 | `AUTHORING_DIR` | `serve`  | `./authoring` |
 | `TLP_ADMIN_TOKEN` | `serve`  | — |
 | `TLP_SIGNING_CONFIG` | `serve`  | — |
+| `TLP_CERTIFICATES_DIR` | `serve` | — |
 | `TLP_SCHEME_OPERATOR_NAME` | `serve`  | `Credimi` |
 | `TLP_SCHEME_NAME` | `serve`  | `EU Wallet Providers List` |
 | `TLP_SCHEME_TERRITORY` | `serve`  | `EU` |

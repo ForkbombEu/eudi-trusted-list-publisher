@@ -51,6 +51,11 @@ export type {
   CreateListSuccess,
   ListCreationDeps,
 } from "./list-creation.js";
+export { generateSigningMaterial } from "./signing-material.js";
+export type {
+  GeneratedSigningMaterial,
+  GenerateSigningMaterialRequest,
+} from "./signing-material.js";
 export { schemeDescriptorFor } from "./list-assembler.js";
 export {
   loadLatestPublication,

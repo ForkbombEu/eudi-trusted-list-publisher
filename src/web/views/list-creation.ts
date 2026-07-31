@@ -29,6 +29,11 @@ export interface CreateListFormValues {
   certFile?: string;
 }
 
+export interface CreateListFormOptions {
+  canGenerateSigningMaterial?: boolean;
+  signingMaterialNotice?: string;
+}
+
 function defectOptions(): string {
   return LIST_DEFECTS.map(
     (defect) => `
@@ -43,6 +48,7 @@ function defectOptions(): string {
 export function createListFormHtml(
   values?: CreateListFormValues,
   error?: string,
+  options: CreateListFormOptions = {},
 ): string {
   const v = values ?? {};
   const families = Object.values(PROFILE_REGISTRY).filter(
@@ -60,6 +66,11 @@ version. The list becomes selectable on the onboarding forms of its family, and
 its version 1 is signed and assessed by the Trust Inspector immediately.</p>
 
 ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
+${
+  options.signingMaterialNotice
+    ? `<div class="notice success-msg">${escape(options.signingMaterialNotice)}</div>`
+    : ""
+}
 
 <form method="post" action="/admin/lists/create" class="onboarding-form tl-create-form">
   <div class="card">
@@ -142,6 +153,15 @@ ${error ? `<div class="notice notice-error">${escape(error)}</div>` : ""}
     <p class="field-help">Server-side paths to the list's signing key and
     certificate. The private key is read by the publisher and never uploaded
     through this form.</p>
+    ${
+      options.canGenerateSigningMaterial
+        ? `<p><button type="submit" class="btn btn-outline btn-md"
+      formaction="/admin/lists/generate-signing-material" formmethod="post"
+      formnovalidate>Generate key and certificate</button></p>
+    <p class="field-help">Uses the Operator Name and Scheme Territory already
+      entered above. Existing signing material is never overwritten.</p>`
+        : ""
+    }
     <div class="form-group">
       <label for="keyFile">Private Key File <span class="required">*</span></label>
       <input type="text" id="keyFile" name="keyFile" required maxlength="500"
