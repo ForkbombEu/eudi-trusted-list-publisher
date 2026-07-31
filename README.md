@@ -209,7 +209,9 @@ from Scheme Territory, creates a self-signed EC P-256 certificate through
 OpenSSL, and prefills the generated server-side paths. Material is stored under
 `<TLP_CERTIFICATES_DIR>/<listKey>/`; existing files are never overwritten and
 the private key is created with mode `0600`. The configured directory must be a
-persistent volume when the server runs in a container.
+persistent volume when the server runs in a container. Relative configured
+paths are preserved in the signing configuration and resolve from the server's
+working directory; for example, `./.local-signing` remains relative.
 
 The signing certificate must have subject `O` equal to the scheme operator name
 and subject `C` equal to the scheme territory (`EU` for Annex D and Annex E), or

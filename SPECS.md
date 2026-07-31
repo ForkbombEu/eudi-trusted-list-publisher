@@ -600,6 +600,8 @@ entered Scheme Operator Name while subject `C` equals the entered
 SchemeTerritory, then atomically installs the pair below a directory named with
 the derived list key. The private key has mode `0600`; an existing directory is
 never overwritten. Only the resulting paths are returned to the form.
+Relative `TLP_CERTIFICATES_DIR` values are retained in those paths and are
+resolved against the process working directory only for filesystem operations.
 
 Both entry points require the administrator credential:
 

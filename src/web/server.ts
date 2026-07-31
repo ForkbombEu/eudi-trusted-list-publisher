@@ -562,9 +562,10 @@ export function createWebServer(config: ServerConfig) {
     settingsStore = new SettingsStore({ settingsDir: config.authoringDir });
   }
   const signingConfigPath = guiEnabled ? config.signingConfigPath : undefined;
+  const configuredCertificatesDir = config.certificatesDir?.trim();
   const certificatesDir =
-    guiEnabled && config.certificatesDir
-      ? resolve(config.certificatesDir)
+    guiEnabled && configuredCertificatesDir
+      ? configuredCertificatesDir
       : undefined;
 
   /*

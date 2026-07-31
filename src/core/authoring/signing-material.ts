@@ -13,7 +13,7 @@ import {
   renameSync,
   rmSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { deriveListKeyFromParts } from "./list-creation.js";
 
 export interface GenerateSigningMaterialRequest {
@@ -45,6 +45,19 @@ function publicKeyDer(key: ReturnType<typeof createPublicKey>): Buffer {
   return key.export({ format: "der", type: "spki" });
 }
 
+/** Keeps an explicitly relative configured root relative in persisted paths. */
+function configuredPath(root: string, ...segments: string[]): string {
+  const joined = join(root, ...segments);
+  const dotPrefix = `.${sep}`;
+  if (
+    !isAbsolute(root) &&
+    (root === "." || root.startsWith(dotPrefix)) &&
+    !joined.startsWith(dotPrefix)
+  )
+    return `${dotPrefix}${joined}`;
+  return joined;
+}
+
 /**
  * Generates one persistent P-256 key/certificate pair for a new Trusted List.
  *
@@ -65,15 +78,16 @@ export function generateSigningMaterial(
     );
   if (!/^[A-Z]{2}$/.test(territory))
     throw new Error("Scheme territory must be a 2-letter uppercase code.");
-  if (!request.certificatesDir.trim())
+  const configuredRoot = request.certificatesDir.trim();
+  if (!configuredRoot)
     throw new Error("TLP_CERTIFICATES_DIR is not configured.");
 
   const listKey = deriveListKeyFromParts(territory, operator);
   const commonName = `${operator} Trusted List Signer`.slice(0, 64);
-  const root = resolve(request.certificatesDir);
+  const root = resolve(configuredRoot);
   const finalDirectory = join(root, listKey);
-  const keyFile = join(finalDirectory, "signing-key.pem");
-  const certFile = join(finalDirectory, "signing-cert.pem");
+  const keyFile = configuredPath(configuredRoot, listKey, "signing-key.pem");
+  const certFile = configuredPath(configuredRoot, listKey, "signing-cert.pem");
   mkdirSync(root, { recursive: true, mode: 0o700 });
   if (existsSync(finalDirectory))
     throw new Error(`Signing material already exists for list "${listKey}".`);

@@ -15,7 +15,7 @@ import {
 import type { IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   generateSigningMaterial,
   type GeneratedSigningMaterial,
@@ -209,12 +209,16 @@ describe("Signing Material administration action", () => {
     const publicationDir = join(root, "publications");
     const authoringDir = join(root, "authoring");
     const certificatesDir = join(root, "certificates");
+    const configuredCertificatesDir = `./${relative(
+      process.cwd(),
+      certificatesDir,
+    )}`;
     const signingConfigPath = join(root, "signing-config.json");
     writeFileSync(signingConfigPath, JSON.stringify({ lists: [] }), "utf-8");
     const started = await startServer({
       publicationDir,
       authoringDir,
-      certificatesDir,
+      certificatesDir: configuredCertificatesDir,
       signingConfigPath,
       dataCollectionGui: true,
       adminToken: "material-token",
@@ -238,7 +242,7 @@ describe("Signing Material administration action", () => {
       expect(response.body).toContain('value="Saved Street 1"');
       expect(response.body).toContain(
         'value="' +
-          join(certificatesDir, "eu_generated_operator", "signing-key.pem") +
+          `${configuredCertificatesDir}/eu_generated_operator/signing-key.pem` +
           '"',
       );
       expect(response.body).not.toContain(["BEGIN", "PRIVATE KEY"].join(" "));
