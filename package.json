@@ -15,7 +15,9 @@
     "lint": "tsc -p tsconfig.json --noEmit && npm run lint:design",
     "lint:design": "npx --yes @google/design.md lint DESIGN.md",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "serve": "node --env-file-if-exists=.env dist/src/cli/main.js serve",
+    "dev:serve": "tsx watch --env-file-if-exists=.env src/cli/main.ts serve"
   },
   "keywords": [
     "etsi",
