@@ -121,20 +121,10 @@ export interface TrustedEntityProfile {
   readonly collectsRegistrationIdentifier: boolean;
   /** Annex F/G publish a further information page beside the policies URL. */
   readonly collectsAdditionalInformationUri: boolean;
-  /**
-   * Whether the entity role URI and the legal-basis reference are also
-   * published in `TEElectronicAddress`.
-   *
-   * Annex D–G readers find the role URI in `TEInformationURI`, which is where
-   * this publisher has always put it. The live Trust Inspector's Annex H entity
-   * check reads the entity's URIs from `TEElectronicAddress` instead and reports
-   * `countryRoleUriPresent: false` when the role URI appears only in
-   * `TEInformationURI` — established by probing the running Inspector, the same
-   * way the Annex G `WRPRCrovidersList` literal was. Annex H therefore publishes
-   * both members; neither is wrong, and duplicating a URI costs a reader
-   * nothing.
-   */
-  readonly entityUrisInElectronicAddress: boolean;
+  /** Whether the entity role URI is published in `TEElectronicAddress`. */
+  readonly roleUriInElectronicAddress: boolean;
+  /** Whether the entity role URI is published in `TEInformationURI`. */
+  readonly roleUriInInformationUri: boolean;
   /**
    * Annex F, G and H collect the provider's policies and terms URL where
    * Annex D/E collect an information page. Both occupy the same position in the
@@ -159,7 +149,8 @@ const disabled = (family: ProfileFamily, label: string): TrustedEntityProfile =>
     requiresLegalBasisReference: false,
     collectsRegistrationIdentifier: false,
     collectsAdditionalInformationUri: false,
-    entityUrisInElectronicAddress: false,
+    roleUriInElectronicAddress: false,
+    roleUriInInformationUri: false,
     informationUriIsPolicyUrl: false,
     signatureProfile: "JAdES-Compact-B",
     notImplementedNote: "Not implemented yet",
@@ -189,7 +180,8 @@ export const PROFILE_REGISTRY: Readonly<
     requiresLegalBasisReference: false,
     collectsRegistrationIdentifier: false,
     collectsAdditionalInformationUri: false,
-    entityUrisInElectronicAddress: false,
+    roleUriInElectronicAddress: false,
+    roleUriInInformationUri: true,
     informationUriIsPolicyUrl: false,
     signatureProfile: "JAdES-Compact-B",
   }),
@@ -214,7 +206,8 @@ export const PROFILE_REGISTRY: Readonly<
     requiresLegalBasisReference: false,
     collectsRegistrationIdentifier: false,
     collectsAdditionalInformationUri: false,
-    entityUrisInElectronicAddress: false,
+    roleUriInElectronicAddress: false,
+    roleUriInInformationUri: true,
     informationUriIsPolicyUrl: false,
     signatureProfile: "JAdES-Compact-B",
   }),
@@ -239,7 +232,8 @@ export const PROFILE_REGISTRY: Readonly<
     requiresLegalBasisReference: false,
     collectsRegistrationIdentifier: true,
     collectsAdditionalInformationUri: true,
-    entityUrisInElectronicAddress: false,
+    roleUriInElectronicAddress: false,
+    roleUriInInformationUri: true,
     informationUriIsPolicyUrl: true,
     signatureProfile: "JAdES-Compact-B",
   }),
@@ -264,7 +258,8 @@ export const PROFILE_REGISTRY: Readonly<
     requiresLegalBasisReference: false,
     collectsRegistrationIdentifier: true,
     collectsAdditionalInformationUri: true,
-    entityUrisInElectronicAddress: false,
+    roleUriInElectronicAddress: false,
+    roleUriInInformationUri: true,
     informationUriIsPolicyUrl: true,
     signatureProfile: "JAdES-Compact-B",
   }),
@@ -294,7 +289,8 @@ export const PROFILE_REGISTRY: Readonly<
     requiresLegalBasisReference: true,
     collectsRegistrationIdentifier: true,
     collectsAdditionalInformationUri: false,
-    entityUrisInElectronicAddress: true,
+    roleUriInElectronicAddress: true,
+    roleUriInInformationUri: false,
     informationUriIsPolicyUrl: true,
     signatureProfile: "JAdES-Compact-B",
   }),

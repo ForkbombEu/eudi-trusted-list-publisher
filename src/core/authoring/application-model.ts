@@ -278,11 +278,7 @@ export function buildAuthoringEntity(
     "additionalInformationURI" in data
       ? (data as WalletRelyingPartyApplicantData).additionalInformationURI
       : undefined;
-  /*
-    Annex H requires the Union or national act the notification rests on. It is
-    published beside the role URI: TEInformationURI is the collection of URIs
-    that describe the entity, and the legal basis is one of them.
-  */
+  /* Annex H.3 publishes the Union or national act in TETradeName. */
   let legalBasis: string | undefined;
   if (profile.requiresLegalBasisReference) {
     if (!("legalBasisReference" in data))
@@ -343,30 +339,28 @@ export function buildAuthoringEntity(
       { lang: "en", uriValue: mailtoUri(data.entityEmail) },
       { lang: "en", uriValue: data.entityInformationURI },
       { lang: "en", uriValue: telUri(data.entityTelephone) },
-      /*
-        Annex H readers look for the role URI and the legal basis among the
-        entity's electronic addresses; see `entityUrisInElectronicAddress`.
-      */
-      ...(profile.entityUrisInElectronicAddress
+      ...(profile.roleUriInElectronicAddress
         ? [
             {
               lang: "en",
               uriValue: roleUri(profile.roleUriPrefix ?? "", roleCountry),
             },
-            ...(legalBasis ? [{ lang: "en", uriValue: legalBasis }] : []),
           ]
         : []),
     ],
     teInformationURI: [
       { lang: "en", uriValue: data.entityInformationURI },
-      {
-        lang: "en",
-        uriValue: roleUri(profile.roleUriPrefix ?? "", roleCountry),
-      },
+      ...(profile.roleUriInInformationUri
+        ? [
+            {
+              lang: "en",
+              uriValue: roleUri(profile.roleUriPrefix ?? "", roleCountry),
+            },
+          ]
+        : []),
       ...(additionalInformationURI
         ? [{ lang: "en", uriValue: additionalInformationURI }]
         : []),
-      ...(legalBasis ? [{ lang: "en", uriValue: legalBasis }] : []),
     ],
     services: data.services.map((service) => {
       const serviceTypeIdentifier = serviceTypeUri(family, service.serviceType);

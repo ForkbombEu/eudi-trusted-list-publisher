@@ -522,22 +522,9 @@ export function fixtureSeedEntity(
       { lang: "en", uriValue: "mailto:fixture@fixture-entity.example" },
       { lang: "en", uriValue: home },
       { lang: "en", uriValue: "tel:+3220000000" },
-      ...(annexH
-        ? [
-            { lang: "en", uriValue: roleUri },
-            { lang: "en", uriValue: legalBasis },
-          ]
-        : []),
+      ...(annexH ? [{ lang: "en", uriValue: roleUri }] : []),
     ],
-    teInformationURI: [
-      { lang: "en", uriValue: home },
-      ...(annexH
-        ? [
-            { lang: "en", uriValue: roleUri },
-            { lang: "en", uriValue: legalBasis },
-          ]
-        : []),
-    ],
+    teInformationURI: [{ lang: "en", uriValue: home }],
     services: [
       {
         serviceTypeIdentifier: PUB_EAA_SERVICE_TYPE_ISSUANCE,

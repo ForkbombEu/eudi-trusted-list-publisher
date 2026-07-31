@@ -690,7 +690,10 @@ URI is `OJ:` followed by `EU` for Union law or an EU Member State's ISO 3166-1
 alpha-2 code for national law, followed by the unique law identifier. The
 profile compiler and `schemas/profiles/pub-eaa-schema.json` both reject a
 Pub-EAA entity whose `TETradeName` omits that formatted legal reference. The
-vendored generic ETSI schema remains unchanged.
+vendored generic ETSI schema remains unchanged. The mapping does not duplicate
+the legal-basis URI in `TEInformationURI` or `TEElectronicAddress`; it publishes
+the Pub-EAA country role URI only in `TEElectronicAddress`, leaving
+`TEInformationURI` with the provider's policies URL.
 
 `src/core/model/x509-ski.ts` produces the `X509SKI` values a history instance
 publishes. Node's `X509Certificate` exposes neither the SubjectKeyIdentifier

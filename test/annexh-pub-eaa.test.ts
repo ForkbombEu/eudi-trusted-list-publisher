@@ -361,22 +361,42 @@ describe("Annex H scheme information", () => {
 // 3. Trusted entity
 // ============================================================
 describe("Annex H trusted entity", () => {
-  it("publishes the Member-State role URI from the responsible Member State", () => {
-    const entity = document({
+  it("publishes the Member-State role URI only in the electronic address", () => {
+    const information = document({
       entityCountry: "DE",
       responsibleMemberState: "IT",
     }).LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation;
-    expect(entity.TEInformationURI.map((uri) => uri.uriValue)).toContain(
-      "http://uri.etsi.org/19602/ListOfTrustedEntities/PubEAAProvider/IT",
-    );
+    const role =
+      "http://uri.etsi.org/19602/ListOfTrustedEntities/PubEAAProvider/IT";
+    expect(
+      information.TEAddress.TEElectronicAddress.map((uri) => uri.uriValue),
+    ).toContain(role);
+    expect(
+      information.TEInformationURI.map((uri) => uri.uriValue),
+    ).not.toContain(role);
   });
 
-  it("publishes the legal basis as an OJ: URI", () => {
-    const entity =
+  it("publishes the legal basis only in TETradeName", () => {
+    const information =
       document().LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation;
-    expect(entity.TEInformationURI.map((uri) => uri.uriValue)).toContain(
-      "OJ:EU32024R1183",
+    const legalBasis = "OJ:EU32024R1183";
+    expect(information.TETradeName?.map((name) => name.value)).toContain(
+      legalBasis,
     );
+    expect(
+      information.TEInformationURI.map((uri) => uri.uriValue),
+    ).not.toContain(legalBasis);
+    expect(
+      information.TEAddress.TEElectronicAddress.map((uri) => uri.uriValue),
+    ).not.toContain(legalBasis);
+  });
+
+  it("keeps only the policies URL in TEInformationURI", () => {
+    const information =
+      document().LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation;
+    expect(information.TEInformationURI).toEqual([
+      { lang: "en", uriValue: "https://entity.example/policies" },
+    ]);
   });
 
   it("requires the OJ: reference to identify EU or Member-State law", () => {
@@ -428,12 +448,7 @@ describe("Annex H trusted entity", () => {
     expect(() => compileForProfile(FAMILY, input)).toThrow(/legal-basis URI/);
   });
 
-  it("publishes the role URI and legal basis in the electronic addresses too", () => {
-    /*
-      The live Inspector's Annex H entity check reads the entity's URIs from
-      TEElectronicAddress; the other profiles publish them only in
-      TEInformationURI. See `entityUrisInElectronicAddress` in the registry.
-    */
+  it("configures the Pub-EAA role URI for electronic address only", () => {
     const information =
       document().LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation;
     const addresses = information.TEAddress.TEElectronicAddress.map(
@@ -442,15 +457,15 @@ describe("Annex H trusted entity", () => {
     expect(addresses).toContain(
       "http://uri.etsi.org/19602/ListOfTrustedEntities/PubEAAProvider/IT",
     );
-    expect(addresses).toContain("OJ:EU32024R1183");
-    expect(getProfile(FAMILY).entityUrisInElectronicAddress).toBe(true);
+    expect(getProfile(FAMILY).roleUriInElectronicAddress).toBe(true);
+    expect(getProfile(FAMILY).roleUriInInformationUri).toBe(false);
     for (const family of [
       "pid-providers",
       "wallet-providers",
       "wrpac-providers",
       "wrprc-providers",
     ] as const)
-      expect(getProfile(family).entityUrisInElectronicAddress).toBe(false);
+      expect(getProfile(family).roleUriInElectronicAddress).toBe(false);
   });
 
   it("is contactable by mailto, https and tel", () => {
@@ -1197,18 +1212,20 @@ describe("WE BUILD Pub-EAA evaluation", () => {
       expect(result.countryRoleUriPresent).toBe(false);
       expect(result.pubEaaLawReferencePresent).toBe(false);
     }
-    /* All three are present in a list this publisher produces. */
-    const uris =
-      document().LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation.TEInformationURI.map(
-        (uri) => uri.uriValue,
-      );
+    /* All three are present in their Annex H components. */
+    const information =
+      document().LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation;
     expect(
-      uris.some((uri) => uri.startsWith(PUB_EAA_PROVIDER_ROLE_URI_PREFIX)),
+      information.TEAddress.TEElectronicAddress.some((uri) =>
+        uri.uriValue.startsWith(PUB_EAA_PROVIDER_ROLE_URI_PREFIX),
+      ),
     ).toBe(true);
-    expect(uris.some((uri) => uri.startsWith("OJ:"))).toBe(true);
     expect(
-      document().LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation.TEAddress.TEElectronicAddress.some(
-        (address) => address.uriValue.startsWith("tel:"),
+      information.TETradeName?.some((name) => name.value.startsWith("OJ:")),
+    ).toBe(true);
+    expect(
+      information.TEAddress.TEElectronicAddress.some((address) =>
+        address.uriValue.startsWith("tel:"),
       ),
     ).toBe(true);
   });

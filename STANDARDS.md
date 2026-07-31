@@ -233,9 +233,8 @@ represents the act. `legalBasisUri()` adds the `OJ:` scheme when the applicant
 omits it, while `isLegalBasisReference()` rejects missing identifiers,
 non-Member-State jurisdiction codes and whitespace.
 
-The publisher also retains the legal-basis URI in `TEInformationURI` and
-`TEElectronicAddress` for compatibility with existing readers. Those duplicate
-placements do not replace the mandatory Annex H.3 `TETradeName` value.
+The legal-basis URI is published only in `TETradeName`; it is not duplicated in
+`TEInformationURI` or `TEElectronicAddress`.
 
 ### Certificates
 
@@ -280,15 +279,10 @@ withdrawal outright, would both be worse than saying what happened.
 
 ### Where Annex H entity URIs are published
 
-Established by probing the live Inspector, the same way the Annex G
-`WRPRCrovidersList` literal was: the Annex H entity check reads the entity's URIs
-from **`TEAddress.TEElectronicAddress`**, not from `TEInformationURI`, and reports
-`countryRoleUriPresent: false` when the role URI appears only in the latter — even
-though the Annex F check accepts exactly that placement. Annex H therefore
-publishes the role URI and the legal basis in **both** members
-(`entityUrisInElectronicAddress` in the registry). Neither placement is wrong and
-a duplicated URI costs a reader nothing, so publishing both is preferable to
-choosing one and failing a reader that looks in the other.
+The Pub-EAA country role URI is published only in
+**`TEAddress.TEElectronicAddress`**. `TEInformationURI` contains only the
+provider's policies and terms URL. The Annex H legal-basis reference is not an
+entity-address URI; Annex H.3 places it only in `TETradeName`.
 
 ### Status starting times are restated on every version
 
