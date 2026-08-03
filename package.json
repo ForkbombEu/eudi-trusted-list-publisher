@@ -37,7 +37,6 @@
     "commander": "^13.1.0",
     "jose": "^5.10.0",
     "libxml2-wasm": "^0.7.1",
-    "libxml2-wasm": "^0.7.1",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
