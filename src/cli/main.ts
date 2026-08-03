@@ -26,6 +26,7 @@ import { publish, PublicationError } from "../core/publication/manifest.js";
 import { PublicationStore } from "../core/publication/store.js";
 import type { AuthoringInput } from "../core/model/authoring.js";
 import type { LoTEDocument } from "../core/model/types.js";
+import { DEFAULT_INSPECTOR_BASE_URL } from "../core/inspector/inspector.js";
 
 const ASCII_ART = `
 ╔══════════════════════════════════════════╗
@@ -407,6 +408,11 @@ program
   )
   .option("--port <port>", "Bind port", process.env["TLP_PORT"] ?? "8080")
   .option(
+    "--inspector-url <url>",
+    "Trust Inspector base URL. Empty disables the integration: no published artifact leaves this process.",
+    process.env["TLP_INSPECTOR_URL"] ?? DEFAULT_INSPECTOR_BASE_URL,
+  )
+  .option(
     "--data-collection-gui",
     "Enable the data-collection/administration GUI",
     process.env["DATA_COLLECTION_GUI"] === "true",
@@ -473,6 +479,7 @@ program
       adminPassword: guiEnabled ? options.adminPassword : undefined,
       signingConfigPath: guiEnabled ? options.signingConfig : undefined,
       certificatesDir: guiEnabled ? options.certificatesDir : undefined,
+      inspectorBaseUrl: String(options.inspectorUrl ?? ""),
     });
 
     server.listen(port, host, () => {

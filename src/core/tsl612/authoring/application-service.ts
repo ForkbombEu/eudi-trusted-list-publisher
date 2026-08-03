@@ -97,7 +97,12 @@ export interface TslApplicationServiceConfig {
   readonly trustedListConfig: (
     listKey: string,
   ) => TrustedListConfigEntry | undefined;
-  readonly inspector?: InspectorClient;
+  /**
+   * Absent or null disables the Trust Inspector: no artifact leaves this
+   * process, and a version's Inspector status stays unavailable — which is not
+   * a conformance statement.
+   */
+  readonly inspector?: InspectorClient | null;
   /** Base URL recorded as the Inspector's `source`. */
   readonly publicBaseUrl?: string;
   /** Whether this list, or this family, is approved automatically. */

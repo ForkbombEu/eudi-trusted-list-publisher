@@ -8,6 +8,8 @@
  * recognised.
  */
 import { familyChip, listChip } from "./colors.js";
+import { brokenBadge } from "./broken-list.js";
+import { fixturePanelHtml } from "./inspector-panel.js";
 import { xmlStandardChips } from "./tsl612-onboarding.js";
 import { getTslProfile } from "../../core/tsl612/registry.js";
 import type { TslApplicationRecord } from "../../core/tsl612/authoring/application-model.js";
@@ -220,6 +222,7 @@ export function trustedListVersionHtml(
   manifest: TrustedListManifest,
   inspector: InspectorSummary | null,
   isLatest: boolean,
+  fixtureMetadataJson: string | null = null,
 ): string {
   const base = `/api/v1/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}`;
   const tsl = manifest.trustedList;
@@ -229,6 +232,7 @@ export function trustedListVersionHtml(
         <table class="kv-table"><tbody>
           ${row("Standard assessed", escape(inspector.standard ?? "not stated"))}
           ${row("Detected artifact", escape(inspector.detectedArtifactKind ?? "not stated"))}
+          ${row("TS 119 612 applicability", escape(inspector.standardApplicability?.["ts119612"] ?? "not stated"))}
           ${row("Conformance level", escape(inspector.status === "unavailable" ? "not evaluated" : (inspector.conformanceLevel ?? "not stated")))}
           ${inspector.serviceTypes && inspector.serviceTypes.length > 0 ? row("Service types", inspector.serviceTypes.map((type) => `<code>${escape(type)}</code>`).join("<br>")) : ""}
           ${inspector.counts ? row("Checks", `${inspector.counts.pass} pass, ${inspector.counts.fail} fail, ${inspector.counts.warn} warn, ${inspector.counts.notApplicable} n/a, ${inspector.counts.notChecked} not checked`) : ""}
@@ -236,6 +240,7 @@ export function trustedListVersionHtml(
           ${row("Inspector", escape(inspector.inspectorBaseUrl))}
         </tbody></table>
         ${inspector.locallyDecidableFailures && inspector.locallyDecidableFailures.length > 0 ? `<ul>${inspector.locallyDecidableFailures.map((f) => `<li>${escape(f)}</li>`).join("")}</ul>` : ""}
+        ${inspector.status === "unavailable" && inspector.error ? `<p class="field-help">${escape(inspector.error)}</p>` : ""}
         </div>`
     : `<div class="card"><h2>Trust Inspector</h2>
         <p><span class="badge badge-neutral">Unavailable</span></p>
@@ -248,9 +253,10 @@ export function trustedListVersionHtml(
     : "";
 
   return `
-<h1>${escape(listKey)} — version ${sequenceNumber}</h1>
+<h1>${escape(listKey)} — version ${sequenceNumber}${manifest.fixture?.fixtureMode === "intentionally-broken" ? ` ${brokenBadge()}` : ""}</h1>
 <p>${listChip(listKey)} ${familyChip(manifest.family)} ${xmlStandardChips()}</p>
 ${latestNote}
+${fixturePanelHtml(fixtureMetadataJson)}
 
 <div class="card">
   <h2>Trusted List</h2>
@@ -275,11 +281,16 @@ ${latestNote}
   <h2>Integrity</h2>
   <table class="kv-table"><tbody>
     ${row("XML SHA-256", `<code>${escape(manifest.trustedListXmlSha256)}</code>`)}
+    ${row(".sha2 published", manifest.trustedListSha2Published === undefined || manifest.trustedListSha2Published === manifest.trustedListXmlSha256 ? `<code>${escape(manifest.trustedListXmlSha256)}</code> — matches the XML` : `<code>${escape(manifest.trustedListSha2Published)}</code> — <strong>deliberately not the digest of this XML</strong>`)}
     ${row("Schema", manifest.schemaValid ? "valid against the pinned TS 119 612 V2.4.1 schemas" : `invalid: ${escape(manifest.schemaFindings.join("; "))}`)}
     ${row("Signature", manifest.signatureValid ? `${escape(manifest.signatureProfile)}, verified locally` : `invalid: ${escape(manifest.signatureFindings.join("; "))}`)}
     ${row("Signature algorithm", `<code>${escape(manifest.signatureAlgorithm)}</code>`)}
     ${row("Signing time", escape(manifest.signingTime))}
     ${row("Signing certificate", escape(manifest.certificateSubject))}
+    ${row("Certificate profile", manifest.signingCertificateFindings.length === 0 ? "meets the TS 119 612 Scheme Operator profile" : `<strong>does not meet the profile:</strong> ${escape(manifest.signingCertificateFindings.join(" "))}`)}
+    ${row("Freshness", manifest.freshnessValid ? "NextUpdate is later than the issue time and has not passed" : `<strong>stale:</strong> ${escape(manifest.freshnessFindings.join(" "))}`)}
+    ${row("Service profiles", manifest.serviceProfiles.serviceProfilesPresent.length > 0 ? manifest.serviceProfiles.serviceProfilesPresent.map((type) => `<code>${escape(type)}</code>`).join("<br>") : "none published in this version")}
+    ${row("Allowed service profiles", manifest.serviceProfiles.allowedServiceProfiles.length > 0 ? manifest.serviceProfiles.allowedServiceProfiles.map((profile) => `<code>${escape(profile)}</code>`).join("<br>") : "not recorded")}
     ${row("Certificate SHA-256", `<code>${escape(manifest.signingCertificateSha256)}</code>`)}
     ${row("Signer trust", `${escape(manifest.signerTrustStatus)} — this publisher builds no certification path and makes no trust decision`)}
     ${row("Published", escape(manifest.publicationTimestamp))}

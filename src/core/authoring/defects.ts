@@ -1,16 +1,15 @@
 /**
- * Intentionally broken Trusted List generation.
+ * Intentionally broken TS 119 602 Trusted List generation.
  *
  * These fixtures exist so EUDI wallet, issuer and verifier implementations can
  * register against a list that is *known* to violate a specific clause and
  * confirm their runtime detects it. A failing Trust Inspector verdict on one of
  * these lists is the deliverable, not an error.
  *
- * Each defect states the stage it applies at, a deterministic mutation, and the
- * Inspector rule IDs it is expected to trip. The expected IDs were taken from a
- * live Inspector evaluation of a real Pub-EAA artifact rather than guessed, but
- * they remain an *expectation*: the recorded fixture metadata always reports
- * expected against actual so a drifting rule set is visible rather than hidden.
+ * What each defect *means*, which stage it applies at and what it is expected
+ * to fail live in the canonical catalogue at `src/core/defects/registry.ts`,
+ * shared with the TS 119 612 XML engine. This module is the JSON half: it knows
+ * how to perform the mutations on a LoTE document and on its Compact JAdES.
  */
 
 import { execFileSync } from "node:child_process";
@@ -29,218 +28,58 @@ import {
   PUB_EAA_SERVICE_TYPE_ISSUANCE,
   PUB_EAA_SVC_STATUS_NOTIFIED,
 } from "../profiles/pub-eaa-provider/constants.js";
+import {
+  defectForStandard,
+  defectsAtStageFor,
+  defectsForStandard,
+  expectedRuleIdsForStandard,
+  type DefectSpec,
+  type DefectStage,
+} from "../defects/registry.js";
 
-/** When a mutation is applied relative to signing. */
-export type DefectStage = "pre-sign" | "post-sign";
+import {
+  buildFixtureMetadata as buildSharedFixtureMetadata,
+  type AppliedMutation,
+  type FixtureMetadata,
+} from "../defects/fixture-metadata.js";
 
-export interface DefectSpec {
-  readonly id: string;
-  readonly label: string;
-  readonly description: string;
-  readonly stage: DefectStage;
-  /**
-   * Inspector rule IDs this defect is expected to fail. The first is the
-   * primary rule; the rest are the cascading failures the same mutation
-   * legitimately provokes.
-   */
-  readonly expectedRuleIds: readonly string[];
-  /**
-   * Families where the literal mutation would be a no-op and the defect is
-   * realised differently. Documented per defect below.
-   */
-  readonly familyNote?: string;
-  /** The clause the mutation violates, cited so a reader can look it up. */
-  readonly normativeReference: string;
-  /** What a conformant list does instead, in one sentence. */
-  readonly conformantBehaviour: string;
-}
+export {
+  compareFailures,
+  normalizeInspectorRuleId,
+} from "../defects/registry.js";
+export type {
+  DefectSpec,
+  DefectStage,
+  DefectStandard,
+} from "../defects/registry.js";
+export type {
+  AppliedMutation,
+  FixtureMetadata,
+} from "../defects/fixture-metadata.js";
+
+/** The standard this engine mutates. */
+const STANDARD = "TS 119 602" as const;
 
 /**
- * Annex H (Pub-EAA) sets `publishesSelfPointer: false`, so a healthy Pub-EAA
- * list already omits PointersToOtherLoTE and "omit the pointer" changes
- * nothing. For that family the defect is inverted: it *injects* a pointer the
- * annex prohibits. The runtime consequence a developer tests for is the same —
- * the list carries a pointer structure that must be rejected.
+ * The catalogue as TS 119 602 sees it. Re-exported so the existing JSON
+ * callers and views keep one import while the catalogue itself is shared.
  */
-const SELF_POINTER_ANNEX_H_NOTE =
-  "Annex H forbids PointersToOtherLoTE, so for pub-eaa-providers this defect " +
-  "injects a prohibited pointer instead of omitting a required one.";
-
-export const DEFECT_SPECS: ReadonlyArray<DefectSpec> = Object.freeze([
-  {
-    id: "non_strict_timestamps",
-    normativeReference:
-      "ETSI TS 119 602 V1.1.1, clause 6.1.3 (date-time lexical form)",
-    conformantBehaviour:
-      "ListIssueDateTime and NextUpdate are written as YYYY-MM-DDThh:mm:ssZ, with whole seconds and no fractional part.",
-    label: "Non-strict timestamps",
-    description:
-      "Emit ListIssueDateTime and NextUpdate with fractional seconds, violating the clause 6.1.3 lexical form.",
-    stage: "pre-sign",
-    expectedRuleIds: Object.freeze([
-      "ts119602.syntax.date_time",
-      "ts119602.scheme.issue_time",
-      "ts119602.scheme.next_update",
-      "json_lote.dates.issue_valid",
-      "json_lote.dates.next_update_valid",
-    ]),
-  },
-  {
-    id: "scheme_name_without_territory",
-    normativeReference: "ETSI TS 119 602 V1.1.1, clause 6.3.6 (SchemeName)",
-    conformantBehaviour:
-      "Each SchemeName value is prefixed with the scheme territory and a colon, for example EU:My List.",
-    label: "Scheme name without territory",
-    description:
-      "Emit SchemeName without the SchemeTerritory prefix required by clause 6.3.6.",
-    stage: "pre-sign",
-    expectedRuleIds: Object.freeze(["ts119602.scheme.name"]),
-  },
-  {
-    id: "missing_scheme_information_uri",
-    normativeReference:
-      "ETSI TS 119 602 V1.1.1, clause 6.3.7 and Table 1 (presence matrix)",
-    conformantBehaviour:
-      "SchemeInformationURI is present and points at the scheme information the operator publishes.",
-    label: "Missing scheme information URI",
-    description:
-      "Omit SchemeInformationURI, which the Table 1 presence matrix makes mandatory for explicit scheme information.",
-    stage: "pre-sign",
-    expectedRuleIds: Object.freeze([
-      "ts119602.structure.scheme_information_presence",
-      "ts119602.profile.pub_eaa_providers.scheme_information",
-    ]),
-  },
-  {
-    id: "missing_policy_or_legal_notice",
-    normativeReference:
-      "ETSI TS 119 602 V1.1.1, clause 6.3.11 (PolicyOrLegalNotice)",
-    conformantBehaviour:
-      "PolicyOrLegalNotice carries either a LoTEPolicy URI or a LoTELegalNotice, never both.",
-    label: "Missing policy or legal notice",
-    description: "Omit PolicyOrLegalNotice.",
-    stage: "pre-sign",
-    expectedRuleIds: Object.freeze([
-      "ts119602.scheme.policy_or_legal_notice",
-      "ts119602.structure.scheme_information_presence",
-    ]),
-  },
-  {
-    id: "missing_operator_email",
-    normativeReference:
-      "ETSI TS 119 602 V1.1.1, clause 6.3.4 (SchemeOperatorAddress)",
-    conformantBehaviour:
-      "The scheme operator's electronic address includes a mailto: URI alongside any website URI.",
-    label: "Operator without email",
-    description:
-      "Publish only a website URI for the scheme operator, with no mailto URI.",
-    stage: "pre-sign",
-    expectedRuleIds: Object.freeze(["ts119602.scheme.operator_address"]),
-  },
-  {
-    id: "missing_self_pointer",
-    normativeReference:
-      "ETSI TS 119 602 V1.1.1, clause 6.3.13 (PointersToOtherLoTE); Annex H for Pub-EAA",
-    conformantBehaviour:
-      "Annex D to G require the list to point at itself so a reader can confirm where it is published. Annex H requires PointersToOtherLoTE to be absent entirely.",
-    label: "Missing self pointer",
-    description:
-      "Omit PointersToOtherLoTE, so the list does not point at itself.",
-    stage: "pre-sign",
-    expectedRuleIds: Object.freeze([
-      "ts119602.profile.pub_eaa_providers.scheme_information",
-    ]),
-    familyNote: SELF_POINTER_ANNEX_H_NOTE,
-  },
-  {
-    id: "pem_service_certificate",
-    normativeReference:
-      "ETSI TS 119 602 V1.1.1, clause 6.6.3 (ServiceDigitalIdentity)",
-    conformantBehaviour:
-      "A service certificate is published as Base64-encoded DER, with no PEM armour and no whitespace.",
-    label: "PEM service certificate",
-    description:
-      "Publish the service certificate as PEM text instead of the Base64 DER required by clause 6.6.3.",
-    stage: "pre-sign",
-    expectedRuleIds: Object.freeze(["ts119602.service.digital_identity"]),
-  },
-  {
-    id: "extension_without_criticality",
-    normativeReference:
-      "ETSI TS 119 602 V1.1.1, clause 6.6.9 (ServiceInformationExtensions)",
-    conformantBehaviour:
-      "Every extension container states its criticality, so a reader that does not understand it knows whether it may be ignored.",
-    label: "Extension without criticality",
-    description:
-      "Emit ServiceInformationExtensions containers with no criticality flag.",
-    stage: "pre-sign",
-    expectedRuleIds: Object.freeze(["ts119602.service.extensions"]),
-  },
-  {
-    id: "signer_organisation_mismatch",
-    normativeReference:
-      "ETSI TS 119 602 V1.1.1, Annex D to H signature requirements",
-    conformantBehaviour:
-      "The signing certificate's subject organisation equals the scheme operator name published in the list.",
-    label: "Signer organisation mismatch",
-    description:
-      "Sign with a certificate whose subject organisation is not the scheme operator name.",
-    stage: "post-sign",
-    expectedRuleIds: Object.freeze([
-      "json_lote.signature.jades_signer_subject.organization",
-    ]),
-  },
-  {
-    id: "jades_without_signing_time",
-    normativeReference:
-      "ETSI TS 119 182-1, clause 5.2.1 (JAdES Baseline B signing time)",
-    conformantBehaviour:
-      "The claimed signing time is carried in the iat protected header as an integer NumericDate.",
-    label: "JAdES without signing time",
-    description:
-      "Omit the iat protected header, so the signature is not JAdES Baseline B.",
-    stage: "post-sign",
-    expectedRuleIds: Object.freeze([
-      "json_lote.signature.jades_signing_time",
-      "json_lote.signature.jades_baseline_b",
-      "ts119602.profile.pub_eaa_providers.signature",
-    ]),
-  },
-]);
-
-const SPEC_BY_ID = new Map(DEFECT_SPECS.map((spec) => [spec.id, spec]));
+export const DEFECT_SPECS: readonly DefectSpec[] = defectsForStandard(STANDARD);
 
 export function defectSpec(id: string): DefectSpec | undefined {
-  return SPEC_BY_ID.get(id);
+  return defectForStandard(id, STANDARD);
 }
 
 export function defectsAtStage(
   ids: readonly string[],
   stage: DefectStage,
 ): DefectSpec[] {
-  return ids
-    .map((id) => SPEC_BY_ID.get(id))
-    .filter(
-      (spec): spec is DefectSpec => spec !== undefined && spec.stage === stage,
-    );
+  return defectsAtStageFor(ids, STANDARD, stage);
 }
 
 /** Every rule ID the selected defects are expected to trip, deduplicated. */
 export function expectedRuleIdsFor(ids: readonly string[]): string[] {
-  const rules = new Set<string>();
-  for (const id of ids)
-    for (const rule of SPEC_BY_ID.get(id)?.expectedRuleIds ?? [])
-      rules.add(rule);
-  return [...rules].sort();
-}
-
-/** One applied mutation, recorded so the fixture can explain itself. */
-export interface AppliedMutation {
-  defectId: string;
-  stage: DefectStage;
-  /** False when the mutation found nothing to change; `detail` says why. */
-  applied: boolean;
-  detail: string;
+  return expectedRuleIdsForStandard(ids, STANDARD);
 }
 
 export interface PreSignContext {
@@ -684,6 +523,44 @@ function mintMismatchedSigner(
   });
 }
 
+/** id-tsl-kp-tslSigning; the extended key usage of a Trusted List signer. */
+const TSL_SIGNING_EKU = "0.4.0.2231.3.0";
+
+/**
+ * The `-addext` arguments for the requested shape.
+ *
+ * A bare `openssl req -x509` emits basicConstraints CA:TRUE and no keyUsage,
+ * which meets neither shape a fixture asks for. Stating the extensions
+ * explicitly is what makes each shape a deliberate property of the fixture
+ * rather than an OpenSSL default.
+ */
+function certificateExtensions(subject: {
+  trustedListProfile?: boolean;
+  certificateAuthority?: boolean;
+}): string[] {
+  if (subject.certificateAuthority)
+    return [
+      "-addext",
+      "basicConstraints=critical,CA:TRUE",
+      "-addext",
+      "keyUsage=critical,keyCertSign,cRLSign",
+      "-addext",
+      "subjectKeyIdentifier=hash",
+    ];
+  if (subject.trustedListProfile)
+    return [
+      "-addext",
+      "basicConstraints=critical,CA:FALSE",
+      "-addext",
+      "keyUsage=critical,digitalSignature",
+      "-addext",
+      "subjectKeyIdentifier=hash",
+      "-addext",
+      `extendedKeyUsage=critical,${TSL_SIGNING_EKU}`,
+    ];
+  return [];
+}
+
 /**
  * Mints a throwaway P-256 self-signed certificate.
  *
@@ -703,6 +580,20 @@ export function mintCertificate(subject: {
   commonName: string;
   organisation: string;
   country: string;
+  /**
+   * Shape the certificate as a TS 119 612 Scheme Operator signing certificate:
+   * CA:FALSE, a SubjectKeyIdentifier, keyUsage digitalSignature and the
+   * tslSigning extended key usage. Used by fixtures whose defect is the
+   * *subject* of the signer, not its shape — the shape has to be right for the
+   * subject to be the only thing wrong.
+   */
+  trustedListProfile?: boolean;
+  /**
+   * Shape the certificate as a certification authority instead: CA:TRUE with
+   * keyCertSign and cRLSign. This is itself the defect for
+   * `incorrect_signing_certificate`.
+   */
+  certificateAuthority?: boolean;
 }): { certificatePem: string; privateKeyPem: string } | null {
   let dir: string | null = null;
   const sanitise = (value: string): string =>
@@ -738,6 +629,7 @@ export function mintCertificate(subject: {
         "365",
         "-subj",
         `/CN=${sanitise(subject.commonName)}/C=${sanitise(subject.country)}/O=${sanitise(subject.organisation)}`,
+        ...certificateExtensions(subject),
       ],
       { stdio: "ignore" },
     );
@@ -759,35 +651,12 @@ export function mintCertificate(subject: {
 }
 
 /**
- * Negative-fixture metadata stored beside a version. It sits outside the
- * integrity-checked set for the same reason the Inspector evaluation does: it
- * is evidence *about* the version, and the three signed artifacts stay
- * immutable and are hashed as published — intentionally broken bytes included.
- */
-export interface FixtureMetadata {
-  schemaVersion: 1;
-  intentionallyBroken: boolean;
-  selectedDefects: string[];
-  mutations: AppliedMutation[];
-  /** Local schema/profile validation findings, recorded rather than fatal. */
-  localValidationFailures: string[];
-  expectedInspectorFailures: string[];
-  actualInspectorFailures: string[];
-  matchedFailures: string[];
-  missingFailures: string[];
-  additionalFailures: string[];
-  /**
-   * Failures caused by the seeded entity rather than by any selected defect.
-   * Split out so `additionalFailures` keeps meaning "this mutation caused
-   * something we did not predict".
-   */
-  knownUnrelatedFailures: string[];
-  generatedAt: string;
-}
-
-/**
- * Assembles the metadata stored beside an intentionally broken version, pairing
- * what the defect catalogue predicted with what the Inspector actually said.
+ * Assembles the metadata stored beside an intentionally broken JSON version.
+ *
+ * A thin wrapper over the shared builder: it fixes the standard and format and
+ * carries this engine's free-text local findings across as actual local
+ * failures. TS 119 602 defects declare no expected local check IDs, so the
+ * local comparison is empty by construction rather than by accident.
  */
 export function buildFixtureMetadata(
   selectedDefects: readonly string[],
@@ -796,44 +665,13 @@ export function buildFixtureMetadata(
   actualInspectorFailures: readonly string[],
   generatedAt: Date,
 ): FixtureMetadata {
-  const expected = expectedRuleIdsFor(selectedDefects);
-  const comparison = compareFailures(expected, actualInspectorFailures);
-  return {
-    schemaVersion: 1,
-    intentionallyBroken: true,
-    selectedDefects: [...selectedDefects],
-    mutations: [...mutations],
-    localValidationFailures: [...localValidationFailures],
-    expectedInspectorFailures: expected,
-    actualInspectorFailures: [...actualInspectorFailures],
-    matchedFailures: comparison.matched,
-    missingFailures: comparison.missing,
-    additionalFailures: comparison.additional,
-    knownUnrelatedFailures: [],
-    generatedAt: generatedAt.toISOString(),
-  };
-}
-
-/** Rule ID part of a `${id}: ${message}` failure line. */
-function ruleIdOf(failure: string): string {
-  const separator = failure.indexOf(":");
-  return separator === -1 ? failure : failure.slice(0, separator);
-}
-
-/**
- * Compares expectation against the Inspector's verdict. Cascading failures are
- * expected — one mutation can trip several rules — so an additional failure is
- * reported rather than treated as wrong.
- */
-export function compareFailures(
-  expected: readonly string[],
-  actualFailureLines: readonly string[],
-): { matched: string[]; missing: string[]; additional: string[] } {
-  const actualIds = new Set(actualFailureLines.map(ruleIdOf));
-  const expectedSet = new Set(expected);
-  return {
-    matched: expected.filter((rule) => actualIds.has(rule)).sort(),
-    missing: expected.filter((rule) => !actualIds.has(rule)).sort(),
-    additional: [...actualIds].filter((rule) => !expectedSet.has(rule)).sort(),
-  };
+  return buildSharedFixtureMetadata({
+    standard: STANDARD,
+    artifactFormat: "JSON / JAdES",
+    selectedDefects,
+    mutations,
+    actualLocalFailures: localValidationFailures,
+    actualInspectorFailures,
+    generatedAt,
+  });
 }

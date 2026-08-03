@@ -35,6 +35,7 @@ export const TRUSTED_LIST_XML_FILE = "trusted-list.xml";
 export const TRUSTED_LIST_SHA2_FILE = "trusted-list.sha2";
 export const TRUSTED_LIST_MANIFEST_FILE = "manifest.json";
 export const TRUSTED_LIST_INSPECTOR_FILE = "inspector.json";
+export const TRUSTED_LIST_FIXTURE_FILE = "fixture.json";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -191,10 +192,21 @@ export class TrustedListStore {
           diagnostic:
             "trusted-list.xml does not match the hash in manifest.json",
         };
-      if (sha2.trim() !== actual)
+      /*
+        The `.sha2` file is checked against what the manifest says was
+        published, not against the XML. For every honest publication those are
+        the same value. They differ only for the `incorrect_sha2_digest`
+        fixture, whose whole point is a sidecar digest that does not describe
+        its artifact — and that fixture still has to be readable and servable,
+        so the integrity check here is "the bytes are the ones we published",
+        not "the bytes are correct".
+      */
+      const publishedSha2 = parsed.trustedListSha2Published ?? actual;
+      if (sha2.trim() !== publishedSha2)
         return {
           artifacts: null,
-          diagnostic: "trusted-list.sha2 does not match trusted-list.xml",
+          diagnostic:
+            "trusted-list.sha2 is not the digest recorded in manifest.json",
         };
       if (
         parsed.listKey !== listKey ||
@@ -230,7 +242,7 @@ export class TrustedListStore {
     const sequenceNumber = manifest.sequenceNumber;
     const finalDir = this.versionDir(listKey, sequenceNumber);
     const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
-    const sha2 = sha2FileContent(xml);
+    const sha2 = manifest.trustedListSha2Published ?? sha2FileContent(xml);
 
     if (sha256Hex(Buffer.from(xml, "utf-8")) !== manifest.trustedListXmlSha256)
       throw new Error(
@@ -284,8 +296,10 @@ export class TrustedListStore {
         join(stageDir, TRUSTED_LIST_SHA2_FILE),
         "utf-8",
       );
-      if (writtenSha2 !== manifest.trustedListXmlSha256)
-        throw new Error("Staged trusted-list.sha2 does not match the XML");
+      if (writtenSha2 !== sha2)
+        throw new Error(
+          "Staged trusted-list.sha2 is not the digest that was meant to be published",
+        );
 
       this.fs.mkdirSync(resolve(this.canonicalRoot, listKey, "versions"), {
         recursive: true,
@@ -319,6 +333,43 @@ export class TrustedListStore {
   ): string | null {
     try {
       const path = this.inspectorPath(listKey, sequenceNumber);
+      if (!this.fs.existsSync(path)) return null;
+      return this.readBounded(path);
+    } catch {
+      return null;
+    }
+  }
+
+  fixturePath(listKey: string, sequenceNumber: number): string {
+    return join(
+      this.versionDir(listKey, sequenceNumber),
+      TRUSTED_LIST_FIXTURE_FILE,
+    );
+  }
+
+  /**
+   * Writes the negative-fixture evidence of one version. Like the Inspector
+   * evaluation it sits outside the integrity-checked set: it describes the
+   * version, and the three published files never change.
+   */
+  writeFixtureMetadata(
+    listKey: string,
+    sequenceNumber: number,
+    metadataJson: string,
+  ): void {
+    const path = this.fixturePath(listKey, sequenceNumber);
+    if (!this.fs.existsSync(this.versionDir(listKey, sequenceNumber)))
+      throw new Error(
+        `Cannot store fixture metadata for "${listKey}" sequence ${sequenceNumber}: the version does not exist.`,
+      );
+    const temporary = `${path}.tmp_${randomBytes(6).toString("hex")}`;
+    this.fs.writeFileSync(temporary, metadataJson, { encoding: "utf-8" });
+    this.fs.renameSync(temporary, path);
+  }
+
+  readFixtureMetadata(listKey: string, sequenceNumber: number): string | null {
+    try {
+      const path = this.fixturePath(listKey, sequenceNumber);
       if (!this.fs.existsSync(path)) return null;
       return this.readBounded(path);
     } catch {

@@ -268,10 +268,15 @@ paths:
     get:
       summary: Download the stored Trust Inspector evaluation
       description: >-
-        The complete external assessment of this version's Compact JAdES
-        artifact. A 404 means no evaluation is stored, which is reported as
-        Unavailable and is not a statement about conformance. Add view=1 to
-        render it in the browser instead of downloading it.
+        The complete external assessment of this version's signed artifact:
+        the Compact JAdES for an ETSI TS 119 602 list, the signed XML Trusted
+        List for an ETSI TS 119 612 one. A 404 means no evaluation is stored,
+        which is reported as Unavailable and is not a statement about
+        conformance. An evaluation whose summary status is unavailable means the
+        Inspector reached no verdict — because it could not be contacted, or
+        because it did not apply the submitted standard to the artifact — and
+        must never be read as a pass. Add view=1 to render it in the browser
+        instead of downloading it.
       operationId: getInspectorEvaluation
       parameters:
         - name: listKey
@@ -303,11 +308,13 @@ paths:
     post:
       summary: Create a Trusted List and publish its first version
       description: >-
-        Declares a Trusted List, publishes an empty version 1 signed as Compact
-        JAdES, and stores the Trust Inspector evaluation beside it. Requires the
-        administrator token, sent either as a bearer Authorization header or as
-        the token query parameter. Deliberately broken lists are not implemented
-        yet, so a non-empty defects array is rejected.
+        Declares an ETSI TS 119 602 Trusted List, publishes version 1 signed as
+        Compact JAdES, and stores the Trust Inspector evaluation beside it.
+        Requires the administrator token, sent either as a bearer Authorization
+        header or as the token query parameter. Selecting defects publishes an
+        intentionally broken test fixture instead, and the response carries the
+        fixture evidence. Use /api/v1/admin/trusted-lists for a TS 119 612 XML
+        Trusted List.
       operationId: createTrustedList
       security:
         - adminToken: []
@@ -328,6 +335,76 @@ paths:
           description: The request was rejected; the message says why
         "403":
           description: Missing or invalid administrator token
+  /api/v1/lists/{listKey}/versions/{sequence}/fixture:
+    get:
+      summary: Download the negative-fixture evidence of one version
+      description: >-
+        What an intentionally broken version was asked to be and what actually
+        happened: the selected defects, the mutations that were applied and at
+        which stage, and the expected, actual, matched, missing and additional
+        failures on both the local and the Trust Inspector axis. The document
+        has the same shape for both standards. A 404 means this version is not
+        an intentionally broken test fixture. Add view=1 to render it in the
+        browser instead of downloading it.
+      operationId: getFixtureMetadata
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Stored negative-fixture evidence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FixtureMetadata"
+        "404":
+          description: This version is not an intentionally broken test fixture
+  /api/v1/admin/trusted-lists:
+    post:
+      summary: Create an XML Trusted List and publish its first version
+      description: >-
+        Declares an ETSI TS 119 612 national Trusted List, publishes version 1
+        signed as XAdES-B-B, and stores the Trust Inspector evaluation beside
+        it. The API counterpart of Admin -> Create XML Trusted List: the same
+        fields, the same artifacts and the same fixture evidence. Selecting
+        defects publishes an intentionally broken test fixture. Requires the
+        administrator token.
+      operationId: createXmlTrustedList
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateXmlTrustedListRequest"
+      responses:
+        "201":
+          description: Trusted List created and version 1 published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateXmlTrustedListResponse"
+        "400":
+          description: The request was rejected; the message says why
+        "403":
+          description: Missing or invalid administrator token
+        "404":
+          description: This server has no signing configuration
 components:
   schemas:
     ListSummary:
@@ -473,8 +550,249 @@ components:
         defects:
           type: array
           description: >-
-            Deliberate defects. Not implemented yet; a non-empty array is
-            rejected.
+            Deliberate defect IDs from the canonical catalogue. Empty publishes
+            a healthy list; a non-empty array publishes an intentionally broken
+            test fixture whose failing Trust Inspector verdict is the expected
+            outcome. Only IDs the catalogue binds to ETSI TS 119 602 are
+            accepted here; an unknown one is rejected by name.
+          items:
+            type: string
+    CreateXmlTrustedListRequest:
+      type: object
+      required:
+        - schemeOperatorName
+        - schemeTerritory
+        - schemeName
+        - schemeOperatorStreet
+        - schemeOperatorLocality
+        - schemeOperatorCountry
+        - schemeOperatorEmail
+        - schemeOperatorWebsite
+        - schemeInformationUri
+        - nationalSchemeRulesUri
+        - policyUri
+        - distributionPointUri
+        - lotlCertificatesBase64Der
+        - lotlSchemeOperatorNames
+        - keyFile
+        - certFile
+        - allowedServiceProfiles
+      properties:
+        schemeOperatorName:
+          type: string
+          description: >-
+            Published as SchemeOperatorName. The signing certificate subject
+            organisation must equal it exactly.
+        schemeTerritory:
+          type: string
+          description: >-
+            The responsible EU Member State as a 2-letter code. Never EU: a
+            Member State list states its own territory.
+        schemeName:
+          type: string
+        schemeOperatorStreet:
+          type: string
+        schemeOperatorLocality:
+          type: string
+        schemeOperatorPostalCode:
+          type: string
+        schemeOperatorCountry:
+          type: string
+        schemeOperatorEmail:
+          type: string
+        schemeOperatorWebsite:
+          type: string
+        schemeOperatorTelephone:
+          type: string
+          description: >-
+            Optional. Published as a tel: URI.
+        schemeInformationUri:
+          type: string
+        nationalSchemeRulesUri:
+          type: string
+        policyUri:
+          type: string
+        distributionPointUri:
+          type: string
+          description: The stable URL the signed XML is published at.
+        lotlCertificatesBase64Der:
+          type: array
+          description: >-
+            Base64 DER signing certificates of the EU LOTL, with no PEM armour.
+          items:
+            type: string
+        lotlSchemeOperatorNames:
+          type: array
+          items:
+            type: string
+        keyFile:
+          type: string
+          description: Server-side path to the signing private key.
+        certFile:
+          type: string
+          description: Server-side path to the signing certificate.
+        allowedServiceProfiles:
+          type: array
+          description: >-
+            Which onboarding families this list accepts. One list may accept
+            eaa-providers, qeaa-providers or both.
+          items:
+            type: string
+            enum: [eaa-providers, qeaa-providers]
+        defects:
+          type: array
+          description: >-
+            Deliberate defect IDs from the canonical catalogue. Empty publishes
+            a healthy list; a non-empty array publishes an intentionally broken
+            test fixture. Only IDs the catalogue binds to ETSI TS 119 612 are
+            accepted; an unknown one is rejected by name.
+          items:
+            type: string
+        seedFixtureProvider:
+          type: boolean
+          description: >-
+            Seed one deterministic provider so the service-level defects have
+            something to mutate. Implied by a non-empty defects array; set it on
+            a healthy list to publish the baseline those fixtures are a delta
+            from.
+        listKey:
+          type: string
+          description: >-
+            Overrides the key derived from territory and operator name. Used by
+            the deterministic fixture generator so a fixture can be published at
+            a stable key such as eaa-broken-expired_next_update.
+    CreateXmlTrustedListResponse:
+      type: object
+      properties:
+        listKey:
+          type: string
+        standard:
+          type: string
+          enum: ["TS 119 612"]
+        artifactFormat:
+          type: string
+          enum: ["XML / XAdES-B-B"]
+        schemeName:
+          type: string
+        schemeTerritory:
+          type: string
+        allowedServiceProfiles:
+          type: array
+          items:
+            type: string
+        sequenceNumber:
+          type: integer
+        versionUrl:
+          type: string
+        xmlUrl:
+          type: string
+        sha2Url:
+          type: string
+        inspector:
+          $ref: "#/components/schemas/InspectorSummary"
+        intentionallyBroken:
+          type: boolean
+        defects:
+          type: array
+          items:
+            type: string
+        fixture:
+          $ref: "#/components/schemas/FixtureMetadata"
+    FixtureMetadata:
+      type: object
+      description: >-
+        The evidence stored beside an intentionally broken version. It is
+        format-independent: a TS 119 602 JSON fixture and a TS 119 612 XML one
+        answer the same questions in the same document.
+      properties:
+        schemaVersion:
+          type: integer
+        fixtureMode:
+          type: string
+          enum: [healthy, intentionally-broken]
+        standard:
+          type: string
+          enum: ["TS 119 602", "TS 119 612"]
+        artifactFormat:
+          type: string
+          enum: ["JSON / JAdES", "XML / XAdES-B-B"]
+        selectedDefects:
+          type: array
+          items:
+            type: string
+        mutations:
+          type: array
+          items:
+            type: object
+            properties:
+              defectId:
+                type: string
+              stage:
+                type: string
+                enum: [pre-sign, post-sign, publication]
+              applied:
+                type: boolean
+                description: >-
+                  False when the mutation found nothing to change. A selected
+                  defect is never silently repaired; it is recorded as not
+                  applied, with the reason in detail.
+              detail:
+                type: string
+        expectedFailures:
+          $ref: "#/components/schemas/FixtureFailureSets"
+        actualFailures:
+          $ref: "#/components/schemas/FixtureFailureSets"
+        matchedFailures:
+          type: array
+          items:
+            type: string
+        missingFailures:
+          type: array
+          description: Expected Trust Inspector rules that did not fail.
+          items:
+            type: string
+        additionalFailures:
+          type: array
+          description: >-
+            Rules that failed without being expected. Cascades live here: one
+            mutation can trip several rules, and they are reported rather than
+            hidden.
+          items:
+            type: string
+        matchedLocalFailures:
+          type: array
+          items:
+            type: string
+        missingLocalFailures:
+          type: array
+          items:
+            type: string
+        additionalLocalFailures:
+          type: array
+          items:
+            type: string
+        knownUnrelatedFailures:
+          type: array
+          items:
+            type: string
+        generatedAt:
+          type: string
+    FixtureFailureSets:
+      type: object
+      description: Failures split by who decided them.
+      properties:
+        local:
+          type: array
+          description: >-
+            Stable local check IDs, such as local.xml.schema,
+            local.xades.signature, local.signing_certificate.profile,
+            local.freshness and local.sha2.digest.
+          items:
+            type: string
+        inspector:
+          type: array
+          description: >-
+            Trust Inspector failure lines, in the form "ruleId: message".
           items:
             type: string
     CreateTrustedListResponse:

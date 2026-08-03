@@ -8,7 +8,18 @@
  * verdict as a bug.
  */
 
-import { DEFECT_SPECS } from "../../core/authoring/defects.js";
+import {
+  defectForStandard,
+  type DefectStage,
+  type DefectStandard,
+} from "../../core/defects/registry.js";
+
+/** When a mutation ran, in words a reader does not have to decode. */
+export function stageLabel(stage: DefectStage): string {
+  if (stage === "post-sign") return "after signing";
+  if (stage === "publication") return "when the artifact was published";
+  return "before signing";
+}
 
 /** Sticker placed next to a list name wherever the list is named. */
 export function brokenBadge(): string {
@@ -34,11 +45,14 @@ export function defectIdsFromFixture(metadataJson: string | null): string[] {
 }
 
 /** Compact one-line-per-defect summary for the catalogue's Broken column. */
-export function brokenColumnHtml(defectIds: readonly string[]): string {
+export function brokenColumnHtml(
+  defectIds: readonly string[],
+  standard: DefectStandard = "TS 119 602",
+): string {
   if (defectIds.length === 0) return "&mdash;";
   const items = defectIds
     .map((id) => {
-      const spec = DEFECT_SPECS.find((candidate) => candidate.id === id);
+      const spec = defectForStandard(id, standard);
       const label = spec ? spec.label : id;
       return `<li title="${escapeHtml(spec?.normativeReference ?? id)}">${escapeHtml(label)}</li>`;
     })
@@ -51,11 +65,14 @@ export function brokenColumnHtml(defectIds: readonly string[]): string {
  * wrong, what a conformant list would do instead, and the clause each mutation
  * violates.
  */
-export function brokenListSectionHtml(defectIds: readonly string[]): string {
+export function brokenListSectionHtml(
+  defectIds: readonly string[],
+  standard: DefectStandard = "TS 119 602",
+): string {
   if (defectIds.length === 0) return "";
   const rows = defectIds
     .map((id) => {
-      const spec = DEFECT_SPECS.find((candidate) => candidate.id === id);
+      const spec = defectForStandard(id, standard);
       if (!spec)
         return `<tr><td colspan="4"><code>${escapeHtml(id)}</code> &mdash; unknown defect</td></tr>`;
       return `
@@ -67,7 +84,7 @@ export function brokenListSectionHtml(defectIds: readonly string[]): string {
             : ""
         }</td>
         <td>${escapeHtml(spec.conformantBehaviour)}</td>
-        <td>${escapeHtml(spec.normativeReference)}<br><span class="field-help">Applied ${escapeHtml(spec.stage === "post-sign" ? "after signing" : "before signing")}. Expected Inspector rule${spec.expectedRuleIds.length === 1 ? "" : "s"}: ${spec.expectedRuleIds
+        <td>${escapeHtml(spec.normativeReference)}<br><span class="field-help">Applied ${escapeHtml(stageLabel(spec.stage))}. Expected Inspector rule${spec.expectedRuleIds.length === 1 ? "" : "s"}: ${spec.expectedRuleIds
           .map((rule) => `<code>${escapeHtml(rule)}</code>`)
           .join(", ")}</span></td>
       </tr>`;
@@ -89,8 +106,8 @@ export function brokenListSectionHtml(defectIds: readonly string[]): string {
     <thead><tr><th>Defect</th><th>What this list does</th><th>What a conformant list does</th><th>Normative reference</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="field-help">Clause numbers refer to ETSI TS 119 602 V1.1.1 unless
-  stated otherwise. Cascading failures are expected: one mutation can trip
+  <p class="field-help">Each defect cites the clause it violates. The artifact
+  format is ${standard === "TS 119 612" ? "XML / XAdES-B-B" : "JSON / Compact JAdES"}. Cascading failures are expected: one mutation can trip
   several Inspector rules. Each version page records the expected failures
   against the ones actually reported.</p>
 </div>`;

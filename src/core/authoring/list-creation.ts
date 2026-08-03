@@ -31,6 +31,7 @@ import {
   buildFixtureMetadata,
   fixtureSeedEntity,
   mintCertificate,
+  DEFECT_SPECS,
   FIXTURE_ENTITY_NAME,
   type AppliedMutation,
   type FixtureMetadata,
@@ -43,76 +44,21 @@ import {
  */
 
 /**
- * A deliberately broken list is a separate deliverable. Each defect is named
- * here so the administration form can offer them, and so the API can refuse
- * them with a message that says which one is not implemented rather than
- * silently producing a healthy list.
+ * A deliberately broken list is a separate deliverable. The administration form
+ * and the API offer exactly the defects the canonical catalogue binds to
+ * TS 119 602, so an unimplemented one is refused by name rather than silently
+ * producing a healthy list. This is a *view* of that catalogue, never a second
+ * copy of it.
  */
 export const LIST_DEFECTS: ReadonlyArray<{
   readonly id: string;
   readonly label: string;
   readonly description: string;
-}> = Object.freeze([
-  {
-    id: "non_strict_timestamps",
-    label: "Non-strict timestamps",
-    description:
-      "Emit ListIssueDateTime and NextUpdate with fractional seconds, violating the clause 6.1.3 lexical form.",
-  },
-  {
-    id: "scheme_name_without_territory",
-    label: "Scheme name without territory",
-    description:
-      "Emit SchemeName without the SchemeTerritory prefix required by clause 6.3.6.",
-  },
-  {
-    id: "missing_scheme_information_uri",
-    label: "Missing scheme information URI",
-    description:
-      "Omit SchemeInformationURI, which the Table 1 presence matrix makes mandatory for explicit scheme information.",
-  },
-  {
-    id: "missing_policy_or_legal_notice",
-    label: "Missing policy or legal notice",
-    description: "Omit PolicyOrLegalNotice.",
-  },
-  {
-    id: "missing_operator_email",
-    label: "Operator without email",
-    description:
-      "Publish only a website URI for the scheme operator, with no mailto URI.",
-  },
-  {
-    id: "missing_self_pointer",
-    label: "Missing self pointer",
-    description:
-      "Omit PointersToOtherLoTE, so the list does not point at itself.",
-  },
-  {
-    id: "pem_service_certificate",
-    label: "PEM service certificate",
-    description:
-      "Publish the service certificate as PEM text instead of the Base64 DER required by clause 6.6.3.",
-  },
-  {
-    id: "extension_without_criticality",
-    label: "Extension without criticality",
-    description:
-      "Emit ServiceInformationExtensions containers with no criticality flag.",
-  },
-  {
-    id: "signer_organisation_mismatch",
-    label: "Signer organisation mismatch",
-    description:
-      "Sign with a certificate whose subject organisation is not the scheme operator name.",
-  },
-  {
-    id: "jades_without_signing_time",
-    label: "JAdES without signing time",
-    description:
-      "Omit the iat protected header, so the signature is not JAdES Baseline B.",
-  },
-]);
+}> = Object.freeze(
+  DEFECT_SPECS.map(({ id, label, description }) =>
+    Object.freeze({ id, label, description }),
+  ),
+);
 
 export function isKnownDefect(id: string): boolean {
   return LIST_DEFECTS.some((defect) => defect.id === id);

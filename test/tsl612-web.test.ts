@@ -503,3 +503,188 @@ describe("existing TS 119 602 routes are unaffected", () => {
     expect(html).toContain("/admin/xml-applications");
   });
 });
+
+// ============================================================
+// Intentionally broken XML fixtures, over real HTTP
+// ============================================================
+describe("intentionally broken XML Trusted Lists", () => {
+  /**
+   * The same declaration, sent twice: once as the administration form posts it
+   * and once as the API takes it. Acceptance requires the GUI and the API to
+   * produce equivalent fixtures, so they are compared rather than assumed
+   * equal — they are two code paths into one core function, and only a test
+   * keeps them one.
+   */
+  const declaration = (
+    operator: string,
+    material: { keyFile: string; certFile: string },
+  ) => ({
+    schemeOperatorName: operator,
+    schemeTerritory: TERRITORY,
+    schemeName: `${TERRITORY}:${operator}`,
+    schemeOperatorStreet: "Via Roma 1",
+    schemeOperatorLocality: "Roma",
+    schemeOperatorPostalCode: "00100",
+    schemeOperatorCountry: TERRITORY,
+    schemeOperatorEmail: "op@example.it",
+    schemeOperatorWebsite: "https://example.it",
+    schemeInformationUri: "https://example.it/scheme",
+    nationalSchemeRulesUri: "https://example.it/rules",
+    policyUri: "https://example.it/policy",
+    distributionPointUri: "https://example.it/trusted-list.xml",
+    lotlSchemeOperatorNames: operator,
+    lotlCertificatesBase64Der: signerCertDer,
+    keyFile: material.keyFile,
+    certFile: material.certFile,
+    allowedServiceProfiles: ["eaa-providers"],
+  });
+
+  let guiKey: string;
+  let apiKey: string;
+
+  it("offers every catalogue defect on the creation form", async () => {
+    const html = await (await get("/admin/trusted-lists/create")).text();
+    expect(html).toContain("Intentionally broken test fixture");
+    for (const id of [
+      "invalid_tsl_namespace",
+      "invalid_tsl_version_identifier",
+      "expired_next_update",
+      "incorrect_service_type",
+      "incorrect_service_status",
+      "invalid_service_history",
+      "broken_xades_signature",
+      "incorrect_signing_certificate",
+      "incorrect_sha2_digest",
+    ])
+      expect(html).toContain(`value="${id}"`);
+  });
+
+  it("creates a broken list from the form and confirms what broke", async () => {
+    const material = generate(
+      join(root, "material"),
+      "broken-gui",
+      "Broken GUI Operator",
+    );
+    const response = await post("/admin/trusted-lists/create", {
+      ...declaration("Broken GUI Operator", material),
+      defects: ["expired_next_update"],
+    });
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("Intentionally broken Trusted List created");
+    expect(html).toContain("expired_next_update");
+    expect(html).toContain("local.freshness");
+    guiKey = "it_broken_gui_operator";
+  }, 60000);
+
+  it("creates the same list from the API", async () => {
+    const material = generate(
+      join(root, "material"),
+      "broken-api",
+      "Broken API Operator",
+    );
+    const response = await fetch(`${baseUrl}/api/v1/admin/trusted-lists`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${TOKEN}`,
+      },
+      body: JSON.stringify({
+        ...declaration("Broken API Operator", material),
+        allowedServiceProfiles: ["eaa-providers"],
+        lotlCertificatesBase64Der: [signerCertDer],
+        lotlSchemeOperatorNames: ["Broken API Operator"],
+        defects: ["expired_next_update"],
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      listKey: string;
+      standard: string;
+      artifactFormat: string;
+      intentionallyBroken: boolean;
+      fixture: { selectedDefects: string[] };
+    };
+    expect(body.standard).toBe("TS 119 612");
+    expect(body.artifactFormat).toBe("XML / XAdES-B-B");
+    expect(body.intentionallyBroken).toBe(true);
+    expect(body.fixture.selectedDefects).toEqual(["expired_next_update"]);
+    apiKey = body.listKey;
+  }, 60000);
+
+  it("produces equivalent fixture metadata from the GUI and the API", async () => {
+    const read = async (key: string) => {
+      const response = await get(
+        `/api/v1/lists/${key}/versions/1/fixture?view=1`,
+      );
+      expect(response.status).toBe(200);
+      return (await response.json()) as Record<string, unknown>;
+    };
+    const gui = await read(guiKey);
+    const api = await read(apiKey);
+    for (const field of [
+      "fixtureMode",
+      "standard",
+      "artifactFormat",
+      "selectedDefects",
+      "expectedFailures",
+      "matchedLocalFailures",
+      "missingLocalFailures",
+    ])
+      expect(api[field]).toEqual(gui[field]);
+  });
+
+  it("refuses a defect the XML engine cannot perform", async () => {
+    const material = generate(
+      join(root, "material"),
+      "broken-unknown",
+      "Broken Unknown Operator",
+    );
+    const response = await post("/admin/trusted-lists/create", {
+      ...declaration("Broken Unknown Operator", material),
+      defects: ["jades_without_signing_time"],
+    });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain("Unknown TS 119 612 defect");
+  });
+
+  it("marks the broken list in the catalogue and on its pages", async () => {
+    const catalogue = await (await get("/")).text();
+    expect(catalogue).toContain("catalogue-row-broken");
+    expect(catalogue).toContain("Expired NextUpdate");
+
+    const list = await (await get(`/lists/${guiKey}`)).text();
+    expect(list).toContain("Intentionally broken test fixture");
+    expect(list).toContain("Expired NextUpdate");
+
+    const version = await (await get(`/lists/${guiKey}/versions/1`)).text();
+    expect(version).toContain("Negative fixture");
+    expect(version).toContain("Expected local failures");
+    expect(version).toContain("local.freshness");
+    expect(version).toContain("before signing");
+    expect(version).toContain("ETSI TS 119 612");
+    expect(version).toContain("XML / XAdES-B-B");
+  });
+
+  it("still serves the broken artifact and its digest", async () => {
+    const xml = await get(
+      `/api/v1/lists/${guiKey}/versions/1/trusted-list.xml`,
+    );
+    expect(xml.status).toBe(200);
+    expect(xml.headers.get("content-type")).toBe(TSL_MEDIA_TYPE);
+    const sha2 = await get(
+      `/api/v1/lists/${guiKey}/versions/1/trusted-list.sha2`,
+    );
+    expect(sha2.status).toBe(200);
+    expect((await sha2.text()).trim()).toBe(
+      createHash("sha256")
+        .update(await xml.text(), "utf-8")
+        .digest("hex"),
+    );
+  });
+
+  it("has no fixture metadata for a healthy list", async () => {
+    const response = await get(`/api/v1/lists/${eaaList()}/versions/1/fixture`);
+    expect(response.status).toBe(404);
+  });
+});

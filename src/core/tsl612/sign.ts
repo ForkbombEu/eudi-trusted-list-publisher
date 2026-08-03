@@ -37,12 +37,30 @@ export interface SignTrustedListOptions {
   /** The list's own values, which the certificate subject has to match. */
   readonly expectation: SigningCertificateExpectation;
   readonly signingTime?: Date;
+  /** Omit xades:SigningTime. Negative fixtures only; see `SignOptions`. */
+  readonly omitSigningTime?: boolean;
+  /**
+   * Record a failed certificate-profile, schema or signature check instead of
+   * throwing.
+   *
+   * A healthy publication must never set this: refusing to emit a document that
+   * failed a check is what makes the healthy path trustworthy. An intentionally
+   * broken fixture is the opposite deliverable — the failure *is* the artifact
+   * — so it opts in explicitly and the findings are published as evidence
+   * rather than swallowed.
+   */
+  readonly recordFailuresInsteadOfThrowing?: boolean;
 }
 
 export interface SignedTrustedList {
   readonly xml: string;
   readonly schema: ValidationResult;
   readonly signature: VerifyResult;
+  /**
+   * Certificate-profile findings. Empty on the healthy path, because signing
+   * refuses before it starts when the profile is not met.
+   */
+  readonly certificateProfileFindings: readonly string[];
   readonly signingCertificate: {
     readonly subject: string;
     readonly issuer: string;
@@ -75,11 +93,12 @@ export function signTrustedList(
     );
   }
 
+  const permissive = options.recordFailuresInsteadOfThrowing === true;
   const profileFindings = checkTrustedListSigningCertificate(
     certificate,
     options.expectation,
   );
-  if (profileFindings.length > 0)
+  if (profileFindings.length > 0 && !permissive)
     throw new TslSigningError(
       "The Trusted List signing certificate does not meet the TS 119 612 Scheme Operator profile.",
       profileFindings,
@@ -90,17 +109,18 @@ export function signTrustedList(
     certificatePem: options.certificatePem,
     dataObjectMimeType: TSL_MEDIA_TYPE,
     ...(options.signingTime ? { signingTime: options.signingTime } : {}),
+    ...(options.omitSigningTime ? { omitSigningTime: true } : {}),
   });
 
   const schema = validateTslXml(signed);
-  if (!schema.valid)
+  if (!schema.valid && !permissive)
     throw new TslSigningError(
       "The signed Trusted List does not validate against the pinned TS 119 612 schemas.",
       schema.findings.map((finding) => `${finding.path}: ${finding.message}`),
     );
 
   const signature = verifyEnveloped(signed);
-  if (!signature.valid)
+  if (!signature.valid && !permissive)
     throw new TslSigningError(
       "The Trusted List signature does not verify locally.",
       signature.findings,
@@ -110,6 +130,7 @@ export function signTrustedList(
     xml: signed,
     schema,
     signature,
+    certificateProfileFindings: profileFindings,
     signingCertificate: {
       subject: certificate.subject,
       issuer: certificate.issuer,

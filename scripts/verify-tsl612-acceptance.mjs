@@ -105,6 +105,9 @@ async function main() {
     signingConfigPath: join(ROOT, "signing-config.json"),
     dataCollectionGui: true,
     adminToken: TOKEN,
+    /* This script is an explicitly authorized live run, so it configures the
+       Inspector. A server started without this contacts nobody. */
+    inspectorBaseUrl: INSPECTOR,
   });
   await new Promise((done) => server.listen(PORT, HOST, done));
   console.log(`\nServer listening on ${base}\n`);

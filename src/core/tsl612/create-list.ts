@@ -17,6 +17,12 @@ import {
   defaultLotlPointer,
   type TrustedListConfigEntry,
 } from "./list-config.js";
+import { fixtureSeedProvider, isKnownXmlDefect } from "./defects.js";
+import {
+  buildFixtureMetadata,
+  type FixtureMetadata,
+} from "../defects/fixture-metadata.js";
+import { SAFE_KEY_RE } from "../publication/store.js";
 import { isTslFamily, type TslFamily } from "./registry.js";
 import { MAX_NEXT_UPDATE_MONTHS, TSL_MEDIA_TYPE } from "./constants.js";
 import { toUtcDateTime, EU_MEMBER_STATE_CODES } from "../model/lexical.js";
@@ -51,6 +57,28 @@ export interface CreateTrustedListRequest {
   readonly certFile: string;
   /** Which onboarding families the list accepts. At least one. */
   readonly allowedServiceProfiles: readonly string[];
+  /**
+   * Deliberate defects. Empty for a healthy list. Every entry must be a defect
+   * the canonical catalogue binds to TS 119 612; an unknown one is refused by
+   * name rather than silently producing a healthy list.
+   */
+  readonly defects?: readonly string[];
+  /**
+   * Seed the list with one deterministic provider so the service-level defects
+   * have something to mutate.
+   *
+   * A broken list always seeds. A healthy list normally does not — an empty
+   * first version is what lets a real list be assessed before anyone applies to
+   * it — but the fixture suite's healthy *baseline* sets this, so that every
+   * single-defect fixture is a delta of exactly one mutation from it.
+   */
+  readonly seedFixtureProvider?: boolean;
+  /**
+   * The publication key, overriding the derivation from territory and operator
+   * name. Only the deterministic fixture generator sets it, so a fixture can be
+   * published at `eaa-broken-<defect-id>` and cited by that name.
+   */
+  readonly listKey?: string;
 }
 
 export interface CreateTrustedListDeps {
@@ -68,6 +96,8 @@ export type CreateTrustedListResult =
       readonly entry: TrustedListConfigEntry;
       readonly sequenceNumber: number;
       readonly inspector?: InspectorEvaluation;
+      /** Present only for an intentionally broken list. */
+      readonly fixture?: FixtureMetadata;
     }
   | { readonly success: false; readonly error: string };
 
@@ -120,6 +150,13 @@ function validate(request: CreateTrustedListRequest): string | null {
   ] as const) {
     if (!/^https?:\/\//i.test(value)) return `${field} must be an HTTP(S) URL.`;
   }
+  const unknown = (request.defects ?? []).filter(
+    (defect) => !isKnownXmlDefect(defect),
+  );
+  if (unknown.length > 0)
+    return `Unknown TS 119 612 defect${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}.`;
+  if (request.listKey !== undefined && !SAFE_KEY_RE.test(request.listKey))
+    return `'${request.listKey}' is not a usable list key.`;
   return null;
 }
 
@@ -130,10 +167,11 @@ export async function createTrustedListList(
   const invalid = validate(request);
   if (invalid) return { success: false, error: invalid };
 
-  const listKey = deriveListKeyFromParts(
-    request.schemeTerritory,
-    request.schemeOperatorName,
-  );
+  const listKey =
+    request.listKey ??
+    deriveListKeyFromParts(request.schemeTerritory, request.schemeOperatorName);
+  const defects = request.defects ?? [];
+  const broken = defects.length > 0;
 
   /* One list key names one list, across both standards. */
   if (existsSync(deps.signingConfigPath)) {
@@ -186,7 +224,14 @@ export async function createTrustedListList(
       }`,
     };
   }
-  if (findings.length > 0) return { success: false, error: findings.join(" ") };
+  /*
+    A broken fixture may deliberately sign with material that fails the profile,
+    so the profile is recorded rather than enforced. It is still enforced for
+    every ordinary list: material that could never sign a healthy list must not
+    be usable to declare one.
+  */
+  if (findings.length > 0 && !broken)
+    return { success: false, error: findings.join(" ") };
 
   const entry: TrustedListConfigEntry = {
     standard: "TS 119 612",
@@ -222,8 +267,27 @@ export async function createTrustedListList(
   const nextUpdate = new Date(issue);
   nextUpdate.setUTCMonth(nextUpdate.getUTCMonth() + MAX_NEXT_UPDATE_MONTHS);
 
-  /* An empty first version: no TrustServiceProviderList at all. */
+  const family = entry.allowedServiceProfiles[0]!;
+  /*
+    An ordinary first version is empty: no TrustServiceProviderList at all,
+    which is what lets a new list be assessed before anyone applies to it. A
+    fixture list seeds one deterministic provider instead, because the
+    service-level defects have nothing to mutate otherwise.
+  */
+  const seedProvider = broken || request.seedFixtureProvider === true;
   const input: TrustedListInput = {
+    ...(seedProvider
+      ? {
+          providers: [
+            fixtureSeedProvider({
+              family,
+              territory: entry.schemeTerritory,
+              fallbackCertificatePem: certificatePem,
+              publishedAt: issue,
+            }),
+          ],
+        }
+      : {}),
     schemeInformation: {
       sequenceNumber: 1,
       schemeTerritory: entry.schemeTerritory,
@@ -259,12 +323,25 @@ export async function createTrustedListList(
     published = publishTrustedList({
       store: deps.store,
       listKey,
-      family: entry.allowedServiceProfiles[0]!,
+      family,
       input,
       privateKeyPem,
       certificatePem,
       publishedAt: issue,
       signingTime: issue,
+      allowedServiceProfiles: entry.allowedServiceProfiles,
+      ...(broken
+        ? {
+            fixture: {
+              defectIds: defects,
+              context: {
+                family,
+                schemeTerritory: entry.schemeTerritory,
+                schemeOperatorName: entry.schemeOperatorName,
+              },
+            },
+          }
+        : {}),
     });
   } catch (error) {
     return {
@@ -297,12 +374,42 @@ export async function createTrustedListList(
     );
   }
 
+  /*
+    A broken publication is not finished until it has said what it expected and
+    what actually happened. The Inspector may be unavailable, in which case the
+    actual Inspector failures are empty and every expectation is recorded as
+    missing — which is the honest reading, and never a pass.
+  */
+  let fixture: FixtureMetadata | undefined;
+  if (published.fixture) {
+    fixture = buildFixtureMetadata({
+      standard: "TS 119 612",
+      artifactFormat: "XML / XAdES-B-B",
+      selectedDefects: defects,
+      mutations: published.fixture.mutations,
+      actualLocalFailures: published.fixture.localFailures,
+      actualInspectorFailures:
+        inspector?.summary.locallyDecidableFailures ?? [],
+      generatedAt: issue,
+    });
+    try {
+      deps.store.writeFixtureMetadata(
+        listKey,
+        published.sequenceNumber,
+        `${JSON.stringify(fixture, null, 2)}\n`,
+      );
+    } catch {
+      /* evidence only; the published version is already committed */
+    }
+  }
+
   return {
     success: true,
     listKey,
     entry,
     sequenceNumber: published.sequenceNumber,
     ...(inspector ? { inspector } : {}),
+    ...(fixture ? { fixture } : {}),
   };
 }
 

@@ -280,6 +280,17 @@ export interface ServerConfig {
   adminPassword?: string;
   signingConfigPath?: string;
   certificatesDir?: string;
+  /**
+   * Base URL of the Trust Inspector.
+   *
+   * Absent disables the integration entirely: no artifact leaves this process,
+   * and every version reports its Inspector status as unavailable — which is
+   * not a conformance statement. That is the default on purpose. Publishing a
+   * list uploads it to a third party, and a test suite, a local experiment or
+   * an air-gapped deployment must not do that as a side effect of running.
+   * `serve` passes TLP_INSPECTOR_URL, defaulting to the public Inspector.
+   */
+  inspectorBaseUrl?: string;
 }
 
 /** Constant-time string comparison that does not leak the compared length. */
@@ -502,10 +513,22 @@ const API_ROUTES: ApiRoute[] = [
     handler: "getInspectorEvaluation",
   },
   {
+    method: "GET",
+    path: "/api/v1/lists/{listKey}/versions/{sequence}/fixture",
+    matcher: /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/fixture$/,
+    handler: "getFixtureMetadata",
+  },
+  {
     method: "POST",
     path: "/api/v1/admin/lists",
     matcher: /^\/api\/v1\/admin\/lists$/,
     handler: "createTrustedList",
+  },
+  {
+    method: "POST",
+    path: "/api/v1/admin/trusted-lists",
+    matcher: /^\/api\/v1\/admin\/trusted-lists$/,
+    handler: "createXmlTrustedList",
   },
 ];
 
@@ -607,7 +630,11 @@ export function createWebServer(config: ServerConfig) {
     publicationDir: config.publicationDir,
   });
   const publicationReader = new PublicationReader(store, trustedListStore);
-  const inspectorClient = new InspectorClient();
+  /* Null when no Inspector is configured: see ServerConfig.inspectorBaseUrl. */
+  const inspectorClient =
+    config.inspectorBaseUrl && config.inspectorBaseUrl.trim() !== ""
+      ? new InspectorClient({ baseUrl: config.inspectorBaseUrl })
+      : null;
   let tslApplicationService: TslApplicationService | null = null;
 
   let authoringStore: AuthoringStore | null = null;
@@ -878,8 +905,11 @@ export function createWebServer(config: ServerConfig) {
 
     if (path.startsWith("/api/v1/")) {
       /*
-        The only mutating API route. It is handled here rather than in
-        handleApi(), which serves the read-only published artifacts.
+        The two mutating API routes. They are handled here rather than in
+        handleApi(), which serves the read-only published artifacts. There is
+        one per standard because the two take different declarations: a
+        TS 119 602 list is described by a base URL, a TS 119 612 one by the
+        scheme URIs and the LOTL pointer the standard requires it to publish.
       */
       if (path === "/api/v1/admin/lists") {
         if ((req.method ?? "GET") !== "POST") {
@@ -888,6 +918,15 @@ export function createWebServer(config: ServerConfig) {
           return;
         }
         void apiCreateTrustedList(req, res, url, requestId);
+        return;
+      }
+      if (path === "/api/v1/admin/trusted-lists") {
+        if ((req.method ?? "GET") !== "POST") {
+          send405(res, guiEnabled);
+          logRequest(req.method ?? "GET", path, 405, requestId);
+          return;
+        }
+        void apiCreateXmlTrustedList(req, res, url, requestId);
         return;
       }
       handleApi(req, res, url, requestId);
@@ -1021,9 +1060,16 @@ export function createWebServer(config: ServerConfig) {
         </tr>`,
       )
       .join("");
+    const newest = versions[versions.length - 1];
+    const listDefects = newest
+      ? defectIdsFromFixture(
+          trustedListStore.readFixtureMetadata(listKey, newest.sequenceNumber),
+        )
+      : [];
     const body = `
-<h1>${escapeHtml(listKey)}</h1>
+<h1>${escapeHtml(listKey)}${listDefects.length > 0 ? ` ${brokenBadge()}` : ""}</h1>
 <p>${listChip(listKey)} ${summary?.family ? familyChip(summary.family) : ""} <span class="chip chip-standard">ETSI TS 119 612</span> <span class="chip chip-format">XML / XAdES-B-B</span></p>
+${brokenListSectionHtml(listDefects, "TS 119 612")}
 <div class="card">
   <h2>Trusted List</h2>
   <table class="kv-table"><tbody>
@@ -1074,6 +1120,7 @@ export function createWebServer(config: ServerConfig) {
           artifacts.manifest,
           evaluation?.summary ?? null,
           latest === sequenceNumber,
+          trustedListStore.readFixtureMetadata(listKey, sequenceNumber),
         ),
       ),
     );
@@ -1275,16 +1322,21 @@ over the published Lists of Trusted Entities.</p>
           const versions = await publicationReader.versions(key);
           const newest = versions[versions.length - 1];
           if (!summary || !newest) continue;
+          const xmlDefectIds = defectIdsFromFixture(
+            trustedListStore.readFixtureMetadata(key, newest.sequenceNumber),
+          );
           rows += `
-      <tr>
-        <td><a href="/lists/${escapeHtml(key)}">${listChip(key)}</a></td>
+      <tr${xmlDefectIds.length > 0 ? ' class="catalogue-row-broken"' : ""}>
+        <td><a href="/lists/${escapeHtml(key)}">${listChip(key)}</a>${
+          xmlDefectIds.length > 0 ? ` ${brokenBadge()}` : ""
+        }</td>
         <td>${summary.family ? familyChip(summary.family) : "&mdash;"}</td>
         <td>${escapeHtml(String(newest.sequenceNumber))}</td>
         <td>${escapeHtml(newest.issueDate)}</td>
         <td>${escapeHtml(newest.nextUpdateDate)}</td>
         <td>${newest.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
         <td><strong>not evaluated</strong></td>
-        <td class="catalogue-broken">&mdash;</td>
+        <td class="catalogue-broken">${brokenColumnHtml(xmlDefectIds, "TS 119 612")}</td>
         <td class="catalogue-open"><a class="btn btn-outline btn-sm" href="/api/v1/lists/${encodeURIComponent(key)}/versions/${newest.sequenceNumber}/trusted-list.xml">XML</a></td>
       </tr>`;
           continue;
@@ -1690,9 +1742,54 @@ ${versionDownloadsHtml(listKey, sequence)}
   }
 
   /**
-   * `GET .../xml` — the version's XML rendition. This publisher does not produce
-   * XML, so the usual answer is 404 saying so rather than an empty document; the
-   * Catalogue only links this when the file is actually there.
+   * The stored negative-fixture evidence of one version, for either standard.
+   *
+   * A version that is not a fixture has none, and says so with a 404 rather
+   * than an empty document: "this version was not generated with defects" and
+   * "the defects it was generated with are unknown" are different answers.
+   */
+  function apiFixtureMetadata(
+    res: ServerResponse,
+    listKey: string,
+    sequence: number,
+    view: boolean,
+  ): void {
+    let stored: string | null = null;
+    try {
+      stored =
+        publicationReader.formatOf(listKey) === "xml"
+          ? trustedListStore.readFixtureMetadata(listKey, sequence)
+          : store.readFixtureMetadata(listKey, sequence);
+    } catch {
+      stored = null;
+    }
+    if (stored === null) {
+      sendJson(res, 404, {
+        error: "not_found",
+        message:
+          "This version is not an intentionally broken test fixture, so no fixture metadata is stored for it.",
+      });
+      return;
+    }
+    sendResponse(
+      res,
+      200,
+      stored,
+      "application/json",
+      "no-store",
+      view
+        ? undefined
+        : {
+            "Content-Disposition": `attachment; filename="fixture-${listKey}-v${sequence}.json"`,
+          },
+    );
+  }
+
+  /**
+   * `GET .../xml` — the version's XML rendition. A TS 119 602 list publishes
+   * JSON and a detached Compact JAdES, so the usual answer is 404 saying so
+   * rather than an empty document; the Catalogue only links this when the file
+   * is actually there.
    */
   function apiVersionXml(
     res: ServerResponse,
@@ -1710,7 +1807,7 @@ ${versionDownloadsHtml(listKey, sequence)}
       sendJson(res, 404, {
         error: "not_found",
         message:
-          "No XML rendition is published for this version. This publisher produces the JSON LoTE and its Compact JAdES signature; TS 119 612 XML and XAdES are out of scope.",
+          "No XML rendition is published for this version. This is an ETSI TS 119 602 list, which publishes the JSON LoTE and its Compact JAdES signature. The TS 119 612 Trusted Lists publish XML at /trusted-list.xml.",
       });
       return;
     }
@@ -1805,6 +1902,19 @@ ${versionDownloadsHtml(listKey, sequence)}
           res,
           inspectorMatch[1]!,
           parseInt(inspectorMatch[2]!, 10),
+          url.searchParams.get("view") === "1",
+        );
+        logRequest("GET", path, res.statusCode, requestId);
+        return;
+      }
+      const fixtureMatch = path.match(
+        /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/fixture$/,
+      );
+      if (fixtureMatch) {
+        apiFixtureMetadata(
+          res,
+          fixtureMatch[1]!,
+          parseInt(fixtureMatch[2]!, 10),
           url.searchParams.get("view") === "1",
         );
         logRequest("GET", path, res.statusCode, requestId);
@@ -1942,8 +2052,8 @@ ${versionDownloadsHtml(listKey, sequence)}
           inspectorProfile: result.inspector.summary.profile,
           inspectorLevel: result.inspector.summary.conformanceLevel,
           defects: result.entry.defects ?? [],
-          expectedInspectorFailures: result.fixture?.expectedInspectorFailures,
-          actualInspectorFailures: result.fixture?.actualInspectorFailures,
+          expectedInspectorFailures: result.fixture?.expectedFailures.inspector,
+          actualInspectorFailures: result.fixture?.actualFailures.inspector,
           missingFailures: result.fixture?.missingFailures,
         }),
       ),
@@ -2564,6 +2674,7 @@ ${versionDownloadsHtml(listKey, sequence)}
         keyFile: fields["keyFile"] ?? "",
         certFile: fields["certFile"] ?? "",
         allowedServiceProfiles: multi["allowedServiceProfiles"] ?? [],
+        defects: multi["defects"] ?? [],
       },
       {
         store: trustedListStore,
@@ -2581,6 +2692,7 @@ ${versionDownloadsHtml(listKey, sequence)}
             {
               ...fields,
               allowedServiceProfiles: multi["allowedServiceProfiles"],
+              defects: multi["defects"],
             },
             {
               error: result.error,
@@ -2593,6 +2705,29 @@ ${versionDownloadsHtml(listKey, sequence)}
       return;
     }
     reloadSigningConfig();
+    /*
+      A healthy list goes straight to its page. A broken one stops at a
+      confirmation that states what was asked for and what actually failed:
+      nobody should have to open the version page to discover that the fixture
+      they generated did not produce the defect they selected.
+    */
+    if (result.fixture) {
+      sendHtml(
+        res,
+        200,
+        guiPage(
+          "Intentionally broken Trusted List created",
+          `<h1>Intentionally broken Trusted List created</h1>
+<p>${listChip(result.listKey)} <span class="chip chip-standard">ETSI TS 119 612</span> <span class="chip chip-format">XML / XAdES-B-B</span></p>
+${brokenListSectionHtml(result.fixture.selectedDefects, "TS 119 612")}
+${fixturePanelHtml(JSON.stringify(result.fixture))}
+<p><a class="btn btn-primary btn-md" href="/lists/${encodeURIComponent(result.listKey)}">Open the Trusted List</a>
+<a class="btn btn-outline btn-md" href="/api/v1/lists/${encodeURIComponent(result.listKey)}/versions/${result.sequenceNumber}/trusted-list.xml">Download the XML</a></p>`,
+        ),
+      );
+      logRequest("POST", "/admin/trusted-lists/create", 200, requestId);
+      return;
+    }
     res.writeHead(303, {
       ...securityHeaders(),
       "Cache-Control": "no-store",
@@ -2600,6 +2735,130 @@ ${versionDownloadsHtml(listKey, sequence)}
     });
     res.end();
     logRequest("POST", "/admin/trusted-lists/create", 303, requestId);
+  }
+
+  /**
+   * `POST /api/v1/admin/trusted-lists` — declare a TS 119 612 XML Trusted List.
+   *
+   * The API counterpart of the Create XML Trusted List form, and deliberately a
+   * thin one: it validates the token, forwards the same fields to the same core
+   * function, and reports the same fixture evidence the confirmation page shows.
+   * The GUI and the API therefore produce the same artifacts, which is a
+   * property the fixture suite depends on rather than an aspiration.
+   */
+  async function apiCreateXmlTrustedList(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    requestId: string,
+  ): Promise<void> {
+    if (!apiAdminAuthorized(req, url)) {
+      sendJson(res, 403, {
+        error: "forbidden",
+        message:
+          "A valid administrator token is required. Send it as Authorization: Bearer <TLP_ADMIN_TOKEN>.",
+      });
+      logRequest("POST", url.pathname, 403, requestId);
+      return;
+    }
+    if (!signingConfigPath) {
+      sendJson(res, 404, {
+        error: "not_found",
+        message:
+          "This server has no signing configuration, so it cannot declare a Trusted List.",
+      });
+      logRequest("POST", url.pathname, 404, requestId);
+      return;
+    }
+    let record: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(await readBody(req));
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      )
+        throw new Error("not an object");
+      record = parsed as Record<string, unknown>;
+    } catch {
+      sendJson(res, 400, {
+        error: "bad_request",
+        message: "Request body must be a JSON object.",
+      });
+      logRequest("POST", url.pathname, 400, requestId);
+      return;
+    }
+
+    const text = (field: string): string =>
+      typeof record[field] === "string" ? (record[field] as string) : "";
+    const list = (field: string): string[] =>
+      Array.isArray(record[field])
+        ? (record[field] as unknown[]).filter(
+            (item): item is string => typeof item === "string",
+          )
+        : [];
+
+    const result = await createTrustedListList(
+      {
+        schemeOperatorName: text("schemeOperatorName"),
+        schemeTerritory: text("schemeTerritory").toUpperCase(),
+        schemeName: text("schemeName"),
+        schemeOperatorStreet: text("schemeOperatorStreet"),
+        schemeOperatorLocality: text("schemeOperatorLocality"),
+        ...(text("schemeOperatorPostalCode")
+          ? { schemeOperatorPostalCode: text("schemeOperatorPostalCode") }
+          : {}),
+        schemeOperatorCountry: text("schemeOperatorCountry").toUpperCase(),
+        schemeOperatorEmail: text("schemeOperatorEmail"),
+        schemeOperatorWebsite: text("schemeOperatorWebsite"),
+        ...(text("schemeOperatorTelephone")
+          ? { schemeOperatorTelephone: text("schemeOperatorTelephone") }
+          : {}),
+        schemeInformationUri: text("schemeInformationUri"),
+        nationalSchemeRulesUri: text("nationalSchemeRulesUri"),
+        policyUri: text("policyUri"),
+        distributionPointUri: text("distributionPointUri"),
+        lotlCertificatesBase64Der: list("lotlCertificatesBase64Der"),
+        lotlSchemeOperatorNames: list("lotlSchemeOperatorNames"),
+        keyFile: text("keyFile"),
+        certFile: text("certFile"),
+        allowedServiceProfiles: list("allowedServiceProfiles"),
+        defects: list("defects"),
+        ...(record["seedFixtureProvider"] === true
+          ? { seedFixtureProvider: true }
+          : {}),
+        ...(text("listKey") ? { listKey: text("listKey") } : {}),
+      },
+      { store: trustedListStore, signingConfigPath, inspectorClient },
+    );
+    if (!result.success) {
+      sendJson(res, 400, { error: "bad_request", message: result.error });
+      logRequest("POST", url.pathname, 400, requestId);
+      return;
+    }
+    reloadSigningConfig();
+    sendJson(
+      res,
+      201,
+      {
+        listKey: result.listKey,
+        standard: "TS 119 612",
+        artifactFormat: "XML / XAdES-B-B",
+        schemeName: result.entry.schemeName,
+        schemeTerritory: result.entry.schemeTerritory,
+        allowedServiceProfiles: result.entry.allowedServiceProfiles,
+        sequenceNumber: result.sequenceNumber,
+        versionUrl: `/lists/${result.listKey}/versions/${result.sequenceNumber}`,
+        xmlUrl: `/api/v1/lists/${result.listKey}/versions/${result.sequenceNumber}/trusted-list.xml`,
+        sha2Url: `/api/v1/lists/${result.listKey}/versions/${result.sequenceNumber}/trusted-list.sha2`,
+        ...(result.inspector ? { inspector: result.inspector.summary } : {}),
+        intentionallyBroken: Boolean(result.fixture),
+        defects: result.fixture?.selectedDefects ?? [],
+        ...(result.fixture ? { fixture: result.fixture } : {}),
+      },
+      "no-store",
+    );
+    logRequest("POST", url.pathname, 201, requestId);
   }
 
   /** Renders one XML application review page. */

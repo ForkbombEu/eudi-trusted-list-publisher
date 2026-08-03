@@ -634,7 +634,17 @@ describe("evaluation storage", () => {
                     ts119602Classification: { profile: "wallet_providers" },
                     ts119602: {
                       conformanceLevel: "conformant",
-                      checks: [],
+                      /* A real assessment always reports the checks it
+                         ran; an empty section now reads as "no verdict". */
+                      checks: [
+                        {
+                          id: "ts119602.scheme.name",
+                          category: "structure",
+                          status: "pass",
+                          severity: "info",
+                          message: "ok",
+                        },
+                      ],
                       mandatoryFailures: [],
                     },
                   },
@@ -720,7 +730,15 @@ describe("Trusted List creation", () => {
                 ts119602Classification: { profile: "wallet_providers" },
                 ts119602: {
                   conformanceLevel: "conformant",
-                  checks: [],
+                  checks: [
+                    {
+                      id: "ts119602.scheme.name",
+                      category: "structure",
+                      status: "pass",
+                      severity: "info",
+                      message: "ok",
+                    },
+                  ],
                   mandatoryFailures: [],
                 },
               },

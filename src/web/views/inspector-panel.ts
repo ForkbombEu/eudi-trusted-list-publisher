@@ -2,6 +2,8 @@ import type {
   InspectorEvaluation,
   InspectorSummary,
 } from "../../core/inspector/inspector.js";
+import { parseFixtureMetadata } from "../../core/defects/fixture-metadata.js";
+import { stageLabel } from "./broken-list.js";
 
 /**
  * The Trust Inspector card on a version page, and the three download buttons
@@ -158,7 +160,8 @@ export function versionDownloadsHtml(
   </p>
   <p class="field-help">JSON is the decoded LoTE. Compact JAdES is the signed
   artifact used for full Inspector validation. The Inspector report is the
-  complete stored evaluation. XML is not published yet.</p>
+  complete stored evaluation. This is an ETSI TS 119 602 list, whose artifact
+  format is JSON; XML and XAdES belong to the TS 119 612 Trusted Lists.</p>
   <p class="field-help"><a href="${base}/manifest">Publication manifest</a></p>
 </div>`;
 }
@@ -177,42 +180,31 @@ function escapeHtml(s: string): string {
  *
  * A version generated with defects is labelled prominently, because the rest of
  * the page reports a failing Inspector verdict and an invalid schema, and a
- * reader has to be able to tell an expected failure from a real one. Nothing is
- * rendered for an ordinary version.
+ * reader has to be able to tell an expected failure from a real one. It renders
+ * the same way for both standards: the evidence is format-independent by
+ * design, and a reader comparing a JSON fixture with an XML one should not have
+ * to learn two layouts. Nothing is rendered for an ordinary version.
  */
 export function fixturePanelHtml(metadataJson: string | null): string {
-  if (!metadataJson) return "";
-  let metadata: {
-    selectedDefects?: string[];
-    mutations?: { defectId: string; applied: boolean; detail: string }[];
-    localValidationFailures?: string[];
-    expectedInspectorFailures?: string[];
-    actualInspectorFailures?: string[];
-    matchedFailures?: string[];
-    missingFailures?: string[];
-    additionalFailures?: string[];
-    knownUnrelatedFailures?: string[];
-  };
-  try {
-    metadata = JSON.parse(metadataJson) as typeof metadata;
-  } catch {
-    return "";
-  }
-  const defects = metadata.selectedDefects ?? [];
-  const rules = (values: string[] | undefined): string =>
-    !values || values.length === 0
+  const metadata = metadataJson ? parseFixtureMetadata(metadataJson) : null;
+  if (!metadata) return "";
+  const defects = metadata.selectedDefects;
+  const values = (list: readonly string[] | undefined): string =>
+    !list || list.length === 0
       ? "<em>none</em>"
-      : values.map((v) => `<code>${escapeHtml(v)}</code>`).join("<br>");
-  const mutations = (metadata.mutations ?? [])
+      : list.map((v) => `<code>${escapeHtml(v)}</code>`).join("<br>");
+  const mutations = metadata.mutations
     .map(
       (mutation) =>
-        `<tr><td><code>${escapeHtml(mutation.defectId)}</code></td><td>${
+        `<tr><td><code>${escapeHtml(mutation.defectId)}</code></td><td>${escapeHtml(
+          stageLabel(mutation.stage),
+        )}</td><td>${
           mutation.applied ? "applied" : "<strong>not applied</strong>"
         }</td><td>${escapeHtml(mutation.detail)}</td></tr>`,
     )
     .join("");
   return `
-<div class="notice notice-warning"><strong>Intentionally broken test fixture.</strong>
+<div class="notice notice-warning"><strong>&#9888; Intentionally broken test fixture.</strong>
 This version was generated with ${defects.length} deliberate defect${
     defects.length === 1 ? "" : "s"
   }: ${defects.map((d) => `<code>${escapeHtml(d)}</code>`).join(", ")}.
@@ -221,24 +213,38 @@ publication error.</div>
 <div class="card">
   <h2>Negative fixture</h2>
   <table class="kv-table">
-    <tr><th>Expected Inspector failures</th><td>${rules(metadata.expectedInspectorFailures)}</td></tr>
-    <tr><th>Matched</th><td>${rules(metadata.matchedFailures)}</td></tr>
-    <tr><th>Expected but not reported</th><td>${rules(metadata.missingFailures)}</td></tr>
-    <tr><th>Additional failures</th><td>${rules(metadata.additionalFailures)}</td></tr>
+    <tr><th>Fixture mode</th><td><code>${escapeHtml(metadata.fixtureMode)}</code></td></tr>
+    <tr><th>Standard</th><td>${escapeHtml(metadata.standard)}</td></tr>
+    <tr><th>Format</th><td>${escapeHtml(metadata.artifactFormat)}</td></tr>
+    <tr><th>Mutation stages</th><td>${values([
+      ...new Set(
+        metadata.mutations
+          .filter((mutation) => mutation.applied)
+          .map((mutation) => stageLabel(mutation.stage)),
+      ),
+    ])}</td></tr>
+    <tr><th>Expected Inspector failures</th><td>${values(metadata.expectedFailures.inspector)}</td></tr>
+    <tr><th>Actual Inspector failures</th><td>${values(metadata.actualFailures.inspector)}</td></tr>
+    <tr><th>Matched</th><td>${values(metadata.matchedFailures)}</td></tr>
+    <tr><th>Expected but not reported</th><td>${values(metadata.missingFailures)}</td></tr>
+    <tr><th>Additional failures</th><td>${values(metadata.additionalFailures)}</td></tr>
     ${
-      (metadata.knownUnrelatedFailures ?? []).length > 0
-        ? `<tr><th>Known unrelated failures</th><td>${rules(metadata.knownUnrelatedFailures)}</td></tr>`
+      metadata.knownUnrelatedFailures.length > 0
+        ? `<tr><th>Known unrelated failures</th><td>${values(metadata.knownUnrelatedFailures)}</td></tr>`
         : ""
     }
-    <tr><th>Local validation failures</th><td>${rules(metadata.localValidationFailures)}</td></tr>
+    <tr><th>Expected local failures</th><td>${values(metadata.expectedFailures.local)}</td></tr>
+    <tr><th>Actual local failures</th><td>${values(metadata.actualFailures.local)}</td></tr>
+    <tr><th>Expected locally but not reported</th><td>${values(metadata.missingLocalFailures)}</td></tr>
   </table>
   ${
     mutations
-      ? `<h3>Mutations</h3><table class="catalogue-table"><thead><tr><th>Defect</th><th>Status</th><th>Detail</th></tr></thead><tbody>${mutations}</tbody></table>`
+      ? `<h3>Mutations</h3><table class="catalogue-table"><thead><tr><th>Defect</th><th>Stage</th><th>Status</th><th>Detail</th></tr></thead><tbody>${mutations}</tbody></table>`
       : ""
   }
   <p class="field-help">Cascading failures are expected: one mutation can trip
   several rules. Additional failures are listed rather than hidden so a drifting
-  Inspector rule set stays visible.</p>
+  Inspector rule set stays visible. An Inspector result that is unavailable,
+  not applicable or empty is never counted as a pass.</p>
 </div>`;
 }

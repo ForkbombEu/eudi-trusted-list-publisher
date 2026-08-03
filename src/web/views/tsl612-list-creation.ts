@@ -10,6 +10,8 @@
 import { xmlStandardChips } from "./tsl612-onboarding.js";
 import { familyChip } from "./colors.js";
 import { TSL_PROFILE_REGISTRY } from "../../core/tsl612/registry.js";
+import { xmlDefects } from "../../core/tsl612/defects.js";
+import { stageLabel } from "./broken-list.js";
 import { deriveListKeyFromParts } from "../../core/authoring/list-creation.js";
 
 function escape(value: string): string {
@@ -59,11 +61,39 @@ function field(
     </div>`;
 }
 
+/**
+ * One checkbox per TS 119 612 defect, read from the canonical catalogue. The
+ * form never carries its own list of defects: a defect the XML engine cannot
+ * perform must not be offerable.
+ */
+function defectOptions(selected: readonly string[]): string {
+  return xmlDefects()
+    .map(
+      (defect) => `
+      <label class="tl-broken-option">
+        <input type="checkbox" name="defects" value="${escape(defect.id)}"${
+          selected.includes(defect.id) ? " checked" : ""
+        }>
+        <span><strong>${escape(defect.label)}</strong>
+        <span class="field-help">${escape(defect.description)}</span>
+        <span class="field-help">Applied ${escape(stageLabel(defect.stage))}.
+        ${escape(defect.normativeReference)}</span></span>
+      </label>`,
+    )
+    .join("");
+}
+
 export function createTrustedListFormHtml(
   values?: CreateTrustedListFormValues,
   options: CreateTrustedListFormOptions = {},
 ): string {
   const v = values ?? {};
+  const rawDefects = v["defects"];
+  const selectedDefects = Array.isArray(rawDefects)
+    ? rawDefects
+    : typeof rawDefects === "string"
+      ? [rawDefects]
+      : [];
   const territory =
     typeof v["schemeTerritory"] === "string" ? v["schemeTerritory"] : "";
   const operator =
@@ -180,6 +210,17 @@ ${options.notice ? `<div class="notice notice-info">${escape(options.notice)}</d
     <p class="field-help">One XML Trusted List may accept EAA, QEAA or both.
     Only the profiles chosen here appear on the onboarding forms for this list.</p>
     ${profileChecks}
+  </div>
+
+  <div class="card">
+    <h2>Intentionally broken test fixture</h2>
+    <p class="field-help">Leave every box clear for a healthy Trusted List.
+    Select one defect to publish a list that is deliberately non-conformant in
+    exactly one way, or several to combine them. The list is always compiled
+    healthy first and then mutated, so a broken fixture is a stated delta from a
+    known-good baseline. <strong>A failing Trust Inspector verdict on such a
+    list is the expected outcome, not a publication error.</strong></p>
+    <div class="tl-broken-options">${defectOptions(selectedDefects)}</div>
   </div>
 
   <div class="card">

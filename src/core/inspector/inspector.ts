@@ -58,13 +58,25 @@ export type InspectorStandard = "TS 119 602" | "TS 119 612";
 
 export interface InspectorSummary {
   /**
-   * `pass` and `fail` are Inspector verdicts; `unavailable` means the Inspector
-   * could not be reached or did not answer, and must never be reported as
-   * conformance either way.
+   * `pass` and `fail` are Inspector verdicts. `unavailable` means no verdict
+   * was obtained — the Inspector could not be reached, or it answered without
+   * assessing the artifact against the standard that was submitted.
+   *
+   * There is deliberately no fourth value. A `not_applicable` standard, an
+   * unclassified artifact and a section with no checks in it are all "no
+   * verdict", and reporting any of them as `pass` would let a fixture that the
+   * Inspector never looked at be presented as conformant.
    */
   status: "pass" | "fail" | "unavailable";
   /** Reason the assessment is unavailable. */
   error?: string;
+  /**
+   * The Inspector's `standardApplicability` block, recorded verbatim. It is
+   * what says whether the artifact was assessed against TS 119 612 at all.
+   */
+  standardApplicability?: Record<string, string>;
+  /** How the Inspector classified the artifact, e.g. `ts119612_xml_tsl`. */
+  artifactKind?: string;
   evaluatedAt: string;
   inspectorBaseUrl: string;
   /** Which standard's check section the verdict was read from. */
@@ -286,11 +298,70 @@ export class InspectorClient {
       : result.ts119602;
     const checks = Array.isArray(section?.checks) ? section.checks : [];
     const failures = checks.filter(locallyDecidable);
+    const applicabilityKey = isXml ? "ts119612" : "ts119602";
+    const applicability = result.standardApplicability?.[applicabilityKey];
+
+    /*
+      Everything that means "the Inspector produced no verdict about this
+      artifact". Each of these would otherwise reach the zero-failures branch
+      below and be reported as a pass, which is the one thing an assessment of
+      an unassessed artifact must never say.
+    */
+    const noVerdict =
+      section === undefined
+        ? `Trust Inspector returned no ${applicabilityKey} section, so the artifact was not assessed against the standard it was submitted under.`
+        : section.applicable === false || applicability === "not_applicable"
+          ? `Trust Inspector reported ${applicabilityKey} as not applicable to this artifact${
+              result.detected?.artifactKind
+                ? `, which it classified as '${result.detected.artifactKind}'`
+                : ""
+            }. A standard that was not applied cannot have been passed.`
+          : applicability === "unknown"
+            ? `Trust Inspector could not decide whether ${applicabilityKey} applies to this artifact.`
+            : checks.length === 0
+              ? `Trust Inspector ran no ${applicabilityKey} check against this artifact.`
+              : null;
+
+    if (noVerdict)
+      return {
+        schemaVersion: INSPECTOR_EVALUATION_SCHEMA_VERSION,
+        summary: {
+          status: "unavailable",
+          error: noVerdict,
+          evaluatedAt,
+          inspectorBaseUrl: this.baseUrl,
+          standard: isXml ? "TS 119 612" : "TS 119 602",
+          ...(request.serviceTypes
+            ? { serviceTypes: [...request.serviceTypes] }
+            : {}),
+          ...(result.standardApplicability
+            ? { standardApplicability: result.standardApplicability }
+            : {}),
+          ...(result.detected?.artifactKind
+            ? { artifactKind: result.detected.artifactKind }
+            : {}),
+          detectedFormat: result.detected?.format,
+          detectedArtifactKind: result.detected?.artifactKind,
+          conformanceLevel: section?.conformanceLevel,
+          counts: countChecks(checks),
+          locallyDecidableFailures: failures.map(
+            (check) => `${check.id}: ${check.message}`,
+          ),
+        },
+        report: body,
+      };
+
     const summary: InspectorSummary = {
       status: failures.length === 0 ? "pass" : "fail",
       evaluatedAt,
       inspectorBaseUrl: this.baseUrl,
       standard: isXml ? "TS 119 612" : "TS 119 602",
+      ...(result.standardApplicability
+        ? { standardApplicability: result.standardApplicability }
+        : {}),
+      ...(result.detected?.artifactKind
+        ? { artifactKind: result.detected.artifactKind }
+        : {}),
       ...(request.serviceTypes
         ? { serviceTypes: [...request.serviceTypes] }
         : {}),

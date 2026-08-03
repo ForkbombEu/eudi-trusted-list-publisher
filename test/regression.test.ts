@@ -1706,7 +1706,11 @@ describe("OpenAPI route parity", () => {
         },
         "/lists/{listKey}/latest/trusted-list.xml": { get: {} },
         "/lists/{listKey}/latest/trusted-list.sha2": { get: {} },
+        /* Negative-fixture evidence, shared by both standards. */
+        "/api/v1/lists/{listKey}/versions/{sequence}/fixture": { get: {} },
+        /* One list-creation endpoint per standard. */
         "/api/v1/admin/lists": { post: {} },
+        "/api/v1/admin/trusted-lists": { post: {} },
       },
     };
     const errors = checkApiRouteParity(implemented, spec);

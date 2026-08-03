@@ -28,6 +28,14 @@ import {
 
 const NAMESPACES = { ds: NS_DSIG, xades: NS_XADES } as const;
 
+/**
+ * The Baseline-B finding a signature produced with `omitSigningTime` carries by
+ * construction. Named rather than repeated, so the signer can recognise the one
+ * failure it was asked to cause without pattern-matching a message.
+ */
+export const NO_SIGNING_TIME_FINDING =
+  "SignedProperties carries no xades:SigningTime.";
+
 export interface VerifyResult {
   /** True only when every check below passed. */
   readonly valid: boolean;
@@ -217,8 +225,7 @@ export function verifyEnveloped(xml: string): VerifyResult {
               NAMESPACES,
             ),
           ) ?? undefined;
-        if (!signingTime)
-          findings.push("SignedProperties carries no xades:SigningTime.");
+        if (!signingTime) findings.push(NO_SIGNING_TIME_FINDING);
         const certDigest = text(
           signedProperties.get(
             "xades:SignedSignatureProperties/xades:SigningCertificateV2/xades:Cert/xades:CertDigest/ds:DigestValue",

@@ -34,7 +34,7 @@ import {
   parseXml,
   rootElementName,
 } from "./xml.js";
-import { verifyEnveloped } from "./verify.js";
+import { NO_SIGNING_TIME_FINDING, verifyEnveloped } from "./verify.js";
 
 export interface SignOptions {
   readonly privateKeyPem: string;
@@ -52,6 +52,15 @@ export interface SignOptions {
    * object other than the SignedProperties themselves.
    */
   readonly dataObjectMimeType?: string;
+  /**
+   * Omit `xades:SigningTime` from SignedProperties.
+   *
+   * The result is a cryptographically sound signature that is not XAdES
+   * Baseline B, which is exactly what the `xades_without_signing_time` negative
+   * fixture needs. It has no legitimate use in a healthy publication, so it
+   * defaults to false and every caller that sets it says why.
+   */
+  readonly omitSigningTime?: boolean;
 }
 
 const PLACEHOLDER_DIGEST = "A".repeat(44);
@@ -75,7 +84,7 @@ interface Ids {
 function buildQualifyingProperties(
   ids: Ids,
   certificate: X509Certificate,
-  signingTime: Date,
+  signingTime: Date | null,
   dataObjectMimeType: string,
 ): string {
   const digest = createHash("sha256")
@@ -85,10 +94,13 @@ function buildQualifyingProperties(
   const issuerSerialElement = issuerSerial
     ? `\n            <xades:IssuerSerialV2>${issuerSerial}</xades:IssuerSerialV2>`
     : "";
+  const signingTimeElement =
+    signingTime === null
+      ? ""
+      : `\n      <xades:SigningTime>${toUtcSeconds(signingTime)}</xades:SigningTime>`;
   return `<xades:QualifyingProperties xmlns:xades="${NS_XADES}" Target="#${ids.signature}">
   <xades:SignedProperties Id="${ids.signedProperties}">
-    <xades:SignedSignatureProperties>
-      <xades:SigningTime>${toUtcSeconds(signingTime)}</xades:SigningTime>
+    <xades:SignedSignatureProperties>${signingTimeElement}
       <xades:SigningCertificateV2>
         <xades:Cert>
           <xades:CertDigest>
@@ -186,7 +198,7 @@ export function signEnveloped(xml: string, options: SignOptions): string {
   const qualifyingProperties = buildQualifyingProperties(
     ids,
     certificate,
-    signingTime,
+    options.omitSigningTime ? null : signingTime,
     options.dataObjectMimeType ?? "text/xml",
   );
 
@@ -286,10 +298,21 @@ export function signEnveloped(xml: string, options: SignOptions): string {
     signatureValue,
   );
 
+  /*
+    The signature is verified before it is handed back, so a caller never
+    publishes a document this package could not itself check. When the caller
+    asked for no signing time, the resulting Baseline-B finding is the thing it
+    asked for and is not a reason to refuse — every other finding still is.
+  */
   const verification = verifyEnveloped(signed);
-  if (!verification.valid)
+  const unexpected = options.omitSigningTime
+    ? verification.findings.filter(
+        (finding) => finding !== NO_SIGNING_TIME_FINDING,
+      )
+    : verification.findings;
+  if (unexpected.length > 0)
     throw new XmlSecError(
-      `The signature this package just produced does not verify: ${verification.findings.join(
+      `The signature this package just produced does not verify: ${unexpected.join(
         "; ",
       )}`,
     );

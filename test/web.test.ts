@@ -245,7 +245,7 @@ describe("Web UI", () => {
 
     const missing = await httpGet(xmlHref);
     expect(missing.status).toBe(404);
-    expect(missing.body).toContain("out of scope");
+    expect(missing.body).toContain("This is an ETSI TS 119 602 list");
 
     writeFileSync(
       store.loteXmlPath(key, sequence!),
@@ -748,8 +748,9 @@ describe("HTTP correctness", () => {
 
   it("API route registry is used and complete", async () => {
     const routes = getApiRoutes();
-    /* 9 TS 119 602 routes plus the 4 TS 119 612 artifact routes. */
-    expect(routes.length).toBe(13);
+    /* 9 TS 119 602 routes, the 4 TS 119 612 artifact routes, the shared
+       negative-fixture route and the XML list creation route. */
+    expect(routes.length).toBe(15);
 
     const paths = routes.map((r) => r.path);
     expect(paths).toContain("/api/v1/lists");
@@ -767,9 +768,13 @@ describe("HTTP correctness", () => {
     );
     expect(paths).toContain("/api/v1/lists/{listKey}/versions/{sequence}/xml");
     expect(paths).toContain("/api/v1/admin/lists");
+    expect(paths).toContain(
+      "/api/v1/lists/{listKey}/versions/{sequence}/fixture",
+    );
+    /* The only mutating routes: one list-creation endpoint per standard. */
     expect(
       routes.filter((route) => route.method === "POST").map((r) => r.path),
-    ).toEqual(["/api/v1/admin/lists"]);
+    ).toEqual(["/api/v1/admin/lists", "/api/v1/admin/trusted-lists"]);
 
     // All routes should have handler identifiers
     for (const r of routes) {
