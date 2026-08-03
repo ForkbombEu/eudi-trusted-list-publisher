@@ -19,7 +19,9 @@ import type { LoTEDocument } from "../src/core/model/types.js";
 
 const CERT_DER = "MIIBdummyBase64DerValue";
 
-function pubEaaInput(entities: AuthoringInput["entities"] = []): AuthoringInput {
+function pubEaaInput(
+  entities: AuthoringInput["entities"] = [],
+): AuthoringInput {
   return {
     schemeOperator: {
       name: [{ lang: "en", value: "Fixture Operator" }],
@@ -60,7 +62,14 @@ const context = {
 
 function healthyPubEaa(withEntity = false): LoTEDocument {
   const entities = withEntity
-    ? [fixtureSeedEntity("pub-eaa-providers", CERT_DER, "2026-01-01T00:00:00Z", "EU")]
+    ? [
+        fixtureSeedEntity(
+          "pub-eaa-providers",
+          CERT_DER,
+          "2026-01-01T00:00:00Z",
+          "EU",
+        ),
+      ]
     : [];
   return compileForProfile("pub-eaa-providers", pubEaaInput(entities)).document;
 }
@@ -71,7 +80,9 @@ describe("defect catalogue", () => {
     for (const defect of LIST_DEFECTS) {
       const spec = DEFECT_SPECS.find((candidate) => candidate.id === defect.id);
       expect(spec, `no spec for ${defect.id}`).toBeDefined();
-      expect(spec?.stage === "pre-sign" || spec?.stage === "post-sign").toBe(true);
+      expect(spec?.stage === "pre-sign" || spec?.stage === "post-sign").toBe(
+        true,
+      );
       expect(spec?.expectedRuleIds.length).toBeGreaterThan(0);
     }
   });
@@ -256,20 +267,22 @@ describe("other families stay healthy", () => {
     Broken generation is opt-in per list. A family that was never asked for a
     defect must compile exactly as before.
   */
-  it.each(["wallet-providers", "pid-providers", "wrpac-providers", "wrprc-providers"] as const)(
-    "%s compiles unchanged with no defects selected",
-    (family) => {
-      const input = pubEaaInput();
-      delete input.scheme.historicalInformationPeriod;
-      const healthy = compileForProfile(family, input).document;
-      const { document, mutations } = applyPreSignDefects(healthy, [], {
-        ...context,
-        family,
-      });
-      expect(JSON.stringify(document)).toBe(JSON.stringify(healthy));
-      expect(mutations).toHaveLength(0);
-    },
-  );
+  it.each([
+    "wallet-providers",
+    "pid-providers",
+    "wrpac-providers",
+    "wrprc-providers",
+  ] as const)("%s compiles unchanged with no defects selected", (family) => {
+    const input = pubEaaInput();
+    delete input.scheme.historicalInformationPeriod;
+    const healthy = compileForProfile(family, input).document;
+    const { document, mutations } = applyPreSignDefects(healthy, [], {
+      ...context,
+      family,
+    });
+    expect(JSON.stringify(document)).toBe(JSON.stringify(healthy));
+    expect(mutations).toHaveLength(0);
+  });
 });
 
 describe("broken list markers", () => {

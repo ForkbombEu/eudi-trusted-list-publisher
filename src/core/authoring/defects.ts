@@ -87,8 +87,7 @@ export const DEFECT_SPECS: ReadonlyArray<DefectSpec> = Object.freeze([
   },
   {
     id: "scheme_name_without_territory",
-    normativeReference:
-      "ETSI TS 119 602 V1.1.1, clause 6.3.6 (SchemeName)",
+    normativeReference: "ETSI TS 119 602 V1.1.1, clause 6.3.6 (SchemeName)",
     conformantBehaviour:
       "Each SchemeName value is prefixed with the scheme territory and a colon, for example EU:My List.",
     label: "Scheme name without territory",
@@ -221,14 +220,17 @@ export function defectsAtStage(
 ): DefectSpec[] {
   return ids
     .map((id) => SPEC_BY_ID.get(id))
-    .filter((spec): spec is DefectSpec => spec !== undefined && spec.stage === stage);
+    .filter(
+      (spec): spec is DefectSpec => spec !== undefined && spec.stage === stage,
+    );
 }
 
 /** Every rule ID the selected defects are expected to trip, deduplicated. */
 export function expectedRuleIdsFor(ids: readonly string[]): string[] {
   const rules = new Set<string>();
   for (const id of ids)
-    for (const rule of SPEC_BY_ID.get(id)?.expectedRuleIds ?? []) rules.add(rule);
+    for (const rule of SPEC_BY_ID.get(id)?.expectedRuleIds ?? [])
+      rules.add(rule);
   return [...rules].sort();
 }
 
@@ -276,10 +278,7 @@ export function applyPreSignDefects(
     switch (spec.id) {
       case "non_strict_timestamps": {
         /* clause 6.1.3 forbids a fraction; ".000" is the minimal violation. */
-        info.ListIssueDateTime = info.ListIssueDateTime.replace(
-          /Z$/,
-          ".000Z",
-        );
+        info.ListIssueDateTime = info.ListIssueDateTime.replace(/Z$/, ".000Z");
         info.NextUpdate = info.NextUpdate.replace(/Z$/, ".000Z");
         record(
           spec.id,
@@ -316,7 +315,9 @@ export function applyPreSignDefects(
         record(
           spec.id,
           had,
-          had ? "SchemeInformationURI removed." : "No SchemeInformationURI was present.",
+          had
+            ? "SchemeInformationURI removed."
+            : "No SchemeInformationURI was present.",
         );
         break;
       }
@@ -326,7 +327,9 @@ export function applyPreSignDefects(
         record(
           spec.id,
           had,
-          had ? "PolicyOrLegalNotice removed." : "No PolicyOrLegalNotice was present.",
+          had
+            ? "PolicyOrLegalNotice removed."
+            : "No PolicyOrLegalNotice was present.",
         );
         break;
       }
@@ -393,7 +396,9 @@ export function applyPreSignDefects(
           record(
             spec.id,
             had,
-            had ? "PointersToOtherLoTE removed." : "No self pointer was present.",
+            had
+              ? "PointersToOtherLoTE removed."
+              : "No self pointer was present.",
           );
         }
         break;
@@ -452,7 +457,11 @@ export function applyPreSignDefects(
         break;
       }
       default:
-        record(spec.id, false, "No pre-sign mutation is defined for this defect.");
+        record(
+          spec.id,
+          false,
+          "No pre-sign mutation is defined for this defect.",
+        );
     }
   }
 
@@ -506,9 +515,7 @@ export function fixtureSeedEntity(
   const annexH = family === "pub-eaa-providers";
   return {
     teName: [{ lang: "en", value: FIXTURE_ENTITY_NAME }],
-    ...(annexH
-      ? { teTradeName: [{ lang: "en", value: legalBasis }] }
-      : {}),
+    ...(annexH ? { teTradeName: [{ lang: "en", value: legalBasis }] } : {}),
     tePostalAddress: [
       {
         lang: "en",

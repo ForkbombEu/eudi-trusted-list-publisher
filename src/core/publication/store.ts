@@ -663,7 +663,9 @@ export class PublicationStore {
   /** True when a version was generated as an intentionally broken fixture. */
   hasFixtureMetadata(listKey: string, sequenceNumber: number): boolean {
     try {
-      return this.fs.existsSync(this.fixtureMetadataPath(listKey, sequenceNumber));
+      return this.fs.existsSync(
+        this.fixtureMetadataPath(listKey, sequenceNumber),
+      );
     } catch {
       return false;
     }
@@ -685,10 +687,7 @@ export class PublicationStore {
   }
 
   /** Returns the stored fixture metadata, or null when the version is healthy. */
-  readFixtureMetadata(
-    listKey: string,
-    sequenceNumber: number,
-  ): string | null {
+  readFixtureMetadata(listKey: string, sequenceNumber: number): string | null {
     const path = this.fixtureMetadataPath(listKey, sequenceNumber);
     if (!this.fs.existsSync(path)) return null;
     try {

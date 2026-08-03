@@ -468,7 +468,10 @@ export class ApplicationService {
           schemeOperatorName: listEntry.schemeOperatorName,
           signingCertificateDer: certificateDerBase64(certPem),
         })
-      : { document: compileResult.document, mutations: [] as AppliedMutation[] };
+      : {
+          document: compileResult.document,
+          mutations: [] as AppliedMutation[],
+        };
 
     const localValidationFailures: string[] = [];
     if (broken) {

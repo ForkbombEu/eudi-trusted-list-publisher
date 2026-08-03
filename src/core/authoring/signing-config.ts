@@ -133,13 +133,12 @@ function parseEntry(value: unknown): SigningConfigEntry {
  * a list from loading, because the signing configuration is also what an
  * ordinary healthy list depends on.
  */
-function defectsField(
-  record: Record<string, unknown>,
-): { defects?: string[] } {
+function defectsField(record: Record<string, unknown>): { defects?: string[] } {
   const value = record.defects;
   if (!Array.isArray(value)) return {};
   const defects = value.filter(
-    (entry): entry is string => typeof entry === "string" && entry.trim() !== "",
+    (entry): entry is string =>
+      typeof entry === "string" && entry.trim() !== "",
   );
   return defects.length > 0 ? { defects } : {};
 }
