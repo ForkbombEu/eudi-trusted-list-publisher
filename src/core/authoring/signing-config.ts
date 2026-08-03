@@ -5,6 +5,11 @@ import {
   getEnabledProfile,
   type EnabledProfileFamily,
 } from "../profiles/registry.js";
+import {
+  isTrustedListConfigRecord,
+  parseTrustedListConfigEntry,
+  type TrustedListConfigEntry,
+} from "../tsl612/list-config.js";
 
 export interface SigningConfigEntry {
   listKey: string;
@@ -38,8 +43,22 @@ export interface SigningConfigEntry {
    */
   defects?: string[];
 }
+/**
+ * One configuration file, two standards.
+ *
+ * The file holds a single `lists:` array whose entries are discriminated by
+ * `standard`. An entry that states no standard is a TS 119 602 entry, so every
+ * file written before TS 119 612 existed loads unchanged and `config.lists`
+ * still means exactly what it meant to its existing readers.
+ */
 export interface SigningConfig {
+  /** TS 119 602 JSON/JAdES lists. */
   lists: SigningConfigEntry[];
+  /**
+   * TS 119 612 XML/XAdES Trusted Lists. Optional so that a configuration
+   * object built in code — as several tests do — stays valid without it.
+   */
+  trustedLists?: TrustedListConfigEntry[];
 }
 export interface SigningConfigEntryDisplay {
   listKey: string;
@@ -143,7 +162,7 @@ function defectsField(record: Record<string, unknown>): { defects?: string[] } {
   return defects.length > 0 ? { defects } : {};
 }
 export function loadSigningConfig(path: string): SigningConfig {
-  if (!existsSync(path)) return { lists: [] };
+  if (!existsSync(path)) return { lists: [], trustedLists: [] };
   const raw: unknown =
     path.endsWith(".yaml") || path.endsWith(".yml")
       ? parseYaml(readFileSync(path, "utf-8"))
@@ -155,18 +174,46 @@ export function loadSigningConfig(path: string): SigningConfig {
     !Array.isArray((raw as Record<string, unknown>).lists)
   )
     throw new Error("Signing configuration must contain a lists array.");
-  const lists = ((raw as Record<string, unknown>).lists as unknown[]).map(
-    parseEntry,
-  );
+  const entries = (raw as Record<string, unknown>).lists as unknown[];
+  const lists = entries
+    .filter((entry) => !isTrustedListConfigRecord(entry))
+    .map(parseEntry);
+  const trustedLists = entries
+    .filter(isTrustedListConfigRecord)
+    .map(parseTrustedListConfigEntry);
+
+  /*
+    List keys are unique across both standards, not within each. A key decides
+    a directory under the publication root, and one directory cannot hold both
+    a JSON list and an XML Trusted List.
+  */
   const keys = new Set<string>();
-  for (const entry of lists) {
+  for (const entry of [...lists, ...trustedLists]) {
     if (keys.has(entry.listKey))
       throw new Error(
         `Duplicate signing configuration list key: ${entry.listKey}`,
       );
     keys.add(entry.listKey);
   }
-  return { lists };
+  return { lists, trustedLists };
+}
+
+/** The TS 119 612 Trusted List with this key, if the configuration has one. */
+export function findTrustedListConfig(
+  config: { readonly trustedLists?: readonly TrustedListConfigEntry[] },
+  listKey: string,
+): TrustedListConfigEntry | undefined {
+  return config.trustedLists?.find((entry) => entry.listKey === listKey);
+}
+
+/** Every XML Trusted List that accepts applications for one onboarding family. */
+export function getTrustedListConfigsForFamily(
+  config: { readonly trustedLists?: readonly TrustedListConfigEntry[] },
+  family: string,
+): TrustedListConfigEntry[] {
+  return (config.trustedLists ?? []).filter((entry) =>
+    (entry.allowedServiceProfiles as readonly string[]).includes(family),
+  );
 }
 export function findSigningConfig(
   config: SigningConfigReadModel,
