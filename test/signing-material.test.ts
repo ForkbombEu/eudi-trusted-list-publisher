@@ -22,6 +22,7 @@ import {
 } from "../src/core/authoring/index.js";
 import { createWebServer, type ServerConfig } from "../src/web/server.js";
 import { createListFormHtml } from "../src/web/views/list-creation.js";
+import { checkTrustedListSigningCertificate } from "../src/core/tsl612/signing-certificate.js";
 
 function temporaryDirectory(): string {
   const path = join(
@@ -286,6 +287,51 @@ describe("Signing Material administration action", () => {
       expect(response.status).toBe(403);
     } finally {
       await started.stop();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("generates a TS 119 612 signer that meets the Scheme Operator profile", () => {
+    const root = temporaryDirectory();
+    try {
+      const material = generateSigningMaterial({
+        certificatesDir: root,
+        schemeOperatorName: "Trusted List Operator",
+        schemeTerritory: "IT",
+        profile: "trusted-list",
+      });
+      expect(material.profile).toBe("trusted-list");
+      const certificate = new X509Certificate(
+        readFileSync(join(root, material.listKey, "signing-cert.pem"), "utf-8"),
+      );
+      expect(
+        checkTrustedListSigningCertificate(certificate, {
+          schemeTerritory: "IT",
+          schemeOperatorName: "Trusted List Operator",
+        }),
+      ).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves the TS 119 602 certificate profile unchanged by default", () => {
+    const root = temporaryDirectory();
+    try {
+      const material = generateSigningMaterial({
+        certificatesDir: root,
+        schemeOperatorName: "LoTE Operator",
+        schemeTerritory: "EU",
+      });
+      expect(material.profile).toBe("lote");
+      const text = readFileSync(
+        join(root, material.listKey, "signing-cert.pem"),
+        "utf-8",
+      );
+      const certificate = new X509Certificate(text);
+      /* No extended key usage: an EU LoTE signer asserts no signing purpose. */
+      expect(certificate.toString()).not.toContain("0.4.0.2231.3.0");
+    } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });

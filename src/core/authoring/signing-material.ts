@@ -15,11 +15,28 @@ import {
 } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { deriveListKeyFromParts } from "./list-creation.js";
+import { checkTrustedListSigningCertificate } from "../tsl612/signing-certificate.js";
+
+/**
+ * Which standard the material will sign for.
+ *
+ * A TS 119 602 LoTE is signed as Compact JAdES and the certificate carries no
+ * extended key usage. A TS 119 612 Trusted List is signed as XAdES-B-B, and
+ * clause 5.7 wants a certificate a reader can recognise as a Trusted List
+ * signing certificate, so the tslSigning purpose is asserted. The two are
+ * otherwise the same P-256 end-entity certificate.
+ */
+export type SigningCertificateProfile = "lote" | "trusted-list";
+
+/** id-tsl-kp-tslSigning; the extended key usage of a Trusted List signer. */
+const TSL_SIGNING_EKU = "0.4.0.2231.3.0";
 
 export interface GenerateSigningMaterialRequest {
   certificatesDir: string;
   schemeOperatorName: string;
   schemeTerritory: string;
+  /** Defaults to `lote`, so the five TS 119 602 families are unaffected. */
+  profile?: SigningCertificateProfile;
 }
 
 export interface GeneratedSigningMaterial {
@@ -28,6 +45,7 @@ export interface GeneratedSigningMaterial {
   certFile: string;
   certificateSubject: string;
   certificateFingerprint: string;
+  profile: SigningCertificateProfile;
 }
 
 /** Escapes one value in OpenSSL's slash-separated `-subj` form. */
@@ -78,6 +96,7 @@ export function generateSigningMaterial(
     );
   if (!/^[A-Z]{2}$/.test(territory))
     throw new Error("Scheme territory must be a 2-letter uppercase code.");
+  const profile: SigningCertificateProfile = request.profile ?? "lote";
   const configuredRoot = request.certificatesDir.trim();
   if (!configuredRoot)
     throw new Error("TLP_CERTIFICATES_DIR is not configured.");
@@ -132,6 +151,9 @@ export function generateSigningMaterial(
         "keyUsage=critical,digitalSignature",
         "-addext",
         "subjectKeyIdentifier=hash",
+        ...(profile === "trusted-list"
+          ? ["-addext", `extendedKeyUsage=critical,${TSL_SIGNING_EKU}`]
+          : []),
       ],
       { stdio: "ignore" },
     );
@@ -161,6 +183,24 @@ export function generateSigningMaterial(
     )
       throw new Error("Generated certificate does not match the private key.");
 
+    /*
+      A Trusted List signer is checked against the same profile the signer
+      applies before every publication, so material that could never sign a
+      list is never installed in the first place.
+    */
+    if (profile === "trusted-list") {
+      const findings = checkTrustedListSigningCertificate(certificate, {
+        schemeTerritory: territory,
+        schemeOperatorName: operator,
+      });
+      if (findings.length > 0)
+        throw new Error(
+          `Generated certificate does not meet the TS 119 612 Scheme Operator profile: ${findings.join(
+            " ",
+          )}`,
+        );
+    }
+
     chmodSync(temporaryKey, 0o600);
     chmodSync(temporaryCertificate, 0o644);
     try {
@@ -181,6 +221,7 @@ export function generateSigningMaterial(
       certificateFingerprint: certificate.fingerprint256
         .replace(/:/g, "")
         .toLowerCase(),
+      profile,
     };
   } catch (error) {
     if (error instanceof Error && error.message.includes("Signing material"))
