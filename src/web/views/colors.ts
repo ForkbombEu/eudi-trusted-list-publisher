@@ -1,11 +1,13 @@
-import { LIST_FAMILIES } from "../../core/authoring/list-family-catalogue.js";
-import type { ProfileFamily } from "../../core/profiles/registry.js";
+import {
+  LIST_FAMILIES,
+  type FamilyKey,
+} from "../../core/authoring/list-family-catalogue.js";
 
 /**
  * Colour coding for Trusted List Families and for individual Trusted Lists.
  *
- * A family always renders in the same colour because the six families are a
- * closed set. Individual list keys come from the deployment's signing
+ * A family always renders in the same colour because the families of both
+ * standards are a closed set. Individual list keys come from the deployment's signing
  * configuration, so their colour is derived deterministically from the key:
  * the same list key always maps to the same swatch on every page.
  *
@@ -16,12 +18,14 @@ import type { ProfileFamily } from "../../core/profiles/registry.js";
 /** Number of list swatches defined in app.css as `.chip-list--0 … --7`. */
 export const LIST_SWATCH_COUNT = 8;
 
-const FAMILY_SLUGS: Readonly<Record<ProfileFamily, string>> = Object.freeze({
+const FAMILY_SLUGS: Readonly<Record<FamilyKey, string>> = Object.freeze({
   "pid-providers": "pid",
   "wallet-providers": "wallet",
   "wrpac-providers": "wrpac",
   "wrprc-providers": "wrprc",
   "pub-eaa-providers": "pubeaa",
+  "eaa-providers": "eaa",
+  "qeaa-providers": "qeaa",
   registrars: "registrar",
 });
 
@@ -44,7 +48,7 @@ function listSwatchIndex(listKey: string): number {
 }
 
 export function familyColorClass(family: string): string {
-  const slug = FAMILY_SLUGS[family as ProfileFamily];
+  const slug = FAMILY_SLUGS[family as FamilyKey];
   return slug ? `chip-family--${slug}` : "chip-family--unknown";
 }
 

@@ -1,27 +1,14 @@
 import { LIST_FAMILIES } from "../../core/authoring/list-family-catalogue.js";
-import type { ProfileFamily } from "../../core/profiles/registry.js";
 import { familyChip, listChip } from "./colors.js";
 import {
   CERTIFICATE_FIELD_LABEL,
   CERTIFICATE_GUIDE_PATH,
 } from "./certificate-guide.js";
 
-/**
- * Implemented onboarding routes are singular; the profile registry keys are
- * plural. Only families listed here are linkable.
- */
-const ONBOARDING_ROUTES: Partial<Record<ProfileFamily, string>> = {
-  "wallet-providers": "/onboarding/wallet-provider",
-  "pid-providers": "/onboarding/pid-provider",
-  "wrpac-providers": "/onboarding/wrpac-provider",
-  "wrprc-providers": "/onboarding/wrprc-provider",
-  "pub-eaa-providers": "/onboarding/pub-eaa-provider",
-};
-
 export function onboardingCatalogueHtml(): string {
   let cards = "";
   for (const f of LIST_FAMILIES) {
-    const route = ONBOARDING_ROUTES[f.key];
+    const route = f.onboardingRoute;
     const enabled = f.enabled && route !== undefined;
     const status = enabled
       ? '<span class="badge badge-assurance">Available</span>'

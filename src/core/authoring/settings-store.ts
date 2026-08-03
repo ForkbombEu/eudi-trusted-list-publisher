@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import { PROFILE_REGISTRY, type ProfileFamily } from "../profiles/registry.js";
+import { findFamily, type FamilyKey } from "./list-family-catalogue.js";
 
 export const SETTINGS_SCHEMA_VERSION = 1;
 export const SETTINGS_FILE_NAME = "settings.json";
@@ -18,13 +18,14 @@ export const SETTINGS_FILE_NAME = "settings.json";
 /**
  * Administrator settings for onboarding automation.
  *
- * `families` is keyed by profile family, `lists` by signing-configuration list
- * key. A `true` entry means every application targeting that family, or that
- * list, is approved and published without administrator intervention.
+ * `families` is keyed by catalogue family — of either standard — and `lists`
+ * by signing-configuration list key. A `true` entry means every application
+ * targeting that family, or that list, is approved and published without
+ * administrator intervention.
  */
 export interface PublisherSettings {
   schemaVersion: typeof SETTINGS_SCHEMA_VERSION;
-  autoApproveFamilies: Partial<Record<ProfileFamily, boolean>>;
+  autoApproveFamilies: Partial<Record<FamilyKey, boolean>>;
   autoApproveLists: Record<string, boolean>;
 }
 
@@ -60,8 +61,8 @@ function parseSettings(value: unknown): PublisherSettings {
   const settings = emptySettings();
   if (isRecord(value.autoApproveFamilies)) {
     for (const [family, enabled] of Object.entries(value.autoApproveFamilies)) {
-      if (enabled === true && family in PROFILE_REGISTRY) {
-        settings.autoApproveFamilies[family as ProfileFamily] = true;
+      if (enabled === true && findFamily(family)) {
+        settings.autoApproveFamilies[family as FamilyKey] = true;
       }
     }
   }
@@ -132,7 +133,7 @@ export class SettingsStore {
   isAutoApprove(family: string, listKey: string): boolean {
     const settings = this.load();
     return (
-      settings.autoApproveFamilies[family as ProfileFamily] === true ||
+      settings.autoApproveFamilies[family as FamilyKey] === true ||
       settings.autoApproveLists[listKey] === true
     );
   }

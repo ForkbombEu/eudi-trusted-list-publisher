@@ -112,8 +112,8 @@ async function importSigningKey(): Promise<globalThis.CryptoKey> {
 }
 
 describe("List Family Catalogue", () => {
-  it("contains exactly the six TS 119 602 families", () => {
-    expect(LIST_FAMILIES).toHaveLength(6);
+  it("contains the six TS 119 602 families and the two TS 119 612 families", () => {
+    expect(LIST_FAMILIES).toHaveLength(8);
   });
 
   it("has the correct family labels", () => {
@@ -124,11 +124,13 @@ describe("List Family Catalogue", () => {
       "WRPAC Providers",
       "WRPRC Providers",
       "Pub-EAA Providers",
+      "EAA Providers",
+      "QEAA Providers",
       "Registrars and Registers",
     ]);
   });
 
-  it("enables PID, Wallet, WRPAC, WRPRC and Pub-EAA Providers", () => {
+  it("enables every family except Registrars", () => {
     const enabled = getEnabledFamilies();
     expect(enabled.map((family) => [family.key, family.label])).toEqual([
       ["pid-providers", "PID Providers"],
@@ -136,6 +138,8 @@ describe("List Family Catalogue", () => {
       ["wrpac-providers", "WRPAC Providers"],
       ["wrprc-providers", "WRPRC Providers"],
       ["pub-eaa-providers", "Pub-EAA Providers"],
+      ["eaa-providers", "EAA Providers"],
+      ["qeaa-providers", "QEAA Providers"],
     ]);
   });
 
