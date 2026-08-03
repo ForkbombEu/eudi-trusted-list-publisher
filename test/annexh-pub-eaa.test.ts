@@ -224,7 +224,11 @@ const services = (doc: LoTEDocument, entity = 0) =>
 // ============================================================
 describe("Annex H profile", () => {
   it("is the fifth enabled family, in annex order", () => {
-    expect(getEnabledFamilies().map((family) => family.key)).toEqual([
+    expect(
+      getEnabledFamilies()
+        .filter((family) => family.standard === "TS 119 602")
+        .map((family) => family.key),
+    ).toEqual([
       "pid-providers",
       "wallet-providers",
       "wrpac-providers",

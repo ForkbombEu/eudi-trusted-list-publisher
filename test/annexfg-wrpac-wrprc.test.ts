@@ -17,7 +17,7 @@ import {
   checkServiceIdentifierUniqueness,
   convertLoTEToAuthoringEntities,
   createTrustedList,
-  LIST_FAMILIES,
+  familiesForStandard,
   getEnabledFamilies,
   normalizeToAuthoringInput,
   parseAndValidateSubmission,
@@ -372,7 +372,13 @@ function wrpacCertificateError(certificate: string): string | undefined {
 // ============================================================
 describe("TS 119 602 family catalogue", () => {
   it("exposes the six families in annex order", () => {
-    expect(LIST_FAMILIES.map((family) => [family.key, family.label])).toEqual([
+    /* Filtered by standard: the catalogue also carries the TS 119 612 families. */
+    expect(
+      familiesForStandard("TS 119 602").map((family) => [
+        family.key,
+        family.label,
+      ]),
+    ).toEqual([
       ["pid-providers", "PID Providers"],
       ["wallet-providers", "Wallet Providers"],
       ["wrpac-providers", "WRPAC Providers"],
@@ -390,7 +396,11 @@ describe("TS 119 602 family catalogue", () => {
   });
 
   it("enables five families and disables Registrars", () => {
-    expect(getEnabledFamilies().map((family) => family.key)).toEqual([
+    expect(
+      getEnabledFamilies()
+        .filter((family) => family.standard === "TS 119 602")
+        .map((family) => family.key),
+    ).toEqual([
       "pid-providers",
       "wallet-providers",
       "wrpac-providers",
@@ -986,7 +996,20 @@ describe("Annex F/G views", () => {
       expect(html).toContain(`href="${route}"`);
     expect(html).toContain("Pub-EAA Providers");
     expect(html).toContain("Registrars and Registers");
-    expect(html).not.toContain("QEAA Providers");
+  });
+
+  /*
+    QEAA is offered, but as a TS 119 612 family. What must stay true is that
+    TS 119 602 does not profile it: Annex D–I has no QEAA list.
+  */
+  it("offers QEAA only under TS 119 612", () => {
+    expect(Object.keys(PROFILE_REGISTRY)).not.toContain("qeaa-providers");
+    expect(
+      familiesForStandard("TS 119 602").map((family) => family.key),
+    ).not.toContain("qeaa-providers");
+    expect(
+      familiesForStandard("TS 119 612").map((family) => family.key),
+    ).toContain("qeaa-providers");
   });
 
   it("renders the WRPAC certificate purpose and no identifier field", () => {

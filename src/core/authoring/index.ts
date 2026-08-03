@@ -1,7 +1,13 @@
 export {
   LIST_FAMILIES,
   getEnabledFamilies,
+  familiesForStandard,
   findFamily,
+  isXmlFamily,
+  type ArtifactFormat,
+  type FamilyKey,
+  type LifecycleAction,
+  type ListStandard,
 } from "./list-family-catalogue.js";
 export {
   APPLICATION_SCHEMA_VERSION,
