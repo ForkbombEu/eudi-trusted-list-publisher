@@ -564,13 +564,13 @@ Avoid:
 
 ## Planning Policy
 
-Large tasks MUST be broken down.
+Large tasks may be broken down.
 
 Agents MUST:
 
-- stop on oversized tasks
-- propose phases
-- agree before changing direction
+- consider if tasks are oversized
+- if oversized, consider splitting tasks in sub-tasks and try executing sub-tasks without supervision
+- only if necessary, offer the user with proposed phases, for the human to choose
 
 ---
 
