@@ -59,6 +59,21 @@ function succeed<T>(value: T): TslServiceResult<T> {
 }
 
 /**
+ * The first UTC second at or after `instant` that is strictly later than every
+ * time in `earlier`. Used so a status change never shares a second with the
+ * state it supersedes.
+ */
+function strictlyAfter(instant: Date, earlier: readonly string[]): string {
+  let candidate = Math.floor(instant.getTime() / 1000) * 1000;
+  for (const time of earlier) {
+    const parsed = Date.parse(time);
+    if (Number.isNaN(parsed)) continue;
+    if (candidate <= parsed) candidate = parsed + 1000;
+  }
+  return publicationInstant(new Date(candidate));
+}
+
+/**
  * The result when the immutable version committed but the mutable application
  * record could not be updated. The version exists and is authentic; the
  * application is stale and must be reconciled, never republished.
@@ -531,9 +546,9 @@ export class TslApplicationService {
 
       const profile = getTslProfile(fresh.family);
       const issue = this.now();
-      const statusStartingTime = publicationInstant(issue);
 
       let skiError: string | null = null;
+      let statusStartingTime: string | undefined;
       const built = this.nextInput(config, current, issue, (providers) => {
         const found = this.findServiceIndex(providers, fresh);
         if (found === null)
@@ -543,6 +558,27 @@ export class TslApplicationService {
           };
         const provider = providers[found.provider]!;
         const service = provider.services[found.service]!;
+
+        /*
+          Clause 5.6.5, as the Inspector enforces it
+          (`ts119612.service.N.history.N.status_start`): the superseded state's
+          time must come strictly before the new current one. A list published
+          and then ended inside the same second would otherwise state the two
+          as equal, which is not an order.
+
+          The lexical form has one-second resolution, so representing "after"
+          costs at least a second. The instant is moved forward rather than the
+          history moved back: the status change really did happen at or after
+          this moment, and the moment the previous status began is a fact that
+          must not be rewritten.
+        */
+        const supersededTimes = [
+          service.statusStartingTime,
+          ...(service.serviceHistory ?? []).map(
+            (instance) => instance.statusStartingTime,
+          ),
+        ];
+        statusStartingTime = strictlyAfter(issue, supersededTimes);
 
         let ski: string;
         try {
@@ -558,7 +594,7 @@ export class TslApplicationService {
         const superseded: TslService = {
           ...service,
           serviceStatus: profile.endStatus,
-          statusStartingTime,
+          statusStartingTime: statusStartingTime!,
           serviceHistory: [
             /* Most recent superseded state first. */
             historyInstanceFor(service, ski),
@@ -603,7 +639,7 @@ export class TslApplicationService {
           publishedAt: published.manifest.publicationTimestamp,
           trustedListXmlSha256: published.manifest.trustedListXmlSha256,
           serviceStatus: profile.endStatus,
-          statusStartingTime,
+          statusStartingTime: statusStartingTime ?? publicationInstant(issue),
         },
       };
       try {

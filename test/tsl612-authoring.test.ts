@@ -505,6 +505,30 @@ describe("publication lifecycle", () => {
     }
   });
 
+  /*
+    The live Trust Inspector rejected an artifact where the two shared one
+    second (`ts119612.service.N.history.N.status_start`). Publishing and ending
+    inside the same second is exactly what a test — or an impatient
+    administrator — does.
+  */
+  it("gives the superseded state a time strictly before the new one", async () => {
+    const h = harness();
+    try {
+      const record = await publishOne(h, "eaa-providers", EAA_LIST);
+      expect((await h.service.supersede(record.id)).ok).toBe(true);
+      const service = readTrustedList(
+        h.store.loadLatest(EAA_LIST)!.artifacts.xml,
+      ).providers![0]!.services[0]!;
+      const current = Date.parse(service.statusStartingTime);
+      const previous = Date.parse(
+        service.serviceHistory![0]!.statusStartingTime,
+      );
+      expect(current).toBeGreaterThan(previous);
+    } finally {
+      rmSync(h.root, { recursive: true, force: true });
+    }
+  });
+
   it("withdraws a QEAA service into ServiceHistory", async () => {
     const h = harness();
     try {
