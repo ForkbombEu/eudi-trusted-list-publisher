@@ -131,7 +131,7 @@ for (const fixture of fixtures) {
     inspectorStatus: summary.status,
     profile: summary.profile,
     conformanceLevel: summary.conformanceLevel,
-    expected: result.fixture?.expectedInspectorFailures ?? [],
+    expected: result.fixture?.expectedFailures.inspector ?? [],
     actual: actual.map((line) => line.split(":")[0]),
     matched: result.fixture?.matchedFailures ?? [],
     missing: result.fixture?.missingFailures ?? [],

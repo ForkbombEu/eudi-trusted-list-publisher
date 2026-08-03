@@ -101,6 +101,36 @@ The deterministic TS 119 612 suites are published at stable keys —
 equivalents — one healthy baseline, one list per defect, and one list carrying
 exactly two compatible defects.
 
+### Demonstration lists
+
+Six ready-made TS 119 612 lists can be published into the local publication
+store, so the Catalogue shows the EAA and QEAA families the way it already shows
+the TS 119 602 ones:
+
+```bash
+npm run build
+node scripts/generate-tsl612-demo-lists.mjs --dry-run   # list what it will do
+node scripts/generate-tsl612-demo-lists.mjs             # publish
+```
+
+| List key | Family | State |
+| --- | --- | --- |
+| `it_eaa-demo-healthy` | EAA Providers | conformant |
+| `it_eaa-demo-broken-expired-next-update` | EAA Providers | stale on the day it was issued |
+| `it_eaa-demo-broken-broken-xades-signature` | EAA Providers | edited after signing; the signature does not verify |
+| `it_qeaa-demo-healthy` | QEAA Providers | conformant |
+| `it_qeaa-demo-broken-expired-next-update` | QEAA Providers | stale on the day it was issued |
+| `it_qeaa-demo-broken-broken-xades-signature` | QEAA Providers | edited after signing; the signature does not verify |
+
+The two defects fail in visibly different ways on purpose: one breaks the dates
+and is caught by the Trust Inspector, the other breaks the cryptography and is
+caught before it gets there. Re-running regenerates all six, so the script is
+idempotent. It contacts the Trust Inspector only when `TLP_INSPECTOR_URL` is
+set, because publishing a list to it uploads that list to a third party.
+
+The equivalent generator for the TS 119 602 Pub-EAA family is
+`scripts/generate-pub-eaa-fixtures.mjs`.
+
 ## Installation
 
 ### Requirements
@@ -159,6 +189,7 @@ cp .env.example .env
 | --- | --- |
 | `TLP_FIXTURE_KEY_DIR`, `TLP_FIXTURE_REPORT` | Signing material and report for `scripts/generate-pub-eaa-fixtures.mjs`. |
 | `TLP_TSL_FIXTURE_DIR` | Where the TS 119 612 EAA and QEAA fixture suites are written. |
+| `TLP_DEMO_KEY_DIR` | Signing material for the demonstration EAA/QEAA lists. |
 
 **Secrets that must never be committed**: `.env`, `TLP_ADMIN_TOKEN`,
 `ADMIN_PASSWORD`, and every private key and certificate. The root `.gitignore`
