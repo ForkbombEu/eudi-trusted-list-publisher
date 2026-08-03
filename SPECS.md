@@ -24,9 +24,10 @@ must never be committed or uploaded through a public web interface.
 
 ## Explicit non-goals for the first vertical slice
 
-- TS 119 612 Trusted Lists
-- LoTL aggregation
-- XML or XAdES
+Historical. TS 119 612, XML and XAdES were non-goals of the first slice and are
+now implemented; see "Phase 10" below. The remaining non-goals are:
+
+- LoTL aggregation — only the mandatory pointer to the EU LOTL is published
 - EC TS02 notification/registration API
 - hosted key custody
 - database and authentication
@@ -106,6 +107,9 @@ src/
     signing/          — JAdES Compact signing
     verification/     — JAdES Compact verification
     publication/      — Manifest generation and immutable filesystem store
+    tsl612/           — ETSI TS 119 612 XML Trusted Lists
+      authoring/      — EAA/QEAA applications: model, parser, store, service
+  xmlsec/             — standalone enveloped XAdES-B-B signer and verifier
   cli/                — CLI commands and entry point
   web/                — Read-only web server and HTML rendering
     assets/           — Runtime copies of HITL design assets + app.css + OpenAPI
@@ -749,3 +753,134 @@ family whose profile publishes a service status may carry `withdrawn`,
 `withdrawnAt` or `withdrawal`; Annex H must carry a legal basis reference and no
 family that does not collect one may; and a certificate field may be absent only
 where the profile allows it, while every PEM block present must still parse.
+
+## Phase 10: EAA and QEAA as TS 119 612 XML Trusted Lists
+
+The publisher now implements a second standard end to end. `STANDARDS.md`
+records what TS 119 612 requires; this section records how the code is
+arranged.
+
+### Two authoring paths, deliberately parallel
+
+`src/core/tsl612/authoring/` mirrors `src/core/authoring/` rather than
+extending it. The TS 119 602 model is built around LoTE types, service unique
+identifiers, entity role URIs and legal-basis URIs; none of those exist in a
+TS 119 612 application, which instead has a TSP trade name, a registration
+identifier published in `TSPTradeName`, and service definition URIs. Two small
+models that each say what their standard means beat one model with two thirds
+of its fields inapplicable at any moment.
+
+`src/core/profiles/registry.ts` is untouched and still describes TS 119 602
+only.
+
+### One discriminated configuration file
+
+The signing configuration keeps a single `lists:` array whose entries are
+discriminated by `standard`. An entry that states no standard is a TS 119 602
+entry, so every file written before this existed loads unchanged and
+`config.lists` still means what it meant to its readers. `loadSigningConfig()`
+partitions into `lists` and `trustedLists`; `trustedLists` is optional so a
+configuration object built in code stays valid without it.
+
+List keys are unique **across** both standards, not within each: a key names one
+directory under the publication root, and one directory cannot hold both.
+
+### One reader in front of two stores
+
+`src/core/publication/reader.ts` answers which lists exist, which versions each
+has, and what one version is, without the caller knowing the format. Detection
+is by artifact rather than by configuration — a directory holding
+`trusted-list.xml` is an XML Trusted List even if no configuration mentions it,
+because the published bytes are the authority. A directory holding both is
+refused with `ListKeyCollisionError` rather than resolved by preference.
+
+### Publication layout
+
+```
+publications/<listKey>/versions/<seq>/
+  trusted-list.xml      signed XML — the artifact
+  trusted-list.sha2     SHA-256 of the exact XML bytes, bare lowercase hex
+  manifest.json         format-aware manifest (standard: "TS 119 612")
+  inspector.json        evidence, outside the integrity-checked set
+```
+
+Reading a version re-checks integrity from the bytes on disk: the XML must hash
+to what both the manifest and the `.sha2` state, and the manifest must be about
+that list and that sequence.
+
+### Routes
+
+Public:
+
+```
+GET /lists/{listKey}                                 XML list page
+GET /lists/{listKey}/versions/{sequence}             XML version page
+GET /lists/{listKey}/latest/trusted-list.xml         stable latest URL
+GET /lists/{listKey}/latest/trusted-list.sha2        stable latest URL
+GET /api/v1/lists/{listKey}/versions/{seq}/trusted-list.xml
+GET /api/v1/lists/{listKey}/versions/{seq}/trusted-list.sha2
+GET /api/v1/lists/{listKey}/versions/{seq}/manifest
+GET /api/v1/lists/{listKey}/versions/{seq}/inspector
+```
+
+XML is served as `application/vnd.etsi.tsl+xml`. Asking an XML list for `lote`
+or `signature` is a 404 with a message saying why: its signature is inside the
+XML.
+
+Onboarding (GUI enabled):
+
+```
+GET/POST /onboarding/eaa-provider
+GET/POST /onboarding/qeaa-provider
+```
+
+Administration (authenticated):
+
+```
+GET      /admin/trusted-lists/create
+POST     /admin/trusted-lists/create
+GET      /admin/xml-applications
+GET      /admin/xml-applications/{id}
+POST     /admin/xml-applications/{id}/{approve|reject|publish|supersede|delete}
+```
+
+### Cumulative publication and the per-list lock
+
+A new version is the published version, read back through
+`readTrustedList()`, plus or minus one provider — never rebuilt from the
+application records, so a component this publisher never collected still
+survives. `TslApplicationService` serializes every operation on one list key
+through a keyed promise queue that continues after a failure, so one failure
+does not wedge the list. Different keys proceed concurrently. This is
+process-local and does not protect several Node processes sharing one
+publication directory.
+
+A corrupt highest version is fail-closed: it blocks preview and publication
+rather than falling back to an older one.
+
+### The commit boundary
+
+`TrustedListStore.store()` commits before the mutable application record is
+written. If the immutable commit succeeds and the record write fails, the
+result is `PUBLICATION_COMMITTED_APPLICATION_STALE`, carrying the list key,
+sequence number and XML hash. `reconcile()` then updates mutable metadata
+against the version that already exists; it never creates a version, and it
+refuses when the service is not findable in that version by service type and
+key fingerprint.
+
+### The CLI does not import the barrel
+
+`src/cli/main.ts` imports the modules it uses rather than `core/index.js`. The
+barrel also exports the TS 119 612 engine, which pulls in `libxml2-wasm` and
+costs about a second of WebAssembly initialisation; the CLI publishes JSON and
+never touches XML, so paying that on every invocation — including `--help` —
+would be startup cost for nothing.
+
+### Dependency
+
+`libxml2-wasm` (^0.7.x) provides XML parsing, offline XML Schema validation and
+Exclusive XML Canonicalisation. It is WebAssembly, so there is no native build
+step and no Java. Node.js ships none of the three, and canonicalisation in
+particular cannot be approximated. The XAdES structure itself is written in
+this repository, in `src/xmlsec/`, which imports nothing from `src/core` and
+carries its own `README.md` so it can be lifted into a package of its own.

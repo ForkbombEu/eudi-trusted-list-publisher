@@ -1,0 +1,29 @@
+{
+  "standard": "TS 119 612",
+  "listKey": "it_example_scheme_operator",
+  "schemeOperatorName": "Example Scheme Operator",
+  "schemeTerritory": "IT",
+  "schemeName": "IT:Example Scheme Operator",
+  "schemeOperatorStreet": "Via Roma 1",
+  "schemeOperatorLocality": "Roma",
+  "schemeOperatorPostalCode": "00100",
+  "schemeOperatorCountry": "IT",
+  "schemeOperatorEmail": "trustedlist@example.it",
+  "schemeOperatorWebsite": "https://example.it",
+  "schemeInformationUri": "https://example.it/scheme",
+  "nationalSchemeRulesUri": "https://example.it/scheme-rules",
+  "policyUri": "https://example.it/policy",
+  "distributionPointUri": "https://example.it/tl/trusted-list.xml",
+  "lotlPointer": {
+    "location": "https://ec.europa.eu/tools/lotl/eu-lotl.xml",
+    "certificatesBase64Der": ["MIIB...replace-with-the-EU-LOTL-signing-certificate"],
+    "schemeOperatorNames": ["European Commission"],
+    "schemeTypeCommunityRules": "http://uri.etsi.org/TrstSvc/TrustedList/schemerules/EUlistofthelists",
+    "schemeTerritory": "EU",
+    "tslType": "http://uri.etsi.org/TrstSvc/TrustedList/TSLType/EUlistofthelists",
+    "mimeType": "application/vnd.etsi.tsl+xml"
+  },
+  "keyFile": "./.local-signing/certificates/it_example_scheme_operator/signing-key.pem",
+  "certFile": "./.local-signing/certificates/it_example_scheme_operator/signing-cert.pem",
+  "allowedServiceProfiles": ["eaa-providers", "qeaa-providers"]
+}

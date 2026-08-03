@@ -2,16 +2,28 @@
 
 ## Project scope
 
-This project implements a **TS 119 602 JSON List of Trusted Entities (LoTE) publisher**
-for five profiles: PID Providers (Annex D), Wallet Providers (Annex E), WRPAC
-Providers (Annex F), WRPRC Providers (Annex G) and Pub-EAA Providers (Annex H).
+This project publishes Trusted Lists under **two standards**:
+
+1. **ETSI TS 119 602** — JSON Lists of Trusted Entities, signed as Compact
+   JAdES, for five profiles: PID Providers (Annex D), Wallet Providers
+   (Annex E), WRPAC Providers (Annex F), WRPRC Providers (Annex G) and Pub-EAA
+   Providers (Annex H).
+2. **ETSI TS 119 612** — XML national Trusted Lists, signed as enveloped
+   XAdES-B-B, carrying two onboarding service profiles: **EAA Providers**
+   (non-qualified) and **QEAA Providers** (qualified).
+
+The two are kept apart everywhere they differ. `src/core/profiles/registry.ts`
+describes TS 119 602 and nothing else; `src/core/tsl612/registry.ts` describes
+TS 119 612. One format-aware catalogue names both, so a page states which
+standard and which artifact format a list uses rather than inferring it.
 
 ### Normative definitions
 
-1. **TS 119 602 List of Trusted Entities (LoTE)** — this project's current scope.
-2. **TS 119 612 national Trusted List (TSL)** — out of scope for this slice.
-3. **List of Trusted Lists (LoTL)** — out of scope for this slice.
-4. **EC TS02 provider notification/publication API** — out of scope for this slice.
+1. **TS 119 602 List of Trusted Entities (LoTE)** — implemented, JSON/JAdES.
+2. **TS 119 612 national Trusted List (TSL)** — implemented, XML/XAdES-B-B.
+3. **List of Trusted Lists (LoTL)** — not aggregated. Only the mandatory
+   *pointer* to the EU LOTL is published, as clause 5.3.13 requires.
+4. **EC TS02 provider notification/publication API** — out of scope.
 
 ## Primary standards
 
@@ -87,6 +99,176 @@ spellings of the W3C schemas resolve to the same file, because the importing
 schemas do not agree on which to print.
 
 Tests must never fetch schemas from the network.
+
+## EAA and QEAA service profiles (TS 119 612)
+
+One XML Trusted List is a **national** list; EAA and QEAA are **service
+profiles inside it**, not lists of their own. A list declares which it accepts
+through `allowedServiceProfiles`, so one list may take EAA, QEAA or both. The
+onboarding family the applicant uses decides the service type and the status
+vocabulary; `src/core/tsl612/registry.ts` holds both, and the submission parser
+refuses a family the target list does not accept.
+
+| | EAA Providers | QEAA Providers |
+|---|---|---|
+| Service type | `http://uri.etsi.org/TrstSvc/Svctype/EAA` | `http://uri.etsi.org/TrstSvc/Svctype/EAA/Q` |
+| Initial status | `.../Svcstatus/recognisedatnationallevel` | `.../Svcstatus/granted` |
+| End status | `.../Svcstatus/deprecatedatnationallevel` | `.../Svcstatus/withdrawn` |
+| Administration action | Deprecate national recognition | Withdraw qualified status |
+| Qualified | no | yes |
+
+The two vocabularies never mix: a test asserts that no status URI appears in
+both families.
+
+### List-level values
+
+Every list this publisher produces states:
+
+- `TSLTag` `http://uri.etsi.org/19612/TSLTag`, `TSLVersionIdentifier` 6
+- `TSLType` `.../TSLType/EUgeneric`, status determination
+  `.../StatusDetn/EUappropriate`
+- three `SchemeTypeCommunityRules` URIs: `.../schemerules/EUcommon`,
+  `.../schemerules/<CC>` and the operator's national rules URI
+- `SchemeTerritory` = the responsible **Member State**. `EU` is refused: a
+  Member State list is not published for the Union as a whole
+- `HistoricalInformationPeriod` 65535 — permanent history, which is what makes
+  a superseded state meaningful
+- `NextUpdate` at most six months after `ListIssueDateTime`
+- **no** `SchemeExtensions`
+- a `PointersToOtherTSL` entry for the EU LOTL, with its location, digital
+  identity and qualifiers
+
+An empty first version omits `TrustServiceProviderList` entirely rather than
+emitting an empty one.
+
+### Status times, history and immutability
+
+- The **initial status time is the publication event** — the same instant the
+  version is issued with, not a separate clock reading.
+- **Ordinary republication preserves `StatusStartingTime`.** A provider carried
+  into a new version keeps the instant its status actually began. This is the
+  opposite of the Annex H rule in TS 119 602, which restates the time on every
+  version; TS 119 612 keeps permanent history, so the original instant stays
+  meaningful.
+- A **status change publishes a new version**. The previous state moves into
+  `ServiceHistory`, most recent first, and the version that listed the service
+  as current is never rewritten.
+- A history instance carries **at least one `X509SKI` and no
+  `X509Certificate`**. Republishing the certificate would restate a current
+  identity for a state that is no longer current.
+
+### Identifying a published service
+
+By **service type plus the SHA-256 of the certificate's subject public key**.
+The name is not the identity: two providers may publish the same service name,
+and a provider may rename a service. The key is what a relying party verifies
+against. Publication, supersession and reconciliation all use this, and refuse
+rather than match by position.
+
+### The registration identifier
+
+Published in `TSPTradeName` as `VAT<CC>-<identifier>` when the applicant holds a
+VAT identifier and `NTR<CC>-<identifier>` otherwise, where `<CC>` is the
+territory of the **target list**, never a value the applicant supplies. A
+prefix the applicant already typed is not doubled.
+
+### The service certificate
+
+Published as Base64 DER in `ServiceDigitalIdentity`. The subject organisation
+(`O`) should equal `TSPName`. Where it differs, the applicant must supply that
+organisation as a TSP trade name **and** a `SchemeServiceDefinitionURI`
+documenting the relationship — the live Trust Inspector fails
+`ts119612.service.1.1.certificate_subject_tsp_name` without it.
+
+### Review evidence is never published
+
+EAA onboarding collects evidence of national recognition, QEAA evidence of
+qualified status. Both are retained for administrator review and appear in no
+artifact: they are the basis on which a decision is taken, not a component of
+the Trusted List. A test asserts the evidence text is absent from the published
+XML.
+
+## The XAdES-B-B signature (TS 119 612 Annex B, EN 319 132-1)
+
+Implemented in `src/xmlsec/`, which depends only on `node:crypto` and
+`libxml2-wasm` and knows nothing about Trusted Lists.
+
+- enveloped signature over the whole document, `ds:Reference URI=""`
+- enveloped-signature transform **then** Exclusive XML Canonicalisation
+- Exclusive canonicalisation for `SignedInfo`
+- XAdES `SignedProperties` under its own reference, with `SigningTime` and
+  `SigningCertificateV2` (including `IssuerSerialV2`, lifted verbatim from the
+  certificate DER rather than re-encoded from a parsed string)
+- `SignedDataObjectProperties/DataObjectFormat` naming the document reference
+  and the TSL media type
+- `ds:KeyInfo/X509Data` carrying exactly one certificate
+- ECDSA-SHA256 or RSA-SHA256; ECDSA signature values are IEEE P1363 `r || s`,
+  not the DER SEQUENCE Node produces by default
+- the signature is verified locally before it is returned
+
+### The enveloped transform is computed over the signed document
+
+The transform is defined over the document *containing* the signature: it
+removes the `ds:Signature` element and nothing else. Digesting the document
+before the signature was inserted omits the whitespace the insertion adds, and
+the first implementation here did exactly that and failed its own verification.
+This is recorded because it produces a signature that looks correct and
+verifies nowhere.
+
+The transform excludes `ds:Signature` **structurally**, not by node identity:
+libxml2-wasm builds a fresh JavaScript wrapper per visit, so a `Set` of nodes
+matches nothing.
+
+### The Scheme Operator signing certificate
+
+Checked where the material is configured, again when a list is created, and
+again before every signature:
+
+- subject `C` equals the Scheme Territory
+- subject `O` equals the Scheme Operator Name
+- `basicConstraints` states `CA:FALSE` — a Trusted List is signed by an end
+  entity
+- a `SubjectKeyIdentifier` is present
+- key usage asserts only `digitalSignature` and/or `contentCommitment`
+- where `extendedKeyUsage` is present it permits `tslSigning`
+  (`0.4.0.2231.3.0`) or `anyExtendedKeyUsage`
+
+`generateSigningMaterial({ profile: "trusted-list" })` produces material that
+meets this and asserts the `tslSigning` purpose. The default profile stays
+`lote`, so the five TS 119 602 families are unaffected.
+
+## Trust Inspector evidence for TS 119 612
+
+Established empirically against the live Inspector
+(`https://trust-inspector.credimi.io`, `POST /api/audit/artifact`) with
+`contentType: application/vnd.etsi.tsl+xml`. It reports
+`detected.artifactKind = ts119612_xml_tsl` and answers under a `ts119612`
+section, which is the section this publisher's summary reads — reading the
+TS 119 602 section for an XML artifact would report zero checks and call that a
+pass.
+
+A conforming EAA list produced by this publisher scores **112 pass, 10
+not_applicable, 8 not_checked, 3 warn, 1 inconclusive, 0 fail**.
+
+Three findings shaped the implementation:
+
+- `signature.xades_baseline_b.data_object_formats` **failed** on the first
+  attempt. EN 319 132-1 requires a `DataObjectFormat` per signed data object
+  other than the SignedProperties, and the signer emitted none. This was a real
+  conformance gap, not a data problem.
+- `ts119612.pointer.1.signing_certificates` fails when the LOTL pointer's
+  declared scheme operator does not match the pointer certificates. The
+  list-creation form states that the two must describe the same list.
+- `ts119612.service.1.1.certificate_subject_tsp_name` fails when a service
+  certificate's subject `O` differs from `TSPName` with no
+  `SchemeServiceDefinitionURI`. The submission parser enforces the rule.
+
+Remaining warnings are understood and not defects of the artifact:
+`parse.schema_location`;
+`ts119612.signature.certificate.extended_key_usage`, absent unless the signer
+carries the `tslSigning` EKU; and `ts119612.pointer.1.rollover`, which wants two
+key pairs with shifted validity — an operational property of key management,
+not something a generator produces.
 
 ## ETSI JSON Schemas
 

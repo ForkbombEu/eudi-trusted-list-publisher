@@ -1,0 +1,37 @@
+# POST /onboarding/eaa-provider
+#
+# application/x-www-form-urlencoded. The Scheme Territory is NOT a field: it
+# comes from the target list, so there is no second country value to disagree
+# with the first.
+
+listKey=it_example_scheme_operator
+tspName=Example Attestation Provider S.p.A.
+registrationIdentifierKind=vat
+registrationIdentifier=12345678901
+# published in TSPTradeName as VATIT-12345678901
+
+# Required only when the certificate's subject O differs from tspName.
+tradeName=
+
+streetAddress=Via Milano 2
+locality=Milano
+postalCode=20121
+countryName=IT
+
+email=info@example.it
+website=https://provider.example.it
+telephone=+390212345678
+
+tspInformationUri=https://provider.example.it/practices
+
+serviceName=Example EAA Issuance
+certificatePem=-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----
+
+# Optional. The scheme service definition becomes required when the
+# certificate's subject O differs from tspName.
+schemeServiceDefinitionUri=
+tspServiceDefinitionUri=
+serviceSupplyPoints=
+
+# Kept for administrator review. Never published in the Trusted List.
+evidence=Ministerial decree 123/2026 recognises this provider at national level.

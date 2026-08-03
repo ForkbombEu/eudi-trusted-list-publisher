@@ -1,15 +1,24 @@
 # Credimi EUDI Trusted Lists
 
-A TS 119 602 JSON List of Trusted Entities (LoTE) publisher for five profiles:
-PID Providers (Annex D), Wallet Providers (Annex E), WRPAC Providers (Annex F)
-WRPRC Providers (Annex G) and Pub-EAA Providers (Annex H). Compiles, validates,
-signs (JAdES Compact Baseline B),
-verifies, stores, and publishes LoTE artefacts. Signing keys are supplied through
-local files or CI secrets and are never uploaded through a public web interface.
+A Trusted List publisher for the EU Digital Identity Wallet ecosystem,
+implementing **two ETSI standards**:
 
-Includes an immutable filesystem publication store and a read-only Credimi-branded
-web UI for browsing published LoTEs. Does not implement TS 119 612 Trusted Lists,
-LoTL aggregation, XML/XAdES, or the EC TS02 notification API.
+- **TS 119 602** — JSON Lists of Trusted Entities signed as Compact JAdES
+  Baseline B, for five profiles: PID Providers (Annex D), Wallet Providers
+  (Annex E), WRPAC Providers (Annex F), WRPRC Providers (Annex G) and Pub-EAA
+  Providers (Annex H).
+- **TS 119 612** — XML national Trusted Lists signed as enveloped XAdES-B-B,
+  carrying two onboarding service profiles: **EAA Providers** (non-qualified)
+  and **QEAA Providers** (qualified).
+
+It compiles, validates, signs, verifies, stores and publishes artifacts of both
+kinds. Signing keys are supplied through local files or CI secrets and are never
+uploaded through a public web interface.
+
+Includes an immutable filesystem publication store and a Credimi-branded web UI
+for browsing what has been published. It does **not** aggregate a List of Trusted
+Lists — only the mandatory pointer to the EU LOTL is published — and does not
+implement the EC TS02 notification API.
 
 **Historical** added an opt-in data-collection and administration GUI for authoring
 and publishing Wallet Provider LoTEs. The current GUI supports all five
@@ -164,6 +173,32 @@ Every page uses the shared Credimi header and footer shell. On short pages the
 footer stays at the bottom of the viewport; on longer pages it follows the page
 content normally.
 
+Pages that show a Trusted List also show which standard it follows and which
+artifact it publishes, as two chips: `ETSI TS 119 602` with
+`JSON / Compact JAdES`, or `ETSI TS 119 612` with `XML / XAdES-B-B`.
+
+### Publishing an EAA or QEAA provider, end to end
+
+1. **Administration → Create XML Trusted List.** Enter the scheme operator,
+   the responsible Member State, the scheme URIs, the stable XML distribution
+   URL and the EU LOTL pointer material, then tick the service profiles the
+   list accepts — EAA, QEAA or both. Generate the signing material with the
+   button if `TLP_CERTIFICATES_DIR` is set; it produces an EC P-256 key and a
+   certificate carrying the `tslSigning` extended key usage. Creating the list
+   publishes its first, empty, signed version immediately.
+2. **Onboarding → EAA Providers** or **QEAA Providers.** The applicant picks the
+   target list, which fixes the Scheme Territory, and supplies the TSP details,
+   the service certificate and the evidence of national recognition or of
+   qualified status. The evidence is kept for review and never published.
+3. **Administration → Manage EAA and QEAA Applications.** Review the
+   application, its cumulative-publication preview and its evidence, then
+   Approve and Publish. The provider appears in a new immutable version with
+   the family's initial status.
+4. **Deprecate national recognition** or **Withdraw qualified status** on the
+   published application. This publishes another immutable version in which the
+   service carries the end status and the previous state sits in
+   `ServiceHistory`. Both versions stay downloadable and verifiable.
+
 ### Catalogue (`/`)
 
 The home page lists every published Trusted List with its family, latest
@@ -304,7 +339,12 @@ specification is available at `/openapi.yaml` and `/openapi.json`.
 | Download decoded LoTE JSON | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/lote` |
 | Download Compact JAdES | `curl -o lote.jades http://localhost:8080/api/v1/lists/eu_credimi/versions/1/signature` |
 | Download publication manifest | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/manifest` |
-| Open the XML rendition, when a version has one | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/xml` — 404 unless an `lote.xml` was placed beside the version; this publisher does not produce XML |
+| Open the XML rendition of a TS 119 602 version, when it has one | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/xml` — 404 unless an `lote.xml` was placed beside the version; this publisher does not produce one |
+| Download a signed XML Trusted List (TS 119 612) | `curl -o trusted-list.xml http://localhost:8080/api/v1/lists/it_example/versions/1/trusted-list.xml` |
+| Download its SHA-256 digest | `curl http://localhost:8080/api/v1/lists/it_example/versions/1/trusted-list.sha2` |
+| The current XML Trusted List, at a stable URL | `curl -o trusted-list.xml http://localhost:8080/lists/it_example/latest/trusted-list.xml` |
+| The current digest, at a stable URL | `curl http://localhost:8080/lists/it_example/latest/trusted-list.sha2` |
+| Verify a downloaded Trusted List against its digest | `test "$(sha256sum trusted-list.xml \| cut -d" " -f1)" = "$(curl -s http://localhost:8080/lists/it_example/latest/trusted-list.sha2)" && echo match` |
 | Download the Trust Inspector evaluation | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/inspector` |
 | Create a Trusted List (admin token) | `curl -X POST http://localhost:8080/api/v1/admin/lists -H "Authorization: Bearer $TLP_ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"family":"wrpac-providers","schemeName":"EU WRPAC Providers List","schemeOperatorName":"Example Scheme","schemeTerritory":"EU","schemeOperatorStreet":"1 Example St","schemeOperatorCountry":"IT","schemeOperatorEmail":"trustedlists@example.eu","baseUrl":"https://example.eu/wrpac-providers","keyFile":"/etc/tlp/signer-key.pem","certFile":"/etc/tlp/signer-cert.pem"}'` — `family` is one of `pid-providers`, `wallet-providers`, `wrpac-providers`, `wrprc-providers` |
 | Health check | `curl http://localhost:8080/healthz` |
@@ -312,7 +352,7 @@ specification is available at `/openapi.yaml` and `/openapi.json`.
 
 ## Authoring workflow 
 
-1. Applicant navigates to `/onboarding` and selects one of the five available
+1. Applicant navigates to `/onboarding` and selects one of the seven available
    families: PID, Wallet, WRPAC, WRPRC or Pub-EAA Providers
 2. Applicant submits entity details, addresses, and one X.509 PEM certificate per
    service (self-signed or CA-issued; see `/docs/certificate-creation`). WRPAC
@@ -370,6 +410,54 @@ or publication.
 
 ## Trusted List families
 
+Eight user-facing families across two standards. The format-aware catalogue
+(`src/core/authoring/list-family-catalogue.ts`) names all of them and states,
+per family, the standard, the artifact format, the profile identifier, the
+allowed statuses, the onboarding route and the lifecycle actions — so no page
+infers a format from a family name.
+
+### ETSI TS 119 612 — XML / XAdES-B-B
+
+| Family | Service type | Initial status | End status | Onboarding |
+|--------|--------------|----------------|------------|------------|
+| EAA Providers | `.../Svctype/EAA` | `recognisedatnationallevel` | `deprecatedatnationallevel` | `/onboarding/eaa-provider` |
+| QEAA Providers | `.../Svctype/EAA/Q` | `granted` | `withdrawn` | `/onboarding/qeaa-provider` |
+
+EAA and QEAA are **service profiles inside a national Trusted List**, not lists
+of their own. An administrator creates an XML Trusted List and declares which
+profiles it accepts; one list may accept EAA, QEAA or both. The onboarding
+family the applicant uses decides the service type and the status vocabulary,
+and the core refuses a family the target list does not accept — not only the
+HTML.
+
+Approval publishes the service with the family's initial status and a status
+starting time taken from the publication event. The administration action —
+**Deprecate national recognition** for EAA, **Withdraw qualified status** for
+QEAA — publishes a *new immutable version* in which the service carries the end
+status and the previous state has moved into `ServiceHistory`, identified by
+`X509SKI` with no certificate. The version that listed the service as current is
+never rewritten. Ordinary republication preserves `StatusStartingTime`.
+
+A published service is identified by its service type plus the SHA-256 of its
+certificate's public key, so a renamed service is still the same service and two
+providers may share a service name.
+
+Each version publishes four files, of which the first three are
+integrity-checked:
+
+```
+trusted-list.xml      the signed XML — the artifact
+trusted-list.sha2     SHA-256 of the exact XML bytes, bare lowercase hex
+manifest.json         format-aware manifest
+inspector.json        Trust Inspector evidence, re-runnable
+```
+
+XML is served as `application/vnd.etsi.tsl+xml`, at immutable version URLs and
+at stable latest URLs ending exactly in `trusted-list.xml` and
+`trusted-list.sha2`.
+
+### ETSI TS 119 602 — JSON / Compact JAdES
+
 The immutable profile registry (`src/core/profiles/registry.ts`) explicitly
 selects profiles at compile, configuration, publication, and reconciliation
 boundaries. It holds the six TS 119 602 families, in annex order:
@@ -382,6 +470,10 @@ boundaries. It holds the six TS 119 602 families, in annex order:
 | WRPRC Providers | G | enabled | `/onboarding/wrprc-provider` |
 | Pub-EAA Providers | H | enabled | `/onboarding/pub-eaa-provider` |
 | Registrars and Registers | — | disabled | — |
+
+Pub-EAA (Annex H) and QEAA are different things and are not interchangeable:
+Annex H is a TS 119 602 JSON list of *publicly issued* attestation providers,
+while QEAA is a TS 119 612 XML service profile for *qualified* providers.
 
 Annex H (Pub-EAA Providers) is the only implemented profile that publishes a
 service status. Every service of a notified provider carries

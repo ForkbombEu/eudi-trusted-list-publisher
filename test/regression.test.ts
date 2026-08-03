@@ -1697,6 +1697,15 @@ describe("OpenAPI route parity", () => {
         "/api/v1/lists/{listKey}/versions/{sequence}/manifest": { get: {} },
         "/api/v1/lists/{listKey}/versions/{sequence}/xml": { get: {} },
         "/api/v1/lists/{listKey}/versions/{sequence}/inspector": { get: {} },
+        /* The TS 119 612 artifacts and their stable latest URLs. */
+        "/api/v1/lists/{listKey}/versions/{sequence}/trusted-list.xml": {
+          get: {},
+        },
+        "/api/v1/lists/{listKey}/versions/{sequence}/trusted-list.sha2": {
+          get: {},
+        },
+        "/lists/{listKey}/latest/trusted-list.xml": { get: {} },
+        "/lists/{listKey}/latest/trusted-list.sha2": { get: {} },
         "/api/v1/admin/lists": { post: {} },
       },
     };

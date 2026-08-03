@@ -145,14 +145,15 @@ publish no service status, so the meaning of approval has to be stated in words.
 ## Catalogue Open column
 
 The Catalogue's last column is **Open** and holds one small button per artifact
-the latest version actually has: **JSON** always, **XML** only when an
-`lote.xml` sits beside that version. The buttons open the artifact in place
-rather than downloading it — a reader scanning the Catalogue wants to look, and
-the version page is where downloading belongs.
+the latest version actually has. A TS 119 602 row offers **JSON** always and
+**XML** only when an `lote.xml` rendition sits beside that version, which this
+publisher does not produce. A TS 119 612 row offers **XML**, which is its only
+artifact. The buttons open the artifact in place rather than downloading it — a
+reader scanning the Catalogue wants to look, and the version page is where
+downloading belongs.
 
-XML is not produced by this publisher, so the second button is normally absent.
-An absent button is the honest rendering: a disabled or dead XML link would
-promise an artifact that does not exist.
+An absent button is the honest rendering: a disabled or dead link would promise
+an artifact that does not exist.
 
 ## Certificate input and guidance
 
@@ -208,3 +209,83 @@ Record** and **Withdrawal Record** — since both versions stay authentic and
 downloadable, and that is exactly the point of a withdrawal that adds a version
 instead of rewriting one. The state chip for `withdrawn` is neutral, not an
 error: a withdrawn notification is a normal end state, not a failure.
+
+## Phase 10 EAA and QEAA
+
+The product now shows two standards. Every page that names a family also says
+which standard and which artifact format it uses, through two neutral chips —
+`ETSI TS 119 612` and `XML / XAdES-B-B` — rendered beside the existing family
+chip. The catalogue module decides both; no page infers a format from a family
+name, which is how a page ends up promising JSON for an XML list.
+
+EAA and QEAA take two adjacent hues in the existing chip palette, 145 and 175,
+the same sibling treatment WRPAC and WRPRC already have at 25 and 345: related
+but distinguishable, because the two families are siblings that must never be
+mistaken for each other.
+
+### Onboarding
+
+The EAA and QEAA forms use the same shell, cards and field styles as the
+TS 119 602 forms and introduce no new CSS. They differ where the standard
+differs:
+
+- the **Scheme Territory is read-only**, taken from the selected Trusted List
+  and shown once a list is chosen. Asking the applicant for a country would
+  invite two values that disagree;
+- a **registration identifier type** selector, because the published prefix is
+  `VAT<CC>-` or `NTR<CC>-` and only the applicant knows which they hold. The
+  help text says the prefix is added for them;
+- a **TSP trade name** that is optional in general and required exactly when
+  the certificate's subject organisation differs from the legal name — the
+  form says so rather than failing later;
+- an **evidence** field, worded for the family: national recognition for EAA,
+  qualified status for QEAA. Its help text states that it is kept for review
+  and never published, because an applicant pasting a decision needs to know
+  where it will end up.
+
+The closing card is **Status and lifecycle**, and it says what the artifact
+cannot: which status approval publishes, and that ending it publishes a new
+version rather than rewriting one.
+
+### Administration
+
+The dashboard is split into three cards — one per standard, then configuration
+— so an administrator picks the standard before the action, rather than reading
+two similarly named links side by side.
+
+The review page carries the same cumulative-publication card as the TS 119 602
+pages, plus a **Review evidence** card that repeats, in place, that the text is
+never published. The lifecycle button takes its wording from the registry:
+**Deprecate national recognition** for EAA, **Withdraw qualified status** for
+QEAA. Both are destructive-styled and behind a confirmation, because they
+publish an immutable version that cannot be taken back. A `superseded`
+application shows both records side by side; its state chip is neutral, not an
+error, because a deprecated recognition is a normal end state.
+
+### Version pages
+
+An XML version page carries four cards: the Trusted List's own values, an
+Integrity card, the Trust Inspector verdict and Downloads. Downloads offers
+**XML**, **SHA-256 digest** and **Inspector report** as primary buttons with the
+manifest as a plain link — the same shape as the JSON pages, naming the
+artifacts this list actually has. The copy never mentions JSON or Compact JAdES.
+
+The Integrity card states `signer trust: not_evaluated` in words: this publisher
+builds no certification path and makes no trust decision, and a page that showed
+a green signature without saying so would imply one.
+
+The latest version says it is also served at the stable
+`/lists/<key>/latest/trusted-list.xml` and `.sha2` URLs, so a reader knows there
+is an address that does not change.
+
+### Create XML Trusted List
+
+The form reuses the onboarding shell. Beyond the TS 119 602 fields it collects
+the national scheme-rules URI, the stable XML distribution URL, and the EU LOTL
+pointer material. The pointer card states that the declared scheme operator and
+the pointer certificates must describe the same list, because the Trust
+Inspector checks exactly that and the failure is otherwise cryptic.
+
+The **Service profiles accepted** card is a checkbox per profile, reusing the
+existing `settings-row` layout. One list may accept EAA, QEAA or both, and only
+the profiles chosen appear on the onboarding forms for that list.
