@@ -36,7 +36,57 @@ Providers (Annex F), WRPRC Providers (Annex G) and Pub-EAA Providers (Annex H).
 
 ### ETSI TS 119 612 V2.4.1 (2025-11)
 
-- Out of scope for this slice. Defines XML-based Trusted Service Lists and XAdES signatures.
+- Title: Electronic Signatures and Infrastructures (ESI); Trusted Lists
+- URL: https://www.etsi.org/deliver/etsi_ts/119600_119699/119612/02.04.01_60/ts_119612v020401p.pdf
+- Defines XML `TrustServiceStatusList` Trusted Lists and their XAdES signature
+- The second standard this project publishes, and the standard behind the EAA
+  Providers and QEAA Providers families. Its artifact is XML signed with an
+  enveloped XAdES-B-B signature, not JSON signed with Compact JAdES.
+
+## ETSI XML Schemas (TS 119 612)
+
+Vendored under `schemas/etsi/119612/`, byte-for-byte, from the ETSI Forge
+`v2.4.1` tag and the schemas that tag imports. Retrieval date: 2026-08-03.
+
+| File | Source URL | SHA-256 | Licence |
+|------|-----------|---------|---------|
+| `19612_xsd.xsd` | https://forge.etsi.org/rep/esi/x19_612_trusted_lists/-/raw/v2.4.1/19612_xsd.xsd | `0cb6ac0e96f9600934d216513f21e4cc5b41f8c8c28a8e42102a8135b24df3e1` | BSD 3-Clause |
+| `19612_additionaltypes_xsd.xsd` | https://forge.etsi.org/rep/esi/x19_612_trusted_lists/-/raw/v2.4.1/19612_additionaltypes_xsd.xsd | `25f9292d8c246cbacab9f345451d64cdb63154a12042ffc675cdf2c88896948b` | BSD 3-Clause |
+| `19612_sie_xsd.xsd` | https://forge.etsi.org/rep/esi/x19_612_trusted_lists/-/raw/v2.4.1/19612_sie_xsd.xsd | `382fcf497770a5842ac9975db0f14020c33c936b1903e057548ad6724cf42d69` | BSD 3-Clause |
+| `1913201-XAdES01903v132.xsd` | https://forge.etsi.org/rep/esi/x19_13201_xades/-/raw/v1.3.1/1913201-XAdES01903v132.xsd | `457745286eaa292ae1aaa6e976e0f30eeceb0a37cc2301151576175e0ae1986c` | BSD 3-Clause |
+| `1913201-XAdES01903v141.xsd` | https://forge.etsi.org/rep/esi/x19_13201_xades/-/raw/v1.3.1/1913201-XAdES01903v141.xsd | `286bd63f122aafb907c03724c5959455d114020e523631cc22e90c5f5aa667e2` | BSD 3-Clause |
+| `xmldsig-core-schema.xsd` | http://www.w3.org/TR/2008/REC-xmldsig-core-20080610/xmldsig-core-schema.xsd | `35cf8197da812c85e40d57891b35c94187569ed474a2dac813ce5090dafcd35c` | W3C Document Licence |
+| `xml.xsd` | http://www.w3.org/2001/xml.xsd | `61960fb3131e38022caad5360e2f33a3382578ab3c80cd58bd74320ede61b20c` | W3C Document Licence |
+| `xml-2009.xsd` | http://www.w3.org/2009/01/xml.xsd | `cc701736c42cc64126fad063bb95f94484b5de3b5f808a86ea098b0957aff829` | W3C Document Licence |
+
+`LICENSE` beside them is the ETSI Forge licence file, copied from the same two
+tags — the two repositories publish identical text.
+
+### Where the XAdES schema came from
+
+`19612_sie_xsd.xsd` and `19612_additionaltypes_xsd.xsd` import the XAdES 1.3.2
+schema from `https://uri.etsi.org/01903/v1.3.2/XAdES01903v132-201601.xsd`. That
+host returns HTTP 403 to this project, the same refusal `etsi.org` gives the
+PDFs. The identical schema is published on ETSI Forge as
+`esi/x19_13201_xades`, whose newest tag is `v1.3.1`, and the vendored file is
+taken from there. Its `targetNamespace` is
+`http://uri.etsi.org/01903/v1.3.2#`, which is what the importing schemas ask
+for; the tag names the ETSI *deliverable* version, not the namespace version.
+
+### Offline resolution without rewriting
+
+Every `schemaLocation` in these files is an absolute URL. Rewriting them to
+relative paths would make the vendored bytes differ from the published bytes
+and void the hashes above, so this project does not rewrite them. Instead
+`src/core/tsl612/schema.ts` registers a libxml2 input provider that answers
+those exact URLs from `schemas/etsi/119612/`, and
+`src/core/tsl612/schema-sources.ts` is the single URL-to-file mapping. A URL
+this project has not vendored is not matched, so a missing import fails
+validation rather than reaching the network. Both `http://` and `https://`
+spellings of the W3C schemas resolve to the same file, because the importing
+schemas do not agree on which to print.
+
+Tests must never fetch schemas from the network.
 
 ## ETSI JSON Schemas
 

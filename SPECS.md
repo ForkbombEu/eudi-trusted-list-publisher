@@ -54,6 +54,12 @@ must never be committed or uploaded through a public web interface.
 - **commander** (^12.x): CLI argument parsing
 - **ajv-formats** (^3.x): JSON Schema format validation (date-time, uri)
 - **yaml** (^2.x): OpenAPI YAML → JSON parsing
+- **libxml2-wasm** (^0.7.x): XML parsing, offline XML Schema validation and
+  Exclusive XML Canonicalisation for TS 119 612 Trusted Lists. WebAssembly, so
+  there is no native build step and no Java. Node.js ships none of these three,
+  and canonicalisation in particular cannot be approximated: a signature over
+  wrongly canonicalised bytes verifies locally and nowhere else. The XAdES
+  structure itself is written in this repository, not taken from a library.
 
 ### Dev dependencies
 

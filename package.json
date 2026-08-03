@@ -9,7 +9,7 @@
     "trusted-list-publisher": "dist/src/cli/main.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-xml-schemas.mjs",
     "format": "prettier --write 'src/**/*.ts' 'test/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts' 'test/**/*.ts'",
     "lint": "tsc -p tsconfig.json --noEmit && npm run lint:design",
@@ -36,6 +36,8 @@
     "ajv-formats": "^3.0.1",
     "commander": "^13.1.0",
     "jose": "^5.10.0",
+    "libxml2-wasm": "^0.7.1",
+    "libxml2-wasm": "^0.7.1",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
