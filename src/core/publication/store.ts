@@ -22,8 +22,8 @@ export interface StoreConfig {
   publicationDir: string;
 }
 
-const SAFE_KEY_RE = /^[a-z0-9][a-z0-9_.@()-]{0,99}$/;
-const SAFE_SEQ_RE = /^[1-9][0-9]{0,9}$/;
+export const SAFE_KEY_RE = /^[a-z0-9][a-z0-9_.@()-]{0,99}$/;
+export const SAFE_SEQ_RE = /^[1-9][0-9]{0,9}$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -42,7 +42,7 @@ export interface FsOps {
   rmdirSync: typeof fsRmdirSync;
 }
 
-const defaultFsOps: FsOps = {
+export const defaultFsOps: FsOps = {
   existsSync: fsExistsSync,
   lstatSync: fsLstatSync,
   statSync: fsStatSync,
@@ -56,11 +56,15 @@ const defaultFsOps: FsOps = {
   rmdirSync: fsRmdirSync,
 };
 
-function assertSafeSegment(v: string, p: RegExp, label: string): void {
+export function assertSafeSegment(v: string, p: RegExp, label: string): void {
   if (!p.test(v)) throw new Error(`Unsafe ${label}: "${v}"`);
 }
 
-function rejectSymlinksInPath(fs: FsOps, base: string, target: string): void {
+export function rejectSymlinksInPath(
+  fs: FsOps,
+  base: string,
+  target: string,
+): void {
   const parts = normalize(resolve(base, target))
     .slice(base.length)
     .split(sep)
@@ -74,7 +78,7 @@ function rejectSymlinksInPath(fs: FsOps, base: string, target: string): void {
   }
 }
 
-function removeDir(fs: FsOps, dir: string): void {
+export function removeDir(fs: FsOps, dir: string): void {
   if (!fs.existsSync(dir)) return;
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
@@ -100,7 +104,7 @@ function sha256(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-function resolveCanonicalRoot(fs: FsOps, rawPath: string): string {
+export function resolveCanonicalRoot(fs: FsOps, rawPath: string): string {
   const target = resolve(rawPath);
   if (fs.existsSync(target)) {
     if (fs.lstatSync(target).isSymbolicLink()) {

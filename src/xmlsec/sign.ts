@@ -46,6 +46,12 @@ export interface SignOptions {
    * signature from this package, which is all TS 119 612 asks for.
    */
   readonly signatureId?: string;
+  /**
+   * The media type of the document being signed, published in the XAdES
+   * `DataObjectFormat`. EN 319 132-1 requires one such property per signed data
+   * object other than the SignedProperties themselves.
+   */
+  readonly dataObjectMimeType?: string;
 }
 
 const PLACEHOLDER_DIGEST = "A".repeat(44);
@@ -70,6 +76,7 @@ function buildQualifyingProperties(
   ids: Ids,
   certificate: X509Certificate,
   signingTime: Date,
+  dataObjectMimeType: string,
 ): string {
   const digest = createHash("sha256")
     .update(Buffer.from(certificate.raw))
@@ -91,6 +98,11 @@ function buildQualifyingProperties(
         </xades:Cert>
       </xades:SigningCertificateV2>
     </xades:SignedSignatureProperties>
+    <xades:SignedDataObjectProperties>
+      <xades:DataObjectFormat ObjectReference="#${ids.documentReference}">
+        <xades:MimeType>${dataObjectMimeType}</xades:MimeType>
+      </xades:DataObjectFormat>
+    </xades:SignedDataObjectProperties>
   </xades:SignedProperties>
 </xades:QualifyingProperties>`;
 }
@@ -175,6 +187,7 @@ export function signEnveloped(xml: string, options: SignOptions): string {
     ids,
     certificate,
     signingTime,
+    options.dataObjectMimeType ?? "text/xml",
   );
 
   let rootName: string;

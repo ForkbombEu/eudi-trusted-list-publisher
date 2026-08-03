@@ -13,6 +13,7 @@ import {
   verifyEnveloped,
   type VerifyResult,
 } from "../../xmlsec/index.js";
+import { TSL_MEDIA_TYPE } from "./constants.js";
 import { validateTslXml } from "./schema.js";
 import {
   checkTrustedListSigningCertificate,
@@ -87,6 +88,7 @@ export function signTrustedList(
   const signed = signEnveloped(xml, {
     privateKeyPem: options.privateKeyPem,
     certificatePem: options.certificatePem,
+    dataObjectMimeType: TSL_MEDIA_TYPE,
     ...(options.signingTime ? { signingTime: options.signingTime } : {}),
   });
 

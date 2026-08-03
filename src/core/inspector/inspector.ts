@@ -1,15 +1,23 @@
 /**
  * Trust Inspector client.
  *
- * The Inspector (WE BUILD Trusted List Audit API) assesses a TS 119 602
- * artifact and reports which requirements it satisfies. The Compact JAdES
- * artifact is what gets submitted, never the decoded LoTE: half the Annex D/E
- * requirements are signature requirements, and a decoded LoTE carries no
- * signature evidence at all.
+ * The Inspector (WE BUILD Trusted List Audit API) assesses a Trusted List
+ * artifact and reports which requirements it satisfies.
+ *
+ * What gets submitted is always the *signed* artifact, never a decoded one:
+ * half the requirements are signature requirements, and a decoded document
+ * carries no signature evidence at all. For TS 119 602 that is the Compact
+ * JAdES serialization; for TS 119 612 it is the signed XML Trusted List, whose
+ * XAdES signature is inside the file.
+ *
+ * The Inspector answers under `ts119602` or `ts119612` depending on which
+ * standard it decided applies, so the summary records which section it read.
  */
 
 export const DEFAULT_INSPECTOR_BASE_URL = "https://trust-inspector.credimi.io";
 const ARTIFACT_PATH = "/api/audit/artifact";
+/** The media type a TS 119 612 Trusted List is submitted and served under. */
+const TSL_XML_CONTENT_TYPE = "application/vnd.etsi.tsl+xml";
 export const INSPECTOR_EVALUATION_SCHEMA_VERSION = 1;
 
 /** Statuses a single Inspector check can carry. */
@@ -46,6 +54,8 @@ export interface InspectorCheck {
  * What the version page shows. It is derived once, when the evaluation is
  * stored, so the page never has to re-interpret the raw report.
  */
+export type InspectorStandard = "TS 119 602" | "TS 119 612";
+
 export interface InspectorSummary {
   /**
    * `pass` and `fail` are Inspector verdicts; `unavailable` means the Inspector
@@ -57,6 +67,16 @@ export interface InspectorSummary {
   error?: string;
   evaluatedAt: string;
   inspectorBaseUrl: string;
+  /** Which standard's check section the verdict was read from. */
+  standard?: InspectorStandard;
+  /**
+   * The service type identifiers the submitted artifact publishes.
+   *
+   * The Inspector's `extracted` block does not return them, so they are read
+   * from the artifact by this publisher and recorded here. They are stated as
+   * what was submitted, not as something the Inspector detected on its own.
+   */
+  serviceTypes?: string[];
   /** Detected family/profile, e.g. `wallet_providers`. */
   profile?: string;
   profileStatus?: string;
@@ -90,8 +110,10 @@ export interface InspectorEvaluation {
 }
 
 export interface InspectorRequest {
-  /** Compact JAdES serialization. */
-  compactJades: string;
+  /** Compact JAdES serialization — the TS 119 602 artifact. */
+  compactJades?: string;
+  /** Signed XML Trusted List — the TS 119 612 artifact. */
+  trustedListXml?: string;
   /** Free-text origin recorded in the report, e.g. the version URL. */
   source: string;
   /** Declared metadata that helps the Inspector classify the artifact. */
@@ -101,6 +123,8 @@ export interface InspectorRequest {
     schemeOperatorName?: string;
     schemeTerritory?: string;
   };
+  /** Service types read from the artifact, recorded in the summary. */
+  serviceTypes?: readonly string[];
 }
 
 export interface InspectorClientOptions {
@@ -111,16 +135,20 @@ export interface InspectorClientOptions {
   now?: () => Date;
 }
 
+interface RawSection {
+  applicable?: boolean;
+  conformanceLevel?: InspectorConformanceLevel;
+  score?: number | null;
+  checks?: InspectorCheck[];
+  mandatoryFailures?: string[];
+}
+
 interface RawResult {
   detected?: { format?: string; artifactKind?: string };
   ts119602Classification?: { profile?: string; profileStatus?: string };
-  ts119602?: {
-    applicable?: boolean;
-    conformanceLevel?: InspectorConformanceLevel;
-    score?: number | null;
-    checks?: InspectorCheck[];
-    mandatoryFailures?: string[];
-  };
+  ts119602?: RawSection;
+  ts119612?: RawSection;
+  standardApplicability?: Record<string, string>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -189,6 +217,18 @@ export class InspectorClient {
       },
     });
 
+    const isXml = typeof request.trustedListXml === "string";
+    const content = isXml ? request.trustedListXml! : request.compactJades;
+    if (typeof content !== "string" || content === "")
+      return unavailable(
+        "No artifact was supplied to assess: pass either compactJades or trustedListXml.",
+      );
+    if (isXml && typeof request.compactJades === "string")
+      return unavailable(
+        "Both a Compact JAdES and an XML Trusted List were supplied; exactly one artifact is assessed at a time.",
+      );
+    const contentType = isXml ? TSL_XML_CONTENT_TYPE : "application/jose";
+
     let body: unknown;
     try {
       const controller = new AbortController();
@@ -200,9 +240,9 @@ export class InspectorClient {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              content: request.compactJades,
+              content,
               source: request.source,
-              contentType: "application/jose",
+              contentType,
               ...(request.declared
                 ? {
                     declared: {
@@ -236,25 +276,35 @@ export class InspectorClient {
       return unavailable("Trust Inspector response contained no result.");
 
     const result = body.result as RawResult;
-    const checks = Array.isArray(result.ts119602?.checks)
-      ? result.ts119602.checks
-      : [];
+    /*
+      The verdict comes from the section for the standard that was submitted.
+      Reading the TS 119 602 section for an XML Trusted List would report zero
+      checks and call that a pass.
+    */
+    const section: RawSection | undefined = isXml
+      ? result.ts119612
+      : result.ts119602;
+    const checks = Array.isArray(section?.checks) ? section.checks : [];
     const failures = checks.filter(locallyDecidable);
     const summary: InspectorSummary = {
       status: failures.length === 0 ? "pass" : "fail",
       evaluatedAt,
       inspectorBaseUrl: this.baseUrl,
+      standard: isXml ? "TS 119 612" : "TS 119 602",
+      ...(request.serviceTypes
+        ? { serviceTypes: [...request.serviceTypes] }
+        : {}),
       profile: result.ts119602Classification?.profile,
       profileStatus: result.ts119602Classification?.profileStatus,
       detectedFormat: result.detected?.format,
       detectedArtifactKind: result.detected?.artifactKind,
-      conformanceLevel: result.ts119602?.conformanceLevel,
-      score: result.ts119602?.score ?? null,
+      conformanceLevel: section?.conformanceLevel,
+      score: section?.score ?? null,
       counts: countChecks(checks),
       locallyDecidableFailures: failures.map(
         (check) => `${check.id}: ${check.message}`,
       ),
-      mandatoryFailures: result.ts119602?.mandatoryFailures ?? [],
+      mandatoryFailures: section?.mandatoryFailures ?? [],
     };
     return {
       schemaVersion: INSPECTOR_EVALUATION_SCHEMA_VERSION,
