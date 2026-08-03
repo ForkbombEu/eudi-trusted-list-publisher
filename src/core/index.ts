@@ -138,3 +138,101 @@ export {
   type PublishResult,
   type PartialCommitResult,
 } from "./authoring/index.js";
+
+/* ETSI TS 119 612 — XML Trusted Lists. */
+export {
+  TSL_TAG,
+  TSL_VERSION_IDENTIFIER,
+  TSL_TYPE_EU_GENERIC,
+  TSL_MEDIA_TYPE,
+  STATUS_DETERMINATION_EU_APPROPRIATE,
+  HISTORICAL_INFORMATION_PERIOD,
+  SVCTYPE_EAA,
+  SVCTYPE_QEAA,
+  SVCSTATUS_RECOGNISED_AT_NATIONAL_LEVEL,
+  SVCSTATUS_DEPRECATED_AT_NATIONAL_LEVEL,
+  SVCSTATUS_GRANTED,
+  SVCSTATUS_WITHDRAWN,
+} from "./tsl612/constants.js";
+export {
+  TSL_PROFILE_REGISTRY,
+  getTslProfile,
+  isTslFamily,
+  tslProfileForServiceType,
+  type TslFamily,
+  type TslServiceProfile,
+} from "./tsl612/registry.js";
+export { compileTrustedList, TslCompileError } from "./tsl612/compile.js";
+export {
+  readTrustedList,
+  readTrustedListMetadata,
+  TslReadError,
+} from "./tsl612/read.js";
+export { validateTslXml, resetTslSchemaValidator } from "./tsl612/schema.js";
+export { VENDORED_SCHEMAS } from "./tsl612/schema-sources.js";
+export {
+  signTrustedList,
+  verifyTrustedList,
+  TslSigningError,
+  type SignedTrustedList,
+  type TrustedListVerification,
+} from "./tsl612/sign.js";
+export {
+  checkTrustedListSigningCertificate,
+  checkTrustedListSigningCertificatePem,
+  type SigningCertificateExpectation,
+} from "./tsl612/signing-certificate.js";
+export {
+  publishTrustedList,
+  evaluatePublishedTrustedList,
+  type PublishedTrustedList,
+} from "./tsl612/publish.js";
+export {
+  createTrustedListList,
+  type CreateTrustedListRequest,
+  type CreateTrustedListResult,
+} from "./tsl612/create-list.js";
+export {
+  defaultLotlPointer,
+  parseTrustedListConfigEntry,
+  allowsServiceProfile,
+  type TrustedListConfigEntry,
+} from "./tsl612/list-config.js";
+export type {
+  TrustedListInput,
+  TslProvider,
+  TslService,
+  TslServiceHistoryInstance,
+} from "./tsl612/model.js";
+export {
+  TrustedListStore,
+  type TrustedListVersionArtifacts,
+} from "./publication/tsl-store.js";
+export {
+  buildTrustedListManifest,
+  sha2FileContent,
+  type TrustedListManifest,
+} from "./publication/tsl-manifest.js";
+export {
+  PublicationReader,
+  ListKeyCollisionError,
+  type ListSummary,
+  type VersionDetail,
+  type VersionSummary,
+} from "./publication/reader.js";
+export {
+  TslApplicationService,
+  type PublishPreview,
+  type TslApplicationServiceConfig,
+} from "./tsl612/authoring/application-service.js";
+export { TslApplicationStore } from "./tsl612/authoring/application-store.js";
+export {
+  parseTslSubmission,
+  type ParseResult as TslParseResult,
+} from "./tsl612/authoring/submission-parser.js";
+export {
+  formattedRegistrationIdentifier,
+  servicePublicKeyFingerprint,
+  type TslApplicationRecord,
+  type TslApplicationState,
+} from "./tsl612/authoring/application-model.js";

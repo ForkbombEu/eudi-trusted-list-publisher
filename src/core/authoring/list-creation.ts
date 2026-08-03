@@ -20,6 +20,7 @@ import {
   type SigningConfig,
   type SigningConfigEntry,
 } from "./signing-config.js";
+import type { TrustedListConfigEntry } from "../tsl612/list-config.js";
 import {
   InspectorClient,
   type InspectorEvaluation,
@@ -235,15 +236,21 @@ function validateRequest(request: CreateListRequest): string | null {
   return null;
 }
 
-/** Rewrites the signing configuration file with one more list. */
-function appendSigningConfigEntry(
+/**
+ * Rewrites the signing configuration file with one more list.
+ *
+ * Both standards share one `lists:` array, so the TS 119 612 entries are
+ * written back alongside the TS 119 602 ones. Serializing only `existing.lists`
+ * would silently delete every XML Trusted List the file held.
+ */
+export function writeSigningConfigWithEntry(
   path: string,
-  entry: SigningConfigEntry,
+  entry: SigningConfigEntry | TrustedListConfigEntry,
 ): void {
   const existing: SigningConfig = existsSync(path)
     ? loadSigningConfig(path)
-    : { lists: [] };
-  const lists = [...existing.lists, entry];
+    : { lists: [], trustedLists: [] };
+  const lists = [...existing.lists, ...(existing.trustedLists ?? []), entry];
   const serialized =
     path.endsWith(".yaml") || path.endsWith(".yml")
       ? stringifyYaml({ lists })
@@ -251,6 +258,13 @@ function appendSigningConfigEntry(
   const tmpPath = `${path}.tmp_${randomBytes(6).toString("hex")}`;
   writeFileSync(tmpPath, serialized, { encoding: "utf-8" });
   renameSync(tmpPath, path);
+}
+
+function appendSigningConfigEntry(
+  path: string,
+  entry: SigningConfigEntry,
+): void {
+  writeSigningConfigWithEntry(path, entry);
 }
 
 /**

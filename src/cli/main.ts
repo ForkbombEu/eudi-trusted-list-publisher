@@ -3,19 +3,29 @@ import { Command } from "commander";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import * as crypto from "node:crypto";
+/*
+  The CLI imports the modules it uses, not the `core/index.js` barrel.
+
+  The barrel also exports the TS 119 612 engine, which pulls in libxml2-wasm
+  and costs about a second of WebAssembly initialisation. The CLI publishes
+  JSON LoTE artifacts and never touches XML, so paying that on every
+  invocation — including `--help` — would be a startup cost for nothing.
+*/
+import { compile } from "../core/compile/compile.js";
 import {
-  compile,
   validateAuthoring,
   validateEtsiStruct,
+} from "../core/validate/validate.js";
+import {
   sign,
   serializeCompactJAdES,
   serializeSignedLoTE,
-  verify,
-  publish,
-  PublicationStore,
-  PublicationError,
-} from "../core/index.js";
-import type { AuthoringInput, LoTEDocument } from "../core/index.js";
+} from "../core/signing/signing.js";
+import { verify } from "../core/verification/verification.js";
+import { publish, PublicationError } from "../core/publication/manifest.js";
+import { PublicationStore } from "../core/publication/store.js";
+import type { AuthoringInput } from "../core/model/authoring.js";
+import type { LoTEDocument } from "../core/model/types.js";
 
 const ASCII_ART = `
 ╔══════════════════════════════════════════╗

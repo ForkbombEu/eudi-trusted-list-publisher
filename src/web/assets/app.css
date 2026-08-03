@@ -170,6 +170,18 @@ a .chip {
   color: oklch(0.4 0.11 175);
 }
 
+.chip-standard {
+  background: var(--bg-muted);
+  border-color: var(--border);
+  color: var(--fg-muted);
+}
+
+.chip-format {
+  background: oklch(0.95 0.03 265);
+  border-color: oklch(0.84 0.06 265);
+  color: oklch(0.42 0.12 265);
+}
+
 .chip-family--unknown {
   background: var(--bg-muted);
   border-color: var(--border);

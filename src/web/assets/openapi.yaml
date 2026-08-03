@@ -135,15 +135,108 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Manifest"
+  /api/v1/lists/{listKey}/versions/{sequence}/trusted-list.xml:
+    get:
+      summary: Download the signed XML Trusted List of a version
+      description: >-
+        The TS 119 612 artifact of one immutable version, served as
+        application/vnd.etsi.tsl+xml. Its enveloped XAdES-B-B signature is
+        inside the document, so there is no separate signature file. Returns
+        404 for a TS 119 602 list, whose artifacts are the JSON LoTE and its
+        detached Compact JAdES.
+      operationId: getTrustedListXml
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The signed XML Trusted List
+          content:
+            application/vnd.etsi.tsl+xml: {}
+        "404":
+          description: Not an XML Trusted List, or no such version
+          content:
+            application/json: {}
+  /api/v1/lists/{listKey}/versions/{sequence}/trusted-list.sha2:
+    get:
+      summary: Download the SHA-256 digest of the published XML bytes
+      description: >-
+        The lowercase hexadecimal SHA-256 of the exact bytes served at
+        trusted-list.xml for the same version, and nothing else.
+      operationId: getTrustedListSha2
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The SHA-256 digest, as 64 hexadecimal characters
+          content:
+            text/plain: {}
+        "404":
+          description: Not an XML Trusted List, or no such version
+          content:
+            application/json: {}
+  /lists/{listKey}/latest/trusted-list.xml:
+    get:
+      summary: The current signed XML Trusted List, at a stable URL
+      description: >-
+        Always the newest version of the list. The URL does not change when a
+        version is published, so a consumer can poll one address.
+      operationId: getLatestTrustedListXml
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The signed XML Trusted List of the newest version
+          content:
+            application/vnd.etsi.tsl+xml: {}
+        "404":
+          description: No XML Trusted List is published under this key
+  /lists/{listKey}/latest/trusted-list.sha2:
+    get:
+      summary: The SHA-256 of the current XML Trusted List, at a stable URL
+      operationId: getLatestTrustedListSha2
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The SHA-256 digest of the newest version's XML bytes
+          content:
+            text/plain: {}
+        "404":
+          description: No XML Trusted List is published under this key
   /api/v1/lists/{listKey}/versions/{sequence}/xml:
     get:
-      summary: Open the XML rendition of a version, when one exists
+      summary: Open the XML rendition of a TS 119 602 version, when one exists
       description: >-
-        This publisher produces the JSON LoTE and its Compact JAdES signature;
-        TS 119 612 XML and XAdES are out of scope, so a version normally has no
-        XML rendition and this returns 404. The Catalogue links XML only for
-        versions that actually have one. Add download=1 to save it instead of
-        opening it.
+        A TS 119 602 JSON list may have an XML rendition placed beside its
+        artifacts; this publisher does not produce one, so it normally returns
+        404. This is not the TS 119 612 route: an XML Trusted List is served at
+        trusted-list.xml. Add download=1 to save it instead of opening it.
       operationId: getLoteXml
       parameters:
         - name: listKey

@@ -46,7 +46,35 @@ import {
   parseInspectorEvaluation,
   versionDownloadsHtml,
 } from "./views/inspector-panel.js";
-import { inspectorStatusLabel } from "../core/inspector/inspector.js";
+import {
+  inspectorStatusLabel,
+  InspectorClient,
+} from "../core/inspector/inspector.js";
+import { TrustedListStore } from "../core/publication/tsl-store.js";
+import { PublicationReader } from "../core/publication/reader.js";
+import { TslApplicationStore } from "../core/tsl612/authoring/application-store.js";
+import { TslApplicationService } from "../core/tsl612/authoring/application-service.js";
+import { parseTslSubmission } from "../core/tsl612/authoring/submission-parser.js";
+import { createTrustedListList } from "../core/tsl612/create-list.js";
+import { TSL_MEDIA_TYPE } from "../core/tsl612/constants.js";
+import { type TslFamily } from "../core/tsl612/registry.js";
+import {
+  getTrustedListConfigsForFamily,
+  findTrustedListConfig,
+} from "../core/authoring/signing-config.js";
+import {
+  eaaProviderFormHtml,
+  qeaaProviderFormHtml,
+  type TrustedListOption,
+} from "./views/tsl612-onboarding.js";
+import {
+  tslApplicationsHtml,
+  tslApplicationDetailHtml,
+  trustedListVersionHtml,
+} from "./views/tsl612-admin.js";
+import { createTrustedListFormHtml } from "./views/tsl612-list-creation.js";
+import { familyChip, listChip } from "./views/colors.js";
+import { parseInspectorEvaluation as parseTslInspector } from "./views/inspector-panel.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -57,6 +85,8 @@ const MIME: Record<string, string> = {
   ".yaml": "application/yaml",
   ".yml": "application/yaml",
   ".jades": "application/octet-stream",
+  ".xml": TSL_MEDIA_TYPE,
+  ".sha2": "text/plain; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
 };
 
@@ -415,6 +445,32 @@ const API_ROUTES: ApiRoute[] = [
   },
   {
     method: "GET",
+    path: "/api/v1/lists/{listKey}/versions/{sequence}/trusted-list.xml",
+    matcher:
+      /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/trusted-list\.xml$/,
+    handler: "getTrustedListXml",
+  },
+  {
+    method: "GET",
+    path: "/api/v1/lists/{listKey}/versions/{sequence}/trusted-list.sha2",
+    matcher:
+      /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/trusted-list\.sha2$/,
+    handler: "getTrustedListSha2",
+  },
+  {
+    method: "GET",
+    path: "/lists/{listKey}/latest/trusted-list.xml",
+    matcher: /^\/lists\/([a-z0-9_.@()-]+)\/latest\/trusted-list\.xml$/,
+    handler: "getLatestTrustedListXml",
+  },
+  {
+    method: "GET",
+    path: "/lists/{listKey}/latest/trusted-list.sha2",
+    matcher: /^\/lists\/([a-z0-9_.@()-]+)\/latest\/trusted-list\.sha2$/,
+    handler: "getLatestTrustedListSha2",
+  },
+  {
+    method: "GET",
     path: "/api/v1/lists/{listKey}/versions/{sequence}/lote",
     matcher: /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/lote$/,
     handler: "getLoteJson",
@@ -542,6 +598,18 @@ export function createWebServer(config: ServerConfig) {
     publicationDir: config.publicationDir,
   });
 
+  /*
+    The TS 119 612 side. It shares the publication root with the JSON store —
+    a list key names one directory — and the reader in front of both decides
+    which format a list is by what is actually on disk.
+  */
+  const trustedListStore = new TrustedListStore({
+    publicationDir: config.publicationDir,
+  });
+  const publicationReader = new PublicationReader(store, trustedListStore);
+  const inspectorClient = new InspectorClient();
+  let tslApplicationService: TslApplicationService | null = null;
+
   let authoringStore: AuthoringStore | null = null;
   let settingsStore: SettingsStore | null = null;
   let signingConfig: SigningConfig | null = null;
@@ -557,6 +625,21 @@ export function createWebServer(config: ServerConfig) {
 
   if (guiEnabled && config.authoringDir) {
     authoringStore = new AuthoringStore({ authoringDir: config.authoringDir });
+    /* TS 119 612 applications are stored apart from the TS 119 602 ones: the
+       two record shapes share no fields beyond an id and a state. */
+    tslApplicationService = new TslApplicationService({
+      applications: new TslApplicationStore({
+        applicationsDir: resolve(config.authoringDir, "xml-applications"),
+      }),
+      store: trustedListStore,
+      trustedListConfig: (listKey) =>
+        signingConfig
+          ? findTrustedListConfig(signingConfig, listKey)
+          : undefined,
+      inspector: inspectorClient,
+      isAutoApprove: (family, listKey) =>
+        settingsStore ? settingsStore.isAutoApprove(family, listKey) : false,
+    });
     // Administrator settings are mutable state, so they live beside the
     // authoring records rather than in the immutable publication store.
     settingsStore = new SettingsStore({ settingsDir: config.authoringDir });
@@ -817,8 +900,33 @@ export function createWebServer(config: ServerConfig) {
       return;
     }
 
+    /*
+      The stable latest URLs. They end exactly in `trusted-list.xml` and
+      `trusted-list.sha2`, so a consumer can hard-code one URL and always get
+      the current version's bytes.
+    */
+    const latestMatch = path.match(
+      /^\/lists\/([a-z0-9_.@()-]+)\/latest\/(trusted-list\.xml|trusted-list\.sha2)$/,
+    );
+    if (latestMatch) {
+      serveTrustedListArtifact(
+        res,
+        latestMatch[1]!,
+        publicationReader.latestXmlSequence(latestMatch[1]!),
+        latestMatch[2]!,
+      );
+      logRequest("GET", path, res.statusCode, requestId);
+      return;
+    }
+
     const listMatch = path.match(/^\/lists\/([a-z0-9_.@()-]+)$/);
     if (listMatch) {
+      if (publicationReader.formatOf(listMatch[1]!) === "xml") {
+        void serveTrustedListDetail(res, listMatch[1]!).then(() => {
+          logRequest("GET", path, res.statusCode, requestId);
+        });
+        return;
+      }
       serveListDetail(res, store, listMatch[1]!);
       logRequest("GET", path, res.statusCode, requestId);
       return;
@@ -828,12 +936,14 @@ export function createWebServer(config: ServerConfig) {
       /^\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)$/,
     );
     if (versionMatch) {
-      serveVersionDetail(
-        res,
-        store,
-        versionMatch[1]!,
-        parseInt(versionMatch[2]!, 10),
-      );
+      const listKey = versionMatch[1]!;
+      const sequence = parseInt(versionMatch[2]!, 10);
+      if (publicationReader.formatOf(listKey) === "xml") {
+        serveTrustedListVersion(res, listKey, sequence);
+        logRequest("GET", path, res.statusCode, requestId);
+        return;
+      }
+      serveVersionDetail(res, store, listKey, sequence);
       logRequest("GET", path, res.statusCode, requestId);
       return;
     }
@@ -857,6 +967,116 @@ export function createWebServer(config: ServerConfig) {
 
     send404(res);
     logRequest("GET", path, 404, requestId);
+  }
+
+  /** Serves `trusted-list.xml` or `trusted-list.sha2` of one version. */
+  function serveTrustedListArtifact(
+    res: ServerResponse,
+    listKey: string,
+    sequenceNumber: number | null,
+    file: string,
+  ): void {
+    if (sequenceNumber === null) {
+      send404(res);
+      return;
+    }
+    const artifacts = publicationReader.xmlVersion(listKey, sequenceNumber);
+    if (!artifacts) {
+      send404(res);
+      return;
+    }
+    const isXml = file === "trusted-list.xml";
+    const body = isXml ? artifacts.xml : artifacts.sha2;
+    res.writeHead(200, {
+      ...securityHeaders(),
+      "Content-Type": isXml ? TSL_MEDIA_TYPE : "text/plain; charset=utf-8",
+      "Content-Length": Buffer.byteLength(body),
+      "Cache-Control": "no-store",
+    });
+    res.end(body);
+  }
+
+  async function serveTrustedListDetail(
+    res: ServerResponse,
+    listKey: string,
+  ): Promise<void> {
+    const versions = await publicationReader.versions(listKey);
+    if (versions.length === 0) {
+      send404(res);
+      return;
+    }
+    const summary = await publicationReader.listSummary(listKey);
+    const rows = versions
+      .slice()
+      .reverse()
+      .map(
+        (version) => `
+        <tr>
+          <td><a href="/lists/${encodeURIComponent(listKey)}/versions/${version.sequenceNumber}">${version.sequenceNumber}</a></td>
+          <td>${escapeHtml(version.issueDate)}</td>
+          <td>${escapeHtml(version.nextUpdateDate)}</td>
+          <td>${version.signatureValid ? "valid" : "invalid"}</td>
+          <td>${version.schemaValid ? "valid" : "invalid"}</td>
+          <td><a class="btn btn-outline btn-sm" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${version.sequenceNumber}/trusted-list.xml">XML</a></td>
+        </tr>`,
+      )
+      .join("");
+    const body = `
+<h1>${escapeHtml(listKey)}</h1>
+<p>${listChip(listKey)} ${summary?.family ? familyChip(summary.family) : ""} <span class="chip chip-standard">ETSI TS 119 612</span> <span class="chip chip-format">XML / XAdES-B-B</span></p>
+<div class="card">
+  <h2>Trusted List</h2>
+  <table class="kv-table"><tbody>
+    <tr><th>Scheme operator</th><td>${escapeHtml(summary?.schemeOperatorName ?? "")}</td></tr>
+    <tr><th>Scheme territory</th><td><code>${escapeHtml(summary?.territory ?? "")}</code></td></tr>
+    <tr><th>Versions</th><td>${versions.length}</td></tr>
+  </tbody></table>
+  <p class="field-help">Stable latest URLs:
+    <a href="/lists/${encodeURIComponent(listKey)}/latest/trusted-list.xml"><code>/lists/${escapeHtml(listKey)}/latest/trusted-list.xml</code></a> and
+    <a href="/lists/${encodeURIComponent(listKey)}/latest/trusted-list.sha2"><code>/lists/${escapeHtml(listKey)}/latest/trusted-list.sha2</code></a>.
+  </p>
+</div>
+<div class="card">
+  <h2>Versions</h2>
+  <table class="catalogue-table">
+    <thead><tr><th>Sequence</th><th>Issued</th><th>Next update</th><th>Signature</th><th>Schema</th><th>Open</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+</div>`;
+    sendHtml(res, 200, page(listKey, body));
+  }
+
+  function serveTrustedListVersion(
+    res: ServerResponse,
+    listKey: string,
+    sequenceNumber: number,
+  ): void {
+    const artifacts = publicationReader.xmlVersion(listKey, sequenceNumber);
+    if (!artifacts) {
+      send404(res);
+      return;
+    }
+    const stored = publicationReader.inspectorEvaluation(
+      listKey,
+      sequenceNumber,
+      "xml",
+    );
+    const evaluation = stored ? parseTslInspector(stored) : null;
+    const latest = publicationReader.latestXmlSequence(listKey);
+    sendHtml(
+      res,
+      200,
+      page(
+        `${listKey} version ${sequenceNumber}`,
+        trustedListVersionHtml(
+          listKey,
+          sequenceNumber,
+          artifacts.manifest,
+          evaluation?.summary ?? null,
+          latest === sequenceNumber,
+        ),
+      ),
+    );
   }
 
   function serveAsset(
@@ -1045,6 +1265,30 @@ over the published Lists of Trusted Entities.</p>
 
       let rows = "";
       for (const key of keys) {
+        /*
+          An XML Trusted List has no JSON index. It is rendered from its own
+          manifest, with the Open column offering XML rather than JSON, so the
+          Catalogue never promises an artifact the list does not have.
+        */
+        if (publicationReader.formatOf(key) === "xml") {
+          const summary = await publicationReader.listSummary(key);
+          const versions = await publicationReader.versions(key);
+          const newest = versions[versions.length - 1];
+          if (!summary || !newest) continue;
+          rows += `
+      <tr>
+        <td><a href="/lists/${escapeHtml(key)}">${listChip(key)}</a></td>
+        <td>${summary.family ? familyChip(summary.family) : "&mdash;"}</td>
+        <td>${escapeHtml(String(newest.sequenceNumber))}</td>
+        <td>${escapeHtml(newest.issueDate)}</td>
+        <td>${escapeHtml(newest.nextUpdateDate)}</td>
+        <td>${newest.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
+        <td><strong>not evaluated</strong></td>
+        <td class="catalogue-broken">&mdash;</td>
+        <td class="catalogue-open"><a class="btn btn-outline btn-sm" href="/api/v1/lists/${encodeURIComponent(key)}/versions/${newest.sequenceNumber}/trusted-list.xml">XML</a></td>
+      </tr>`;
+          continue;
+        }
         const index = await s.loadIndex(key);
         if (!index) continue;
         const latest = index.versions[index.versions.length - 1];
@@ -1274,6 +1518,23 @@ ${versionDownloadsHtml(listKey, sequence)}
     listKey: string,
   ): Promise<void> {
     try {
+      if (publicationReader.formatOf(listKey) === "xml") {
+        const versions = await publicationReader.versions(listKey);
+        if (versions.length === 0) {
+          sendJson(res, 404, {
+            error: "not_found",
+            message: `List "${listKey}" not found`,
+          });
+          return;
+        }
+        sendJson(
+          res,
+          200,
+          { listKey, standard: "TS 119 612", versions },
+          "no-store",
+        );
+        return;
+      }
       const index = await store.loadIndex(listKey);
       if (!index) {
         sendJson(res, 404, {
@@ -1294,6 +1555,18 @@ ${versionDownloadsHtml(listKey, sequence)}
     sequence: number,
   ): Promise<void> {
     try {
+      if (publicationReader.formatOf(listKey) === "xml") {
+        const artifacts = publicationReader.xmlVersion(listKey, sequence);
+        if (!artifacts) {
+          sendJson(res, 404, {
+            error: "not_found",
+            message: `Version ${sequence} not found`,
+          });
+          return;
+        }
+        sendJson(res, 200, artifacts.manifest, "no-store");
+        return;
+      }
       const manifest = await store.loadManifest(listKey, sequence);
       if (!manifest) {
         sendJson(res, 404, {
@@ -1316,6 +1589,37 @@ ${versionDownloadsHtml(listKey, sequence)}
     download = false,
   ): Promise<void> {
     try {
+      /*
+        An XML Trusted List has a manifest but no `lote` or `signature`: its
+        signature is inside the XML. Asking for either of those on an XML list
+        is a 404, not an empty file.
+      */
+      if (publicationReader.formatOf(listKey) === "xml") {
+        const artifacts = publicationReader.xmlVersion(listKey, sequence);
+        if (fileType !== "manifest" || !artifacts) {
+          sendJson(res, 404, {
+            error: "not_found",
+            message:
+              fileType === "manifest"
+                ? "File not found or corrupt"
+                : "This is a TS 119 612 Trusted List: its artifacts are trusted-list.xml and trusted-list.sha2, and the signature is inside the XML.",
+          });
+          return;
+        }
+        sendResponse(
+          res,
+          200,
+          artifacts.manifestBytes,
+          "application/json",
+          "public, max-age=86400, immutable",
+          download
+            ? {
+                "Content-Disposition": `attachment; filename="${listKey}-v${sequence}-manifest.json"`,
+              }
+            : undefined,
+        );
+        return;
+      }
       const content = await store.loadVersionBytes(listKey, sequence, fileType);
       if (content === null) {
         sendJson(res, 404, {
@@ -1357,7 +1661,9 @@ ${versionDownloadsHtml(listKey, sequence)}
   ): void {
     let stored: string | null = null;
     try {
-      stored = store.readInspectorEvaluation(listKey, sequence);
+      /* An XML version stores its evaluation beside its own artifacts. */
+      const format = publicationReader.formatOf(listKey) ?? "json";
+      stored = publicationReader.inspectorEvaluation(listKey, sequence, format);
     } catch {
       stored = null;
     }
@@ -1449,6 +1755,21 @@ ${versionDownloadsHtml(listKey, sequence)}
         logRequest("GET", path, res.statusCode, requestId);
         return;
       }
+      /* The XML artifacts, at immutable version URLs ending in the file name. */
+      const tslFileMatch = path.match(
+        /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/(trusted-list\.xml|trusted-list\.sha2)$/,
+      );
+      if (tslFileMatch) {
+        serveTrustedListArtifact(
+          res,
+          tslFileMatch[1]!,
+          parseInt(tslFileMatch[2]!, 10),
+          tslFileMatch[3]!,
+        );
+        logRequest("GET", path, res.statusCode, requestId);
+        return;
+      }
+
       const fileMatch = path.match(
         /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/(lote|signature|manifest)$/,
       );
@@ -1894,6 +2215,41 @@ ${versionDownloadsHtml(listKey, sequence)}
       return;
     }
 
+    if (path === "/admin/xml-applications" && tslApplicationService) {
+      sendHtml(
+        res,
+        200,
+        guiPage(
+          "XML Trusted List applications",
+          tslApplicationsHtml(tslApplicationService.list()),
+        ),
+      );
+      logRequest("GET", path, 200, requestId);
+      return;
+    }
+
+    if (path.startsWith("/admin/xml-applications/") && tslApplicationService) {
+      const id = path.slice("/admin/xml-applications/".length);
+      sendXmlApplication(res, id, requestId, path);
+      return;
+    }
+
+    if (path === "/admin/trusted-lists/create" && signingConfigPath) {
+      sendHtml(
+        res,
+        200,
+        guiPage(
+          "Create XML Trusted List",
+          createTrustedListFormHtml(
+            {},
+            { canGenerateMaterial: Boolean(certificatesDir) },
+          ),
+        ),
+      );
+      logRequest("GET", path, 200, requestId);
+      return;
+    }
+
     if (path === "/admin") {
       import("../web/views/admin.js")
         .then(({ adminIndexHtml }) => {
@@ -2073,6 +2429,286 @@ ${versionDownloadsHtml(listKey, sequence)}
     logRequest("GET", path, 404, requestId);
   }
 
+  /** Target-list options for one XML onboarding family. */
+  function trustedListOptionsFor(family: TslFamily): TrustedListOption[] {
+    if (!signingConfig) return [];
+    return getTrustedListConfigsForFamily(signingConfig, family).map(
+      (entry) => ({
+        key: entry.listKey,
+        label: `${entry.schemeOperatorName} (${entry.listKey})`,
+        territory: entry.schemeTerritory,
+      }),
+    );
+  }
+
+  /** The two XML onboarding routes, declared once for GET and POST. */
+  const XML_ONBOARDING: ReadonlyArray<{
+    readonly path: string;
+    readonly family: TslFamily;
+    readonly title: string;
+    readonly render: typeof eaaProviderFormHtml;
+  }> = Object.freeze([
+    {
+      path: "/onboarding/eaa-provider",
+      family: "eaa-providers" as TslFamily,
+      title: "EAA Provider Application",
+      render: eaaProviderFormHtml,
+    },
+    {
+      path: "/onboarding/qeaa-provider",
+      family: "qeaa-providers" as TslFamily,
+      title: "QEAA Provider Application",
+      render: qeaaProviderFormHtml,
+    },
+  ]);
+
+  function xmlOnboardingFor(
+    path: string,
+  ): (typeof XML_ONBOARDING)[number] | undefined {
+    return XML_ONBOARDING.find((form) => form.path === path);
+  }
+
+  async function handleXmlSubmission(
+    res: ServerResponse,
+    body: string,
+    requestId: string,
+    form: (typeof XML_ONBOARDING)[number],
+  ): Promise<void> {
+    if (!tslApplicationService) {
+      send404(res);
+      logRequest("POST", form.path, 404, requestId);
+      return;
+    }
+    const fields = parseFormBody(body);
+    const parsed = parseTslSubmission(fields, {
+      family: form.family,
+      trustedLists: signingConfig?.trustedLists ?? [],
+      submittedAt: new Date().toISOString(),
+    });
+    if (!parsed.ok) {
+      const errors: Record<string, string> = {};
+      for (const error of parsed.errors) errors[error.field] = error.message;
+      sendHtml(
+        res,
+        400,
+        guiPage(
+          form.title,
+          form.render(fields, errors, trustedListOptionsFor(form.family)),
+        ),
+      );
+      logRequest("POST", form.path, 400, requestId);
+      return;
+    }
+    const record = tslApplicationService.submit(parsed.value);
+    const auto = await tslApplicationService.autoApproveIfEnabled(record);
+    const message = auto.published
+      ? "Your application was approved and published automatically."
+      : (auto.message ??
+        "Your application was submitted and is awaiting administrator review.");
+    sendHtml(
+      res,
+      200,
+      guiPage(
+        "Application submitted",
+        `<h1>Application submitted</h1>
+         <p>${escapeHtml(message)}</p>
+         <p>Reference: <code>${escapeHtml(record.id)}</code></p>
+         <p><a class="btn btn-primary btn-md" href="/onboarding">Back to onboarding</a></p>`,
+      ),
+    );
+    logRequest("POST", form.path, 200, requestId);
+  }
+
+  async function handleCreateXmlTrustedList(
+    res: ServerResponse,
+    fields: Record<string, string>,
+    multi: Record<string, string[]>,
+    requestId: string,
+  ): Promise<void> {
+    if (!signingConfigPath) {
+      send404(res);
+      logRequest("POST", "/admin/trusted-lists/create", 404, requestId);
+      return;
+    }
+    const lines = (value: string): string[] =>
+      value
+        .split(/[\r\n]+/)
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+    const result = await createTrustedListList(
+      {
+        schemeOperatorName: fields["schemeOperatorName"] ?? "",
+        schemeTerritory: (fields["schemeTerritory"] ?? "").toUpperCase(),
+        schemeName: fields["schemeName"] ?? "",
+        schemeOperatorStreet: fields["schemeOperatorStreet"] ?? "",
+        schemeOperatorLocality: fields["schemeOperatorLocality"] ?? "",
+        ...(fields["schemeOperatorPostalCode"]
+          ? { schemeOperatorPostalCode: fields["schemeOperatorPostalCode"] }
+          : {}),
+        schemeOperatorCountry: (
+          fields["schemeOperatorCountry"] ?? ""
+        ).toUpperCase(),
+        schemeOperatorEmail: fields["schemeOperatorEmail"] ?? "",
+        schemeOperatorWebsite: fields["schemeOperatorWebsite"] ?? "",
+        ...(fields["schemeOperatorTelephone"]
+          ? { schemeOperatorTelephone: fields["schemeOperatorTelephone"] }
+          : {}),
+        schemeInformationUri: fields["schemeInformationUri"] ?? "",
+        nationalSchemeRulesUri: fields["nationalSchemeRulesUri"] ?? "",
+        policyUri: fields["policyUri"] ?? "",
+        distributionPointUri: fields["distributionPointUri"] ?? "",
+        lotlCertificatesBase64Der: lines(
+          fields["lotlCertificatesBase64Der"] ?? "",
+        ),
+        lotlSchemeOperatorNames: lines(fields["lotlSchemeOperatorNames"] ?? ""),
+        keyFile: fields["keyFile"] ?? "",
+        certFile: fields["certFile"] ?? "",
+        allowedServiceProfiles: multi["allowedServiceProfiles"] ?? [],
+      },
+      {
+        store: trustedListStore,
+        signingConfigPath,
+        inspectorClient,
+      },
+    );
+    if (!result.success) {
+      sendHtml(
+        res,
+        400,
+        guiPage(
+          "Create XML Trusted List",
+          createTrustedListFormHtml(
+            {
+              ...fields,
+              allowedServiceProfiles: multi["allowedServiceProfiles"],
+            },
+            {
+              error: result.error,
+              canGenerateMaterial: Boolean(certificatesDir),
+            },
+          ),
+        ),
+      );
+      logRequest("POST", "/admin/trusted-lists/create", 400, requestId);
+      return;
+    }
+    reloadSigningConfig();
+    res.writeHead(303, {
+      ...securityHeaders(),
+      "Cache-Control": "no-store",
+      Location: `/lists/${encodeURIComponent(result.listKey)}`,
+    });
+    res.end();
+    logRequest("POST", "/admin/trusted-lists/create", 303, requestId);
+  }
+
+  /** Renders one XML application review page. */
+  function sendXmlApplication(
+    res: ServerResponse,
+    id: string,
+    requestId: string,
+    path: string,
+    extra: { message?: string; error?: string } = {},
+  ): void {
+    if (!tslApplicationService) {
+      send404(res);
+      logRequest("GET", path, 404, requestId);
+      return;
+    }
+    const record = tslApplicationService.get(id);
+    if (!record) {
+      send404(res);
+      logRequest("GET", path, 404, requestId);
+      return;
+    }
+    const preview = tslApplicationService.preview(id);
+    sendHtml(
+      res,
+      200,
+      guiPage(
+        record.tspName,
+        tslApplicationDetailHtml({
+          record,
+          ...(preview.ok && preview.value ? { preview: preview.value } : {}),
+          ...(preview.ok ? {} : { previewError: preview.error ?? "" }),
+          ...extra,
+        }),
+      ),
+    );
+    logRequest("GET", path, 200, requestId);
+  }
+
+  async function handleXmlApplicationAction(
+    res: ServerResponse,
+    path: string,
+    body: string,
+    requestId: string,
+  ): Promise<void> {
+    if (!tslApplicationService) {
+      send404(res);
+      logRequest("POST", path, 404, requestId);
+      return;
+    }
+    const parts = path.split("/");
+    const id = parts[3] ?? "";
+    const action = parts[4] ?? "";
+    const fields = parseFormBody(body);
+
+    let message: string | undefined;
+    let error: string | undefined;
+    switch (action) {
+      case "approve": {
+        const result = tslApplicationService.approve(id);
+        if (result.ok) message = "Application approved.";
+        else error = result.error;
+        break;
+      }
+      case "reject": {
+        const result = tslApplicationService.reject(id, fields["note"] ?? "");
+        if (result.ok) message = "Application rejected.";
+        else error = result.error;
+        break;
+      }
+      case "publish": {
+        const result = await tslApplicationService.publish(id);
+        if (result.ok) message = "Published as a new immutable version.";
+        else error = result.error;
+        break;
+      }
+      case "supersede": {
+        const result = await tslApplicationService.supersede(id);
+        if (result.ok)
+          message =
+            "Published a new immutable version; the previous state is in ServiceHistory.";
+        else error = result.error;
+        break;
+      }
+      case "delete": {
+        const result = tslApplicationService.delete(id);
+        if (result.ok) {
+          res.writeHead(303, {
+            ...securityHeaders(),
+            "Cache-Control": "no-store",
+            Location: "/admin/xml-applications",
+          });
+          res.end();
+          logRequest("POST", path, 303, requestId);
+          return;
+        }
+        error = result.error;
+        break;
+      }
+      default:
+        send404(res);
+        logRequest("POST", path, 404, requestId);
+        return;
+    }
+    sendXmlApplication(res, id, requestId, path, {
+      ...(message ? { message } : {}),
+      ...(error ? { error } : {}),
+    });
+  }
+
   function handleOnboarding(
     req: IncomingMessage,
     res: ServerResponse,
@@ -2080,6 +2716,20 @@ ${versionDownloadsHtml(listKey, sequence)}
     requestId: string,
   ): void {
     const path = url.pathname;
+
+    const xmlForm = xmlOnboardingFor(path);
+    if (xmlForm) {
+      sendHtml(
+        res,
+        200,
+        guiPage(
+          xmlForm.title,
+          xmlForm.render({}, {}, trustedListOptionsFor(xmlForm.family)),
+        ),
+      );
+      logRequest("GET", path, 200, requestId);
+      return;
+    }
 
     if (path === "/onboarding") {
       import("../web/views/onboarding.js")
@@ -2232,6 +2882,30 @@ ${outcome}
           parseFormBody(body),
           requestId,
         );
+        return;
+      }
+
+      const xmlSubmission = xmlOnboardingFor(path);
+      if (xmlSubmission) {
+        await handleXmlSubmission(res, body, requestId, xmlSubmission);
+        return;
+      }
+
+      if (path === "/admin/trusted-lists/create") {
+        await handleCreateXmlTrustedList(
+          res,
+          parseFormBody(body),
+          parseFormBodyMulti(body),
+          requestId,
+        );
+        return;
+      }
+
+      if (
+        path.startsWith("/admin/xml-applications/") &&
+        tslApplicationService
+      ) {
+        await handleXmlApplicationAction(res, path, body, requestId);
         return;
       }
 
@@ -2452,6 +3126,25 @@ ${outcome}
           ? decodeURIComponent(val.replace(/\+/g, " "))
           : "";
       }
+    }
+    return fields;
+  }
+
+  /**
+   * The same body, keeping every value of a repeated field.
+   *
+   * `parseFormBody` keeps the last value, which is right for text inputs and
+   * wrong for a checkbox group: a list accepting both EAA and QEAA posts
+   * `allowedServiceProfiles` twice.
+   */
+  function parseFormBodyMulti(body: string): Record<string, string[]> {
+    const fields: Record<string, string[]> = {};
+    for (const pair of body.split("&")) {
+      const [key, val] = pair.split("=");
+      if (!key) continue;
+      const name = decodeURIComponent(key);
+      const value = val ? decodeURIComponent(val.replace(/\+/g, " ")) : "";
+      (fields[name] ??= []).push(value);
     }
     return fields;
   }

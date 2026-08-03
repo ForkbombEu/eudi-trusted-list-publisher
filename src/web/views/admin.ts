@@ -20,8 +20,17 @@ export function adminIndexHtml(): string {
   return `
 <h1>Administration</h1>
 <div class="card">
+  <h2>ETSI TS 119 602 — JSON / Compact JAdES</h2>
   <p><a href="/admin/lists/create" class="btn">Create Trusted List</a></p>
   <p><a href="/admin/applications" class="btn">Manage Applications</a></p>
+</div>
+<div class="card">
+  <h2>ETSI TS 119 612 — XML / XAdES-B-B</h2>
+  <p><a href="/admin/trusted-lists/create" class="btn">Create XML Trusted List</a></p>
+  <p><a href="/admin/xml-applications" class="btn">Manage EAA and QEAA Applications</a></p>
+</div>
+<div class="card">
+  <h2>Configuration</h2>
   <p><a href="/admin/signing" class="btn">Signing Configuration</a></p>
   <p><a href="/admin/settings" class="btn">Settings</a></p>
 </div>

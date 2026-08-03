@@ -748,10 +748,19 @@ describe("HTTP correctness", () => {
 
   it("API route registry is used and complete", async () => {
     const routes = getApiRoutes();
-    expect(routes.length).toBe(9);
+    /* 9 TS 119 602 routes plus the 4 TS 119 612 artifact routes. */
+    expect(routes.length).toBe(13);
 
     const paths = routes.map((r) => r.path);
     expect(paths).toContain("/api/v1/lists");
+    expect(paths).toContain(
+      "/api/v1/lists/{listKey}/versions/{sequence}/trusted-list.xml",
+    );
+    expect(paths).toContain(
+      "/api/v1/lists/{listKey}/versions/{sequence}/trusted-list.sha2",
+    );
+    expect(paths).toContain("/lists/{listKey}/latest/trusted-list.xml");
+    expect(paths).toContain("/lists/{listKey}/latest/trusted-list.sha2");
     expect(paths).toContain("/api/v1/lists/{listKey}/versions/{sequence}/lote");
     expect(paths).toContain(
       "/api/v1/lists/{listKey}/versions/{sequence}/inspector",
