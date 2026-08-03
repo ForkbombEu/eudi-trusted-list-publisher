@@ -20,7 +20,7 @@ dist/
 out/
 .cache/
 coverage/
-handoffs/
+/handoffs/
 
 # Agents files 
 /HITL/

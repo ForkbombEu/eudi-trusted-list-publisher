@@ -160,6 +160,10 @@ implemented; required documents use placeholder `{FILENAME}.md` references.
 
 ## Quick GUI guide
 
+Every page uses the shared Credimi header and footer shell. On short pages the
+footer stays at the bottom of the viewport; on longer pages it follows the page
+content normally.
+
 ### Catalogue (`/`)
 
 The home page lists every published Trusted List with its family, latest

@@ -76,6 +76,22 @@
 }
 
 /*
+  --- Page shell ---
+
+  The shared shell fills the viewport below the topbar. Stack its publisher
+  content vertically and let the main content take any spare height so the
+  footer remains at the page end even when a page is short.
+*/
+.page-shell-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-shell-main > .page-content {
+  flex: 1;
+}
+
+/*
   --- Colour coding for Trusted List Families and Trusted Lists ---
 
   Every place that names a family or a list renders one of these chips, so the

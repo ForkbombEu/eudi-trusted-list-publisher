@@ -207,6 +207,21 @@ describe("Trusted List colour coding", () => {
   });
 });
 
+describe("Publisher page shell", () => {
+  it("keeps the footer at the end of short pages", () => {
+    const css = readFileSync(
+      resolve(import.meta.dirname, "..", "src", "web", "assets", "app.css"),
+      "utf-8",
+    );
+    expect(css).toMatch(
+      /\.page-shell-main\s*{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s,
+    );
+    expect(css).toMatch(
+      /\.page-shell-main\s*>\s*\.page-content\s*{[^}]*flex:\s*1;/s,
+    );
+  });
+});
+
 describe("Publisher settings store", () => {
   it("round-trips family and list auto-approve flags", () => {
     const dir = tmpDir();
