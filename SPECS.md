@@ -625,10 +625,18 @@ Both entry points require the administrator credential:
 - `POST /api/v1/admin/lists` — JSON, `Authorization: Bearer <TLP_ADMIN_TOKEN>` or
   `?token=`
 
-`LIST_DEFECTS` names the ten deliberate defects the form will offer, each
-combinable with the others. Generation of broken lists is not implemented: the
-checkboxes render disabled and the API rejects a non-empty `defects` array with a
-message naming the unimplemented option.
+`LIST_DEFECTS` is a *view* of the canonical defect catalogue in
+`src/core/defects/registry.ts`, filtered to the defects that catalogue binds to
+TS 119 602. The form offers each of them and they combine freely. A non-empty
+`defects` array publishes an intentionally broken test fixture: the list is
+compiled healthy, cloned, mutated, signed and published, and the negative-fixture
+evidence is stored beside the version as `fixture.json`. An unknown defect id is
+rejected by name.
+
+`POST /api/v1/admin/trusted-lists` is the TS 119 612 counterpart, taking the same
+`defects` array filtered to the catalogue's XML bindings. Both entry points reach
+the same core functions, so the GUI and the API produce equivalent artifacts and
+equivalent fixture metadata.
 
 ### Certificate creation guide
 
@@ -884,3 +892,141 @@ step and no Java. Node.js ships none of the three, and canonicalisation in
 particular cannot be approximated. The XAdES structure itself is written in
 this repository, in `src/xmlsec/`, which imports nothing from `src/core` and
 carries its own `README.md` so it can be lifted into a package of its own.
+
+## Intentionally broken TS 119 612 fixtures
+
+### One catalogue, two engines
+
+`src/core/defects/registry.ts` is the only catalogue of intentional defects in
+the repository. A defect is a product-level idea — "the list points nowhere",
+"the signature does not verify" — that each standard binds to a concrete
+mutation:
+
+```ts
+CanonicalDefect { id, label, intent, bindings: DefectBinding[] }
+DefectBinding   { standard, artifactFormat, stage, mutation,
+                  normativeReference, conformantBehaviour,
+                  expectedRuleIds, expectedLocalFailures, familyNote? }
+```
+
+`DEFECT_SPECS` (TS 119 602) and `xmlDefects()` (TS 119 612) are flattened views
+of it, and `LIST_DEFECTS` is a view of `DEFECT_SPECS`. The administration forms,
+the API validators, the stored fixture metadata and the tests all read the same
+catalogue, so a defect a format cannot perform is not offered for that format.
+
+Nine defects carry both bindings and keep one id. `jades_without_signing_time`
+is JSON-only and `xades_without_signing_time` is its XML counterpart under a
+separate id, because the existing id names the JSON signature format and
+renaming it would break stored fixture metadata. Everything else that is
+XML-only is XML-only because the JSON format has no equivalent: namespaces,
+`TSLVersionIdentifier`, the `.sha2` sidecar.
+
+### Stages
+
+`pre-sign` mutates the compiled XML, `post-sign` changes how or with what the
+document is signed — or, for `broken_xades_signature`, edits the signed bytes —
+and `publication` changes what is written beside the artifact. The stage is
+recorded per applied mutation and shown on the version page.
+
+### The XML mutation engine
+
+`src/core/tsl612/defects.ts` performs line-oriented textual mutations on the
+compiled XML rather than tree rewrites. The compiler emits one element per line
+with a fixed two-space indent, so a textual edit is exact and reviewable — and,
+decisively, it can produce documents a DOM writer would refuse to serialize. A
+fixture has to be able to publish a missing mandatory element or a wrong
+namespace.
+
+Every mutation records whether it changed anything. A mutation that silently
+found nothing would publish a healthy list under a broken name, which is the one
+outcome a negative fixture must never have.
+
+### Opt-ins, each fixture-only
+
+The healthy path refuses to emit anything that failed a check, which is what
+makes it trustworthy. A fixture needs the opposite, so each relaxation is an
+explicit, documented opt-in that the healthy path never sets:
+
+| Opt-in | Effect |
+| --- | --- |
+| `signTrustedList({ recordFailuresInsteadOfThrowing })` | Certificate-profile, schema and signature failures are recorded, not thrown |
+| `signEnveloped({ omitSigningTime })` | No `xades:SigningTime`; the one resulting Baseline-B finding is expected and does not make the signer refuse its own output |
+| `TrustedListManifest.trustedListSha2Published` | The `.sha2` content actually published, so a deliberately wrong digest still reads back |
+| `CreateTrustedListRequest.listKey` | An explicit publication key, for the deterministic fixture keys |
+| `CreateTrustedListRequest.seedFixtureProvider` | Seeds one provider so the service-level defects have something to mutate |
+
+`TrustedListStore.loadVersion()` checks the XML against
+`trustedListXmlSha256` strictly, and checks `trusted-list.sha2` against
+`trustedListSha2Published`. For every honest publication those are the same
+value. The integrity question a store can answer is "are these the bytes we
+published", not "are these bytes correct".
+
+### When the bytes stop being a Trusted List
+
+`invalid_tsl_namespace` produces a document `readTrustedListMetadata()` cannot
+read. The manifest then falls back to the authoring input and records
+`trustedListMetadataSource: "authoring-input"`, so a reader is never told that
+unreadable bytes were read. The Trust Inspector classifies that artifact as
+`xml_lotl_like` and does not apply TS 119 612 to it, which is recorded as
+`unavailable` — never as a pass.
+
+### Local failure identifiers
+
+Local checks report stable identifiers so an expectation can be compared with an
+actual: `local.xml.schema`, `local.xades.signature`,
+`local.signing_certificate.profile`, `local.freshness`, `local.sha2.digest`.
+They name the check; the message says what went wrong.
+
+### Rule-id normalization
+
+The Inspector names a per-item check by position, so the same rule arrives as
+`ts119612.service.1.1.history.1.status_start` for one list and with different
+indices for another. `normalizeInspectorRuleId()` removes the integer segments
+and both sides are compared normalized, so an expectation does not have to know
+how many providers a fixture happens to carry.
+
+### Fixture metadata
+
+`src/core/defects/fixture-metadata.ts`, schema version 2, identical in shape for
+both standards:
+
+```json
+{
+  "fixtureMode": "healthy | intentionally-broken",
+  "standard": "TS 119 612",
+  "artifactFormat": "XML / XAdES-B-B",
+  "selectedDefects": [],
+  "mutations": [{ "defectId": "", "stage": "", "applied": true, "detail": "" }],
+  "expectedFailures": { "local": [], "inspector": [] },
+  "actualFailures":   { "local": [], "inspector": [] },
+  "matchedFailures": [], "missingFailures": [], "additionalFailures": [],
+  "matchedLocalFailures": [], "missingLocalFailures": [],
+  "additionalLocalFailures": [],
+  "knownUnrelatedFailures": [], "generatedAt": ""
+}
+```
+
+Version 1 files, written before XML fixtures existed, are still read and are
+treated as TS 119 602 JSON with no local-failure axis.
+
+### The suites
+
+`src/core/tsl612/fixture-suite.ts` publishes, per family, one healthy baseline,
+one list per catalogue defect and one combined list carrying exactly two
+compatible defects — `invalid_tsl_version_identifier` and `expired_next_update`,
+chosen because they touch different elements and neither prevents the other from
+being observed. Keys are `eaa-healthy`, `eaa-broken-<defect-id>`,
+`eaa-broken-combined` and the QEAA equivalents.
+
+The healthy baseline seeds the *same* provider the broken fixtures mutate, so a
+single-defect fixture is a delta of exactly one mutation from it. The seeded
+service is already in its end state with the initial state in `ServiceHistory`:
+that is the smallest arrangement carrying a real status transition, and it gives
+`invalid_service_history` an ordering to break.
+
+### Commands
+
+`npm run fixtures:generate` generates both suites offline. `npm run
+fixtures:verify` generates them and validates every fixture against the live
+Trust Inspector, failing closed. `npm test` contacts nothing: a server created
+without `inspectorBaseUrl` has no Inspector client at all.

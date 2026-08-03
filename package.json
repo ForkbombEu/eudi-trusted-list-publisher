@@ -1,7 +1,7 @@
 {
   "name": "@forkbombeu/eudi-trusted-list-publisher",
   "version": "0.1.0",
-  "description": "TS 119 602 JSON List of Trusted Entities (LoTE) publisher for the Wallet Provider profile",
+  "description": "Publisher of healthy and intentionally broken ETSI TS 119 602 (JSON/JAdES) and TS 119 612 (XML/XAdES) Trusted Lists, for testing and debugging EUDI components",
   "type": "module",
   "main": "dist/src/core/index.js",
   "types": "dist/src/core/index.d.ts",
@@ -26,8 +26,12 @@
     "trusted-list",
     "lote",
     "jades",
+    "xades",
     "eudi",
-    "wallet-provider"
+    "wallet-provider",
+    "eaa",
+    "qeaa",
+    "test-fixtures"
   ],
   "license": "Apache-2.0",
   "engines": {

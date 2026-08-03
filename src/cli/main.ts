@@ -31,7 +31,7 @@ import { DEFAULT_INSPECTOR_BASE_URL } from "../core/inspector/inspector.js";
 const ASCII_ART = `
 ╔══════════════════════════════════════════╗
 ║     EUDI Trusted List Publisher          ║
-║     TS 119 602 LoTE — Wallet Provider    ║
+║     TS 119 602 JSON  ·  TS 119 612 XML   ║
 ╚══════════════════════════════════════════╝
 `;
 
@@ -39,7 +39,9 @@ const program = new Command();
 
 program
   .name("trusted-list-publisher")
-  .description("TS 119 602 JSON LoTE publisher for the Wallet Provider profile")
+  .description(
+    "Trusted List publisher for ETSI TS 119 602 (JSON LoTE, Compact JAdES) and ETSI TS 119 612 (XML Trusted List, XAdES-B-B). The CLI covers the TS 119 602 pipeline and the web server; TS 119 612 lists are authored through the administration GUI or the API.",
+  )
   .version("0.1.0")
   .addHelpText("before", ASCII_ART);
 

@@ -1,48 +1,126 @@
-# Credimi EUDI Trusted Lists
+# EUDI Trusted List Publisher
 
-A Trusted List publisher for the EU Digital Identity Wallet ecosystem,
-implementing **two ETSI standards**:
+## Introduction
 
-- **TS 119 602** — JSON Lists of Trusted Entities signed as Compact JAdES
-  Baseline B, for five profiles: PID Providers (Annex D), Wallet Providers
-  (Annex E), WRPAC Providers (Annex F), WRPRC Providers (Annex G) and Pub-EAA
-  Providers (Annex H).
-- **TS 119 612** — XML national Trusted Lists signed as enveloped XAdES-B-B,
-  carrying two onboarding service profiles: **EAA Providers** (non-qualified)
-  and **QEAA Providers** (qualified).
+This is a tool for **testing and debugging how EUDI components behave against
+Trusted Lists** — healthy ones and intentionally broken ones.
 
-It compiles, validates, signs, verifies, stores and publishes artifacts of both
-kinds. Signing keys are supplied through local files or CI secrets and are never
-uploaded through a public web interface.
+It publishes controlled fixtures for interoperability, integration and negative
+testing. You point a wallet, an issuer, a verifier or a relying-party runtime at
+a list this publisher serves, and you find out what that runtime does: with a
+conformant list, and with a list that violates one specific clause and nothing
+else.
 
-Includes an immutable filesystem publication store and a Credimi-branded web UI
-for browsing what has been published. It does **not** aggregate a List of Trusted
-Lists — only the mandatory pointer to the EU LOTL is published — and does not
-implement the EC TS02 notification API.
+It supports the Trusted List families and artifact formats the repository
+actually implements, across two ETSI standards:
 
-**Historical** added an opt-in data-collection and administration GUI for authoring
-and publishing Wallet Provider LoTEs. The current GUI supports all five
-implemented families. When enabled, it provides applicant onboarding and an
-administration backoffice, and every version it publishes is signed and assessed
-by the Trust Inspector.
+| Family | Standard | Artifact | Signature |
+| --- | --- | --- | --- |
+| PID Providers | ETSI TS 119 602, Annex D | JSON LoTE | JAdES Baseline B, Compact |
+| Wallet Providers | ETSI TS 119 602, Annex E | JSON LoTE | JAdES Baseline B, Compact |
+| WRPAC Providers | ETSI TS 119 602, Annex F | JSON LoTE | JAdES Baseline B, Compact |
+| WRPRC Providers | ETSI TS 119 602, Annex G | JSON LoTE | JAdES Baseline B, Compact |
+| Pub-EAA Providers | ETSI TS 119 602, Annex H | JSON LoTE | JAdES Baseline B, Compact |
+| EAA Providers | ETSI TS 119 612 | XML Trusted List | XAdES-B-B, enveloped |
+| QEAA Providers | ETSI TS 119 612 | XML Trusted List | XAdES-B-B, enveloped |
 
-## Important: signature valid vs signer trusted
+Every family in that table has a working onboarding form, publication path and
+artifact download. Nothing else is listed. "Registrars and Registers" appears in
+the GUI as a known family but is not accepted for authoring or publication.
 
-This tool **cryptographically verifies** signatures but does **not evaluate signer trust**.
-The signature validity (`signatureValid`) is distinct from trust (`signerTrustStatus`),
-which is always `"not_evaluated"`. No PKIX trust chain validation is performed.
+**JAdES signs the JSON artifacts. XAdES signs the XML artifacts.** The two are
+not interchangeable, and the tool never mixes them.
 
-## Technical specs
+EAA and QEAA are TS 119 612 *service profiles*, not lists of their own: one XML
+Trusted List may accept EAA services, QEAA services, or both. Pub-EAA (Annex H)
+is a different thing again — a TS 119 602 JSON list of *publicly issued*
+attestation providers.
 
-- **Runtime**: Node.js 24 LTS
-- **Language**: TypeScript 5.8
-- **Module system**: ESM (`"type": "module"`)
-- **Web server**: `node:http` (no framework)
-- **Libraries**: `jose` (JOSE/JWS), `ajv` + `ajv-formats` (JSON Schema), `commander` (CLI)
-- **API reference**: Stoplight Elements 7.15.0, vendored into `src/web/assets/`
-  and served from the same origin, so `/docs` renders without a CDN
+### What this is not
 
-## How to run
+- **Not a production-ready trust infrastructure.**
+- **Not an accredited or legally authoritative Trusted List publisher.** Nothing
+  it publishes has legal effect.
+- **Not a production-grade certification authority.** Its certificate generator
+  produces self-signed test material.
+- **Not a replacement** for a Member State supervisory body, a conformity
+  assessment body, or qualified trust-service infrastructure.
+- Generated Trusted Lists, certificates and signatures are **testing material**
+  unless independently configured and governed otherwise.
+
+It also does not aggregate a List of Trusted Lists — only the mandatory pointer
+to the EU LOTL is published — and does not implement the EC TS02 notification
+API. It verifies signatures cryptographically but **evaluates no signer trust**:
+`signerTrustStatus` is always `not_evaluated`, and no PKIX path is built.
+
+## Main functionalities
+
+- **Onboard and register components** into healthy and intentionally broken
+  Trusted Lists, through one onboarding form per implemented family.
+- **Catalogue and inspect** every published list, its current version and its
+  immutable earlier versions.
+- **View and download artifacts**: JSON and Compact JAdES for TS 119 602 lists,
+  signed XML and its `.sha2` digest for TS 119 612 lists.
+- **Inspect manifests, hashes and Trust Inspector evaluations** per version.
+- **Use documented OpenAPI endpoints**, browsable at `/docs`.
+- **Create healthy and intentionally broken lists** from the administration
+  interface, for either standard.
+- **Review, approve or reject** onboarding applications.
+- **Configure automatic acceptance and publication**, globally or per list.
+- **Perform lifecycle actions**: EAA deprecation of national recognition, QEAA
+  withdrawal of qualified status, and TS 119 602 withdrawal of a notification.
+- **Generate deterministic negative fixtures** and compare, per version, what
+  the defect catalogue expected to fail against what actually failed — both
+  locally and at the Trust Inspector.
+
+### Intentionally broken fixtures
+
+A broken list is a deliverable, not a failure mode. Each fixture is compiled
+healthy, cloned, and mutated by exactly the defects that were selected:
+
+```text
+healthy typed model
+  → healthy artifact
+  → pre-signing mutations
+  → signing (JAdES or XAdES)
+  → post-signing mutations
+  → final bytes
+  → digest, or an intentionally wrong digest
+  → immutable storage
+  → local validation, recorded
+  → Trust Inspector, recorded
+```
+
+A selected defect is never silently repaired: a mutation that found nothing to
+change is stored as `applied: false` with the reason. **A failing Trust
+Inspector verdict on such a list is the expected outcome, not a publication
+error**, and every page that shows one says so.
+
+The deterministic TS 119 612 suites are published at stable keys —
+`eaa-healthy`, `eaa-broken-<defect-id>`, `eaa-broken-combined`, and the QEAA
+equivalents — one healthy baseline, one list per defect, and one list carrying
+exactly two compatible defects.
+
+## Installation
+
+### Requirements
+
+From `mise.toml` and `package.json`:
+
+- **Node.js 24** (`"engines": { "node": ">=24.0.0" }`)
+- **npm 11.19.0**
+- **Task 3.52.0** — optional; a thin wrapper over the npm scripts
+- **OpenSSL** on `PATH` — used to generate signing material and fixture
+  certificates. Without it those features report that they are unavailable
+  rather than failing silently.
+
+With [mise](https://mise.jdx.dev):
+
+```bash
+mise install
+```
+
+### Install and build
 
 ```bash
 npm install
@@ -50,647 +128,460 @@ npm run build
 node dist/src/cli/main.js --help
 ```
 
-### GUI mode 
-
-Enable with `DATA_COLLECTION_GUI=true`:
+### Configuration
 
 ```bash
 cp .env.example .env
-# Edit .env: set DATA_COLLECTION_GUI=true, configure signing config path
+```
 
-# Create signing configuration
-mkdir -p .local-signing
-cp examples/signing/signing-config.example.json .local-signing/signing-config.json
-# Edit it with paths to your actual signing key/cert
+**Required when the administration GUI is enabled**
 
+| Variable | Meaning |
+| --- | --- |
+| `DATA_COLLECTION_GUI` | `true` enables onboarding and the administration backoffice. Default `false`. |
+| `TLP_ADMIN_TOKEN` | Administrator token. Must not be empty when the GUI is on; the server refuses to start otherwise. **Secret.** |
+| `TLP_SIGNING_CONFIG` | Path to the signing configuration, JSON or YAML. Maps list keys to key/certificate paths and scheme operator details. |
+
+**Optional**
+
+| Variable | Meaning |
+| --- | --- |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | When **both** are set, `/admin` asks for a username and password instead of a token. **Secrets.** |
+| `TLP_CERTIFICATES_DIR` | Root for key/certificate pairs generated from the administration UI. Without it, server-side generation is disabled and the form says so. |
+| `TLP_INSPECTOR_URL` | Trust Inspector base URL. `serve` defaults to `https://trust-inspector.credimi.io`. Set it to an empty string to disable the integration, so no published artifact leaves the process. |
+| `TLP_PUBLICATION_DIR` | Publication root. Default `./publications`. |
+| `AUTHORING_DIR` | Mutable application records. Default `./authoring`. |
+| `TLP_HOST`, `TLP_PORT` | Bind address and port. Defaults `127.0.0.1` and `8080`. |
+
+**Development and fixture generation only**
+
+| Variable | Meaning |
+| --- | --- |
+| `TLP_FIXTURE_KEY_DIR`, `TLP_FIXTURE_REPORT` | Signing material and report for `scripts/generate-pub-eaa-fixtures.mjs`. |
+| `TLP_TSL_FIXTURE_DIR` | Where the TS 119 612 EAA and QEAA fixture suites are written. |
+
+**Secrets that must never be committed**: `.env`, `TLP_ADMIN_TOKEN`,
+`ADMIN_PASSWORD`, and every private key and certificate. The root `.gitignore`
+excludes `.env`, `*.pem`, `*.key`, `*.crt`, `*.p12`, `*.pfx` and the whole
+`.local-signing/` tree.
+
+### Directories
+
+| Path | Access | Contents |
+| --- | --- | --- |
+| `.local-signing/` | read-write, **private** | Signing keys, certificates and the signing configuration that points at them. Never served. |
+| `publications/` | read-write, immutable per version | Published artifacts. A stored version is never rewritten. |
+| `authoring/` | read-write | Onboarding applications and administrator settings. Mutable by design. |
+| `schemas/` | **read-only** | Pinned ETSI schemas, vendored byte-exact. |
+
+The key and certificate files are **read-only inputs**: the publisher reads them
+and never writes to them.
+
+### Run
+
+Development, with reload:
+
+```bash
+npm run dev:serve
+```
+
+Production:
+
+```bash
 npm run build
 npm run serve
 ```
 
-When enabled:
-- `/onboarding` — applicant onboarding and Trusted List Family catalogue
-- `/onboarding/pid-provider` — PID Provider application form
-- `/onboarding/wallet-provider` — Wallet Provider application form
-- `/onboarding/wrpac-provider` — WRPAC Provider application form
-- `/onboarding/wrprc-provider` — WRPRC Provider application form
-- `/onboarding/pub-eaa-provider` — Pub-EAA Provider application form
-- `/admin` — administration backoffice (requires `TLP_ADMIN_TOKEN`)
-- `/admin/applications` — manage submitted applications
-- `/admin/signing` — view signing configuration status
-- `/admin/settings` — auto-approval settings per family and per list
-- `/admin/lists/create` — declare a Trusted List and publish its first version
+Both read `.env` when it exists. `serve` accepts the same settings as flags —
+`--host`, `--port`, `--publication-dir`, `--data-collection-gui`,
+`--inspector-url` — and a flag wins over the environment.
 
-When `DATA_COLLECTION_GUI` is `false` or unset, the server operates in read-only
-mode exactly as before — no onboarding, no admin routes, no authoring state.
-### Signing configuration (`./.local-signing/signing-config.json`)
+### Initial administrator access
 
-`TLP_SIGNING_CONFIG` points at a JSON or YAML file that answers one question per
-Trusted List: **who signs it, with which key, and under what scheme identity.**
-It is the bridge between a `listKey` used throughout the application and the
-concrete key pair and Annex D/E scheme metadata that a conformant list requires.
-Without an entry for a given list key, that list cannot be published or signed.
+There is no bootstrap user and no first-run wizard: access is whatever `.env`
+declares.
 
-The file lives under `./.local-signing/` together with the PEM key and
-certificate files it references. **That whole directory is gitignored and must
-never be committed** — it holds private signing keys. Only
-`examples/signing/signing-config.example.json` is in the repository, as a
-template to copy.
+- With `TLP_ADMIN_TOKEN` only — open `/admin?token=<TLP_ADMIN_TOKEN>` once; the
+  token is then held in a cookie.
+- With `ADMIN_USER` **and** `ADMIN_PASSWORD` also set — open `/admin` and sign
+  in.
 
-```
-.local-signing/            # gitignored
-├── signing-config.json    # the file TLP_SIGNING_CONFIG points at
-└── certificates/          # TLP_CERTIFICATES_DIR
-    └── eu_example_operator/
-        ├── signing-key.pem  # mode 0600, referenced by keyFile
-        └── signing-cert.pem # referenced by certFile
+### Health check
+
+```bash
+curl -fsS http://127.0.0.1:8080/healthz
 ```
 
-The path is not special — it is simply whatever `TLP_SIGNING_CONFIG` is set to
-in `.env`. Relative paths inside the file, including `keyFile` and `certFile`,
-resolve against the process working directory, not against the config file.
+It returns `200` with a JSON body and touches no publication.
 
-Every field below is required. Missing ones raise a startup error rather than
-being defaulted, because a list signed with guessed scheme metadata would be
-silently non-conformant.
+### Deployment
 
-| Field | Meaning |
-|-------|---------|
-| `listKey` | Unique identifier for the list; must be unique across the file |
-| `family` | One of `wallet-providers`, `pid-providers`, `wrpac-providers`, `wrprc-providers`, `pub-eaa-providers` |
-| `keyFile` / `certFile` | Paths to the PEM private key and certificate used to sign |
-| `schemeOperatorName` / `schemeOperatorStreet` / `schemeOperatorCountry` | Identity of the scheme operator |
-| `schemeName` / `schemeTerritory` | Name and territory of the scheme |
-| `schemeOperatorContactUri` / `schemeOperatorEmail` / `schemeOperatorWebsite` | Operator contact points |
-| `distributionPointUri` | Where the published list is served from |
-| `schemeInformationUris` | Annex D/E scheme information; **at least two URIs** |
-| `policyUri` | The scheme policy document |
+There is no Dockerfile in this repository. `deploy/Caddyfile.example` shows a
+reverse-proxy configuration and `docs/DEPLOYMENT.md` documents an in-house
+deployment. Run the built server behind a TLS-terminating proxy under a process
+supervisor; it is a plain Node HTTP server with no clustering.
 
-`/admin/signing` shows, per list key, whether both files exist and the subject
-and SHA-256 fingerprint of the loaded certificate — the quickest way to confirm
-the configuration resolves. A duplicate `listKey` or an unknown `family` is a
-hard error at load time.
+### Backups
 
-**Example signing configuration** (`./.local-signing/signing-config.json`):
+In order of importance:
 
-```json
-{
-  "lists": [
-    {
-      "listKey": "eu_credimi",
-      "family": "wallet-providers",
-      "schemeOperatorName": "Credimi",
-      "schemeOperatorStreet": "Via Roma 1",
-      "schemeOperatorCountry": "IT",
-      "schemeName": "EU Wallet Providers List",
-      "schemeTerritory": "EU",
-      "schemeOperatorContactUri": "https://credimi.eu",
-      "distributionPointUri": "https://credimi.eu/wallet-providers/latest",
-      "keyFile": "./.local-signing/wallet-signer-key.pem",
-      "certFile": "./.local-signing/wallet-signer-cert.pem",
-      "schemeOperatorEmail": "trustedlists@credimi.eu",
-      "schemeOperatorWebsite": "https://credimi.eu/wallet-providers",
-      "schemeInformationUris": [
-        "https://credimi.eu/wallet-providers/scheme",
-        "https://credimi.eu/wallet-providers/practice-statement"
-      ],
-      "policyUri": "https://credimi.eu/wallet-providers/policy"
-    }
-  ]
-}
+1. **`.local-signing/`** — the private keys and the signing configuration.
+   Without them no existing list can ever publish another version.
+2. **`publications/`** — the immutable published versions. They are the record;
+   a lost version cannot be regenerated byte-for-byte.
+3. **`authoring/`** and `.env` — applications, settings and configuration.
+
+## Development
+
+### Components
+
+| Component | Responsibility |
+| --- | --- |
+| `src/web/server.ts` | HTTP server, routing, catalogue, administration, API |
+| `src/web/views/` | Server-rendered HTML |
+| `src/core/authoring/list-family-catalogue.ts` | The one catalogue of user-facing families |
+| `src/core/profiles/` | TS 119 602 profile registry, one directory per annex |
+| `src/core/compile/`, `src/core/model/` | TS 119 602 authoring model and compiler |
+| `src/core/signing/`, `src/core/verification/` | JAdES signing and verification |
+| `src/core/validate/` | JSON Schema and ETSI structural validation |
+| `src/core/tsl612/registry.ts` | TS 119 612 service profiles: EAA and QEAA |
+| `src/core/tsl612/compile.ts`, `read.ts` | XML `TrustServiceStatusList` writer and reader |
+| `src/xmlsec/` | Self-contained enveloped XAdES-B-B signer and verifier |
+| `src/core/tsl612/schema.ts`, `schemas/etsi/` | Offline validation against the pinned ETSI schemas |
+| `src/core/tsl612/signing-certificate.ts` | The TLSO signing-certificate profile |
+| `src/core/authoring/signing-config.ts` | Signing configuration for both standards |
+| `src/core/authoring/application-service.ts` | TS 119 602 onboarding, review and publication |
+| `src/core/tsl612/authoring/application-service.ts` | TS 119 612 onboarding, review and publication |
+| `src/core/authoring/settings-store.ts` | Auto-approval settings |
+| `src/core/publication/store.ts`, `tsl-store.ts` | The immutable publication stores |
+| `src/core/publication/reader.ts` | One reader across both formats |
+| `src/core/publication/manifest.ts`, `tsl-manifest.ts` | Per-version manifests |
+| `src/core/inspector/inspector.ts` | Trust Inspector client and result normalization |
+| `src/core/defects/` | The canonical defect catalogue and the fixture evidence document |
+| `src/core/authoring/defects.ts` | JSON mutation engine |
+| `src/core/tsl612/defects.ts` | XML mutation engine |
+| `src/core/tsl612/fixture-suite.ts` | The deterministic EAA and QEAA fixture suites |
+| `src/web/assets/openapi.yaml` | The published API description |
+| `test/` | Acceptance and regression suites |
+
+### Custom components
+
+#### Custom JAdES for the TS 119 602 JSON artifacts
+
+`src/core/signing/`, `src/core/verification/`. `jose` produces and verifies the
+JWS; the JAdES Baseline B profile on top of it is this repository's. The
+available JAdES libraries target the full ETSI TS 119 182-1 profile set, and
+these annexes need a narrow one: `x5c` carrying the signer certificate, `typ:
+"JAdES"`, and `iat` as the claimed signing time. **Implements** TS 119 182-1
+Baseline B for a Compact detached signature. **Limitations**: Baseline B only —
+no timestamps, no revocation values, no long-term validation. Tests:
+`test/signing.test.ts`.
+
+#### Custom XAdES-B-B and XMLDSig for TS 119 612 XML
+
+`src/xmlsec/`, a self-contained package that knows nothing about Trusted Lists.
+Written rather than adopted because the available Node XMLDSig libraries do not
+produce an EN 319 132-1 Baseline B structure — `SignedProperties`,
+`SigningCertificateV2`, `DataObjectFormat` — and adopting a large signature
+framework to reach a profile this specific was the greater risk. **Implements**
+XMLDSig with the enveloped-signature transform and exclusive canonicalisation,
+and XAdES-B-B per TS 119 612 Annex B and EN 319 132-1. **Limitations**: one
+signature per document, ECDSA and RSA with SHA-256, no counter-signatures, no
+timestamps. Tests: `test/xmlsec-xades.test.ts`.
+
+#### XML canonicalisation and reference handling
+
+The enveloped transform is computed over the document that *already contains the
+signature*: the transform removes `ds:Signature` and nothing else, so digesting
+the document beforehand omits the whitespace the insertion adds and yields a
+signature that verifies nowhere. The signature is therefore assembled three
+times — to digest the document, to digest the signed properties in place, and to
+sign — with each pass re-serializing and re-parsing, so every digest is one a
+verifier can recompute from the published bytes alone.
+
+#### Offline-pinned ETSI schemas
+
+`schemas/etsi/`, with source URLs, retrieval dates and SHA-256 hashes recorded in
+`STANDARDS.md`. Validation has to work with no network, and a schema fetched at
+validation time is a schema that can change underneath you. A libxml2 input
+provider answers the schemas' own absolute `schemaLocation` URLs from disk, so
+the vendored bytes are never rewritten and their hashes stay checkable. Tests:
+`test/tsl612-schema.test.ts`.
+
+#### Signing-certificate profile checks
+
+`src/core/tsl612/signing-certificate.ts` applies TS 119 612 clause 5.7 and
+Annex B: subject `C` equal to the Scheme Territory, subject `O` equal to the
+Scheme Operator Name, `basicConstraints CA:FALSE`, a SubjectKeyIdentifier, a key
+usage limited to `digitalSignature` and/or `contentCommitment`, and an extended
+key usage that permits TSL signing when one is present. **Limitation, and the
+point of the module**: it asks whether a certificate is *shaped* like a Trusted
+List signing certificate, not whether anyone trusts it. No path is built and no
+revocation is checked. Tests: `test/tsl612-signing.test.ts`.
+
+#### Immutable publication and manifest model
+
+`src/core/publication/`. A version is staged, read back, re-hashed and only then
+renamed into place, so a version that exists is one that was verified after it
+was written. Re-storing byte-identical content succeeds; storing different
+content for an existing sequence is refused. `manifest.json` describes the
+published bytes. `inspector.json` and `fixture.json` sit deliberately *outside*
+the integrity-checked set: they are evidence about a version and can be re-run,
+while the published files never change. Tests: `test/publication.test.ts`,
+`test/tsl612-publication.test.ts`.
+
+#### Deterministic defect mutation pipeline
+
+`src/core/defects/registry.ts` holds one catalogue for both standards. Each
+defect states its intent once and binds it to a concrete mutation per standard,
+with the stage it applies at, the clause it violates, what a conformant list does
+instead, and what it is expected to fail — locally and at the Inspector. The UI,
+the API, the stored metadata and the tests all read that one catalogue.
+**Limitation**: the expected Inspector rule IDs are *expectations*, calibrated
+against a live run and always recorded against actuals, never asserted. Tests:
+`test/tsl612-defects.test.ts`, `test/broken-generation.test.ts`.
+
+#### Trust Inspector normalization and fail-closed behaviour
+
+`src/core/inspector/inspector.ts` submits the *signed* artifact — never a decoded
+one, because half the requirements are signature requirements — and reduces the
+response to a summary while storing the complete report. It reports `pass` only
+when the Inspector actually applied the submitted standard **and** every check it
+could decide locally held. A missing section, a standard reported
+`not_applicable`, an unknown applicability and an empty check list are all
+`unavailable`: no verdict was reached, and a standard that was not applied cannot
+have been passed. **No unsupported conformance claim is made anywhere**: a
+`pass` means "this Inspector found no applicable failure", not "this artifact
+conforms".
+
+### Other information for developers
+
+#### Technology stack
+
+TypeScript 5.8 on Node.js 24, ESM throughout. The web server is `node:http` with
+no framework, and the HTML comes from plain template functions rather than a view
+library. Runtime dependencies are deliberately few: `jose` (JOSE/JWS),
+`libxml2-wasm` (offline XSD validation and Exclusive XML Canonicalisation), `ajv`
+and `ajv-formats` (JSON Schema), `commander` (CLI) and `yaml`. Stoplight Elements
+7.15.0 is vendored into `src/web/assets/` and served same-origin, so `/docs`
+renders with no CDN.
+
+#### Why two publication engines
+
+TS 119 602 and TS 119 612 describe different documents. A LoTE is a JSON object
+with a *detached* Compact JAdES beside it; a Trust Service Status List is an XML
+document whose XAdES signature is *inside* it. Their element vocabularies,
+presence rules, status vocabularies and integrity artifacts all differ. Merging
+the engines would produce a compiler that constantly asks which standard it is
+serving.
+
+They are therefore parallel and share only what genuinely is shared. The
+implementation began as TS 119 602 JSON/JAdES support for the five LoTE annexes;
+TS 119 612 XML/XAdES national Trusted Lists were added afterwards for EAA and
+QEAA. That is why the shared abstractions are where they are:
+
+- `src/core/authoring/list-family-catalogue.ts` — every user-facing family with
+  its standard, artifact format, statuses, onboarding route and lifecycle
+  actions. Views read this instead of testing family names.
+- `src/core/publication/reader.ts` — one reader in front of both stores, which
+  decides a list's format from what is actually on disk.
+- `src/core/defects/` — one defect catalogue and one evidence document for both
+  formats.
+
+#### Repository layout
+
+```text
+src/cli/          command-line entry point
+src/core/         the engines: authoring, compiling, signing, publication
+src/core/defects/ the canonical defect catalogue and fixture evidence
+src/core/tsl612/  everything specific to TS 119 612 XML
+src/web/          HTTP server, views, assets, OpenAPI
+src/xmlsec/       standalone XAdES-B-B signer and verifier
+schemas/etsi/     pinned ETSI schemas
+scripts/          generators and explicit live verification runs
+test/             offline test suites
+examples/         example configuration and submissions
 ```
 
-The last four fields carry Annex D/E scheme information and are required: a list
-cannot be conformant without a policy, an operator email and at least two scheme
-information URIs. `/admin/lists/create` writes complete entries for you.
+#### Configuration model
 
-**Testing-tool limitation**: This is a test/debug fixture publisher, not an
-official or production Trusted List Provider. Document uploads are not
-implemented; required documents use placeholder `{FILENAME}.md` references.
+One signing-configuration file holds a single `lists:` array for both standards,
+discriminated by `standard`. An entry with no `standard` field reads as
+TS 119 602, so every configuration written before XML support loads unchanged.
+Artifact locations are read from the environment with documented defaults and are
+never hardcoded — see `directives/BARIO.md`.
 
-## Quick GUI guide
+#### Artifact lifecycle
 
-Every page uses the shared Credimi header and footer shell. On short pages the
-footer stays at the bottom of the viewport; on longer pages it follows the page
-content normally.
+A list is declared, its first version is published, and every later publication
+appends an immutable version. A status change publishes sequence + 1 and moves
+the previous state into history. For TS 119 612 that history is permanent,
+ordinary republication preserves `StatusStartingTime`, and a superseded status is
+always strictly earlier than the status that replaced it.
 
-Pages that show a Trusted List also show which standard it follows and which
-artifact it publishes, as two chips: `ETSI TS 119 602` with
-`JSON / Compact JAdES`, or `ETSI TS 119 612` with `XML / XAdES-B-B`.
+Each TS 119 612 version publishes:
 
-### Publishing an EAA or QEAA provider, end to end
-
-1. **Administration → Create XML Trusted List.** Enter the scheme operator,
-   the responsible Member State, the scheme URIs, the stable XML distribution
-   URL and the EU LOTL pointer material, then tick the service profiles the
-   list accepts — EAA, QEAA or both. Generate the signing material with the
-   button if `TLP_CERTIFICATES_DIR` is set; it produces an EC P-256 key and a
-   certificate carrying the `tslSigning` extended key usage. Creating the list
-   publishes its first, empty, signed version immediately.
-2. **Onboarding → EAA Providers** or **QEAA Providers.** The applicant picks the
-   target list, which fixes the Scheme Territory, and supplies the TSP details,
-   the service certificate and the evidence of national recognition or of
-   qualified status. The evidence is kept for review and never published.
-3. **Administration → Manage EAA and QEAA Applications.** Review the
-   application, its cumulative-publication preview and its evidence, then
-   Approve and Publish. The provider appears in a new immutable version with
-   the family's initial status.
-4. **Deprecate national recognition** or **Withdraw qualified status** on the
-   published application. This publishes another immutable version in which the
-   service carries the end status and the previous state sits in
-   `ServiceHistory`. Both versions stay downloadable and verifiable.
-
-### Catalogue (`/`)
-
-The home page lists every published Trusted List with its family, latest
-sequence, issue and next-update dates and cryptographic signature status. Signer
-trust is always reported as *not evaluated*. Each Trusted List and each Trusted
-List Family is shown as a colour-coded chip, and the same colour is used for that
-family or list on every other page. Click a list to see its version history, and
-a version to see its manifest, entities, certificate details, its Trust Inspector
-result and its downloads.
-
-The last column, **Open**, opens the latest version's artifacts directly: a
-**JSON** button for the LoTE, a **JAdES** button for the Compact JAdES signed
-artifact, and an **XML** button only for versions that actually have an
-`lote.xml` beside them. JSON and JAdES are always present, because every
-published version has both by construction. This publisher does not produce
-XML — TS 119 612 and XAdES are out of scope — so the XML button is normally
-absent rather than dead.
-
-### Version pages and the Trust Inspector
-
-Every published version is submitted to the
-[Trust Inspector](https://trust-inspector.credimi.io) as its **Compact JAdES**
-artifact — the signed form, because half of the Annex D/E requirements are
-signature requirements. The complete evaluation is stored beside the version, and
-the page shows the Inspector status (Pass, Fail or Unavailable), the detected
-family/profile, the TS 119 602 conformance level, pass/fail counts and the
-evaluation timestamp, with **View Inspector report** and **Download Inspector
-JSON**. An Inspector that could not be reached is reported as *Unavailable* and is
-never presented as conformance.
-
-Three download buttons appear on every version page: **JSON** (the decoded LoTE),
-**Compact JAdES** (the signed artifact) and **Inspector report**. XML is not
-published yet.
-
-### Creating a Trusted List
-
-From **Admin → Create Trusted List**, or over the API. Choose the family, name the
-list, give the scheme operator details and a public base URL, and point at the
-signing key and certificate. The list is declared, its first empty version is
-signed and published, and the Inspector assesses it immediately. Deliberately
-broken lists are listed on the form, one checkbox per defect, but generation of
-them is not implemented yet and the options are disabled.
-
-When `TLP_CERTIFICATES_DIR` is configured, the Signing Material card also offers
-**Generate key and certificate**. It takes `O` from the Operator Name and `C`
-from Scheme Territory, creates a self-signed EC P-256 certificate through
-OpenSSL, and prefills the generated server-side paths. Material is stored under
-`<TLP_CERTIFICATES_DIR>/<listKey>/`; existing files are never overwritten and
-the private key is created with mode `0600`. The configured directory must be a
-persistent volume when the server runs in a container. Relative configured
-paths are preserved in the signing configuration and resolve from the server's
-working directory; for example, `./.local-signing` remains relative.
-
-The signing certificate must have subject `O` equal to the scheme operator name
-and subject `C` equal to the scheme territory (`EU` for Annex D and Annex E), or
-the Inspector reports a signer subject mismatch.
-
-### Onboarding (`/onboarding`)
-
-Pick the Trusted List Family your organisation belongs to and start an
-application. The form collects the entity's legal name, postal address and
-information URI, plus one or more services. Each service needs a type, a name, an email address, a telephone number, a
-**Service Digital Identity Certificate (PEM)** and a unique service URI.
-The certificate may be self-signed or CA-issued; its subject organisation (`O`)
-must be exactly the entity name entered on the form, and the private key is never
-uploaded. WRPAC and WRPRC submissions must use a currently valid RFC 5280 CA
-certificate with critical `basicConstraints`/`CA:TRUE`, critical `keyUsage`
-containing `keyCertSign`, an SKI, and an AKI key identifier when it is not
-self-signed.
-Anything that is not an X.509 PEM certificate — a private key, a public key, a
-signing request, a PKCS#12 bundle — is rejected with a message naming what was
-supplied. Use **+ Add Service** to add more services; blocks are renumbered
-automatically and every block after the first has a **Remove service** button.
-Submitting returns an application ID to quote when following up.
-
-### Certificate creation (`/docs/certificate-creation`)
-
-A one-page guide, linked from the footer **Resources** column and from the
-certificate field on both onboarding forms. It explains what
-`ServiceDigitalIdentity` means for Wallet and PID services, distinguishes PEM,
-PKCS#8, PKCS#10, PKCS#12/PFX and DER, and gives the OpenSSL commands to create a
-self-signed test certificate, to check that a certificate matches its private
-key, to create a CSR for a CA, and to convert or extract a certificate to PEM.
-It also gives the RFC 5280 extension requirements for WRPAC and WRPRC CA
-certificates.
-
-### Administration (`/admin`)
-
-Sign in with `ADMIN_USER`/`ADMIN_PASSWORD`, or with `/admin?token=…`. From the
-dashboard:
-
-- **Manage Applications** — filter by state, open an application to review the
-  entity, its services, the ETSI validation result, the normalized compiler
-  input and the cumulative publication preview, then Approve, Reject, Publish or
-  Delete it.
-- **Signing Configuration** — per-list signing status, certificate subject and
-  fingerprint. Private key contents are never displayed.
-- **Settings** — auto-approval. Tick a Trusted List Family, or a single Trusted
-  List nested under it, to approve and publish every future application for it
-  immediately on submission, bypassing the manual Approve and Publish actions.
-  Either level is sufficient. Families with no implemented profile cannot be
-  enabled. If an automatic publication fails, the applicant is told and the
-  application stays in the manual review queue.
-
-### API documentation (`/docs`)
-
-The full API reference renders in an embedded Stoplight Elements frame. The raw
-specification is available at `/openapi.yaml` and `/openapi.json`.
-
-## CLI Examples
-
-| Command | Example |
-|---------|---------|
-| `compile` | `trusted-list-publisher compile -i scheme.json -o lote.json` |
-| `validate` | `trusted-list-publisher validate -i lote.json --etsi` |
-| `sign` | `trusted-list-publisher sign -i lote.json -k key.pem -c cert.pem -o signed.jades` |
-| `verify` | `trusted-list-publisher verify -i signed.jades -c cert.pem` |
-| `publish` | `trusted-list-publisher publish -i signed.jades -c cert.pem --publication-dir ./publications` |
-| `serve` | `trusted-list-publisher serve --publication-dir ./publications --port 8080` |
-| `serve (GUI)` | `DATA_COLLECTION_GUI=true trusted-list-publisher serve --data-collection-gui` |
-
-**Exit codes**:
-- 0: success
-- 1: general error (invalid JSON, file not found)
-- 2: authoring schema validation failure
-- 3: ETSI schema validation failure
-- 4: missing key or certificate
-- 5: signature verification failure
-- 6: publication error (invalid signature, expired cert, ETSI schema failure)
-
-## API Examples
-
-| API | Example |
-|-----|---------|
-| List published lists | `curl http://localhost:8080/api/v1/lists` |
-| Get list index | `curl http://localhost:8080/api/v1/lists/eu_credimi` |
-| Get version manifest | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1` |
-| Download decoded LoTE JSON | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/lote` |
-| Download Compact JAdES | `curl -o lote.jades http://localhost:8080/api/v1/lists/eu_credimi/versions/1/signature` |
-| Download publication manifest | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/manifest` |
-| Open the XML rendition of a TS 119 602 version, when it has one | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/xml` — 404 unless an `lote.xml` was placed beside the version; this publisher does not produce one |
-| Download a signed XML Trusted List (TS 119 612) | `curl -o trusted-list.xml http://localhost:8080/api/v1/lists/it_example/versions/1/trusted-list.xml` |
-| Download its SHA-256 digest | `curl http://localhost:8080/api/v1/lists/it_example/versions/1/trusted-list.sha2` |
-| The current XML Trusted List, at a stable URL | `curl -o trusted-list.xml http://localhost:8080/lists/it_example/latest/trusted-list.xml` |
-| The current digest, at a stable URL | `curl http://localhost:8080/lists/it_example/latest/trusted-list.sha2` |
-| Verify a downloaded Trusted List against its digest | `test "$(sha256sum trusted-list.xml \| cut -d" " -f1)" = "$(curl -s http://localhost:8080/lists/it_example/latest/trusted-list.sha2)" && echo match` |
-| Download the Trust Inspector evaluation | `curl http://localhost:8080/api/v1/lists/eu_credimi/versions/1/inspector` |
-| Create a Trusted List (admin token) | `curl -X POST http://localhost:8080/api/v1/admin/lists -H "Authorization: Bearer $TLP_ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"family":"wrpac-providers","schemeName":"EU WRPAC Providers List","schemeOperatorName":"Example Scheme","schemeTerritory":"EU","schemeOperatorStreet":"1 Example St","schemeOperatorCountry":"IT","schemeOperatorEmail":"trustedlists@example.eu","baseUrl":"https://example.eu/wrpac-providers","keyFile":"/etc/tlp/signer-key.pem","certFile":"/etc/tlp/signer-cert.pem"}'` — `family` is one of `pid-providers`, `wallet-providers`, `wrpac-providers`, `wrprc-providers` |
-| Health check | `curl http://localhost:8080/healthz` |
-| OpenAPI specification | `curl http://localhost:8080/openapi.yaml` |
-
-## Authoring workflow 
-
-1. Applicant navigates to `/onboarding` and selects one of the seven available
-   families: PID, Wallet, WRPAC, WRPRC or Pub-EAA Providers
-2. Applicant submits entity details, addresses, and one X.509 PEM certificate per
-   service (self-signed or CA-issued; see `/docs/certificate-creation`). WRPAC
-   and WRPRC certificates must satisfy the RFC 5280 CA checks described above.
-   The certificate is optional for Pub-EAA Providers, which may supply more than
-   one provided they share a public key and a subject
-3. Applicant receives a confirmed application ID
-4. Administrator reviews at `/admin/applications`
-5. Administrator approves, then publishes
-6. Published LoTE appears in the public catalogue at `/`
-7. For Pub-EAA Providers only, the administrator may later **withdraw** the
-   notification, which publishes a further immutable version
-
-Steps 4 and 5 are skipped for a Trusted List Family or Trusted List that is set
-to auto-approve in `/admin/settings`: those applications are approved and
-published as soon as they are submitted.
-
-The mutable application/draft layer (`AUTHORING_DIR`) is separate from the
-immutable publication store (`PUBLICATION_DIR`). Applications track their
-lifecycle state (`submitted` → `approved` → `published`) and record the
-resulting publication metadata.
-
-## Cumulative publication semantics
-
-We introduced cumulative membership independently for each configured list
-key. The current profile-aware path adds one approved Wallet Provider or PID Provider entity to the
-latest authenticated list and creates the next immutable sequence; it does not
-replace earlier entities.
-
-- The highest physically stored sequence directory is authoritative. If that
-  sequence is corrupt or unauthenticated, preview and publication fail closed
-  instead of falling back to an older version.
-- Every existing authenticated entity is converted to the authoring model and
-  compiled back before reuse. The complete entity must survive that semantic
-  round trip, otherwise preview and publication reject the first differing
-  field path before signing or filesystem writes.
-- Service unique identifiers must be unique within one list key, across all
-  services and entities. The same identifier may be used in a different list
-  key, and display names are not uniqueness keys.
-- Publication is serialized by a process-local keyed lock. Different list keys
-  remain independent, but this lock does not coordinate multiple Node.js
-  processes or hosts sharing one publication directory.
-- Immutable publication commit and mutable application-state update are
-  separate boundaries. If the immutable commit succeeds but the application
-  save fails, `publishApplication()` returns the typed
-  `PUBLICATION_COMMITTED_APPLICATION_STALE` result with hashes, sequence and
-  timestamp. `reconcileApplication()` repairs the application record without
-  creating another list version.
-- The authenticated admin application-detail route renders existing/resulting
-  entity counts and current/proposed sequences before publication.
-
-PID, Wallet, WRPAC, WRPRC and Pub-EAA Providers are implemented list families.
-Registrars and Registers is visible in the GUI but is not accepted for authoring
-or publication.
-
-## Trusted List families
-
-Eight user-facing families across two standards. The format-aware catalogue
-(`src/core/authoring/list-family-catalogue.ts`) names all of them and states,
-per family, the standard, the artifact format, the profile identifier, the
-allowed statuses, the onboarding route and the lifecycle actions — so no page
-infers a format from a family name.
-
-### ETSI TS 119 612 — XML / XAdES-B-B
-
-| Family | Service type | Initial status | End status | Onboarding |
-|--------|--------------|----------------|------------|------------|
-| EAA Providers | `.../Svctype/EAA` | `recognisedatnationallevel` | `deprecatedatnationallevel` | `/onboarding/eaa-provider` |
-| QEAA Providers | `.../Svctype/EAA/Q` | `granted` | `withdrawn` | `/onboarding/qeaa-provider` |
-
-EAA and QEAA are **service profiles inside a national Trusted List**, not lists
-of their own. An administrator creates an XML Trusted List and declares which
-profiles it accepts; one list may accept EAA, QEAA or both. The onboarding
-family the applicant uses decides the service type and the status vocabulary,
-and the core refuses a family the target list does not accept — not only the
-HTML.
-
-Approval publishes the service with the family's initial status and a status
-starting time taken from the publication event. The administration action —
-**Deprecate national recognition** for EAA, **Withdraw qualified status** for
-QEAA — publishes a *new immutable version* in which the service carries the end
-status and the previous state has moved into `ServiceHistory`, identified by
-`X509SKI` with no certificate. The version that listed the service as current is
-never rewritten. Ordinary republication preserves `StatusStartingTime`.
-
-A published service is identified by its service type plus the SHA-256 of its
-certificate's public key, so a renamed service is still the same service and two
-providers may share a service name.
-
-Each version publishes four files, of which the first three are
-integrity-checked:
-
-```
-trusted-list.xml      the signed XML — the artifact
-trusted-list.sha2     SHA-256 of the exact XML bytes, bare lowercase hex
-manifest.json         format-aware manifest
-inspector.json        Trust Inspector evidence, re-runnable
+```text
+trusted-list.xml    the signed XML — the artifact
+trusted-list.sha2   SHA-256 of the exact XML bytes, bare lowercase hex
+manifest.json       format-aware manifest
+inspector.json      Trust Inspector evidence, re-runnable
+fixture.json        negative-fixture evidence, broken versions only
 ```
 
-XML is served as `application/vnd.etsi.tsl+xml`, at immutable version URLs and
-at stable latest URLs ending exactly in `trusted-list.xml` and
-`trusted-list.sha2`.
+The first three are integrity-checked. XML is served as
+`application/vnd.etsi.tsl+xml`, at immutable version URLs and at stable latest
+URLs ending exactly in `trusted-list.xml` and `trusted-list.sha2`.
 
-### ETSI TS 119 602 — JSON / Compact JAdES
+#### Commands
 
-The immutable profile registry (`src/core/profiles/registry.ts`) explicitly
-selects profiles at compile, configuration, publication, and reconciliation
-boundaries. It holds the six TS 119 602 families, in annex order:
-
-| Family | Annex | State | Onboarding |
-|--------|-------|-------|------------|
-| PID Providers | D | enabled | `/onboarding/pid-provider` |
-| Wallet Providers | E | enabled | `/onboarding/wallet-provider` |
-| WRPAC Providers | F | enabled | `/onboarding/wrpac-provider` |
-| WRPRC Providers | G | enabled | `/onboarding/wrprc-provider` |
-| Pub-EAA Providers | H | enabled | `/onboarding/pub-eaa-provider` |
-| Registrars and Registers | — | disabled | — |
-
-Pub-EAA (Annex H) and QEAA are different things and are not interchangeable:
-Annex H is a TS 119 602 JSON list of *publicly issued* attestation providers,
-while QEAA is a TS 119 612 XML service profile for *qualified* providers.
-
-Annex H (Pub-EAA Providers) is the only implemented profile that publishes a
-service status. Every service of a notified provider carries
-`SvcStatus/notified` and a `StatusStartingTime` taken from the publication event;
-the administration **Withdraw notification** action publishes a new immutable
-version in which every service reads `SvcStatus/withdrawn` and the previous state
-is kept in `ServiceHistory` by subject key identifier only. Annex H also fixes
-`HistoricalInformationPeriod` at 65535, publishes **no** `PointersToOtherLoTE`,
-makes the service certificate optional, and requires the Union or national legal
-basis as an `OJ:` URI. One locally decidable Annex H sub-rule
-(`pubEaaLawReferencePresent`) is not yet satisfied — see `STANDARDS.md` for what
-was probed and why it is reported rather than hidden.
-
-Annex F and Annex G differ from Annex D/E in three ways that the registry states
-rather than the call sites guessing: they use no `ServiceUniqueIdentifier`
-extension, their entity role URI names the Responsible Member State that mandates
-the provider, and their onboarding collects a policies and terms URL, an optional
-official registration identifier and an optional additional-information URL.
-Neither profile publishes `ServiceStatus` or `StatusStartingTime`: presence in the
-current list version is the statement that the provider is mandated, and losing
-the mandate removes the entity from the next version.
-
-Every configured list key declares `family`, and cumulative publication rejects
-an authenticated existing LoTE whose type conflicts with that family. Internal
-schema/signature checks are publication safety boundaries, not external trust
-or regulatory-conformance evaluation.
-
-## Auto-approval settings
-
-`/admin/settings` stores its state in `settings.json` inside `AUTHORING_DIR`,
-beside the mutable application records and never in the publication store:
-
-```json
-{
-  "schemaVersion": 1,
-  "autoApproveFamilies": { "wallet-providers": true },
-  "autoApproveLists": { "eu_credimi": true }
-}
+```bash
+npm run format          # Prettier, writes
+npm run format:check    # Prettier, checks
+npm run lint            # tsc --noEmit, then the DESIGN.md linter
+npm run build           # tsc, then copy the pinned XML schemas into dist/
+npm test                # the whole offline suite; contacts no external service
+npm run fixtures:generate   # generate both TS 119 612 fixture suites, offline
+npm run fixtures:verify     # generate them and validate them live
 ```
 
-A family opt-in and a list opt-in are equivalent — either one is enough. An
-auto-approved application still goes through the ordinary locked, cumulative
-publication path, so uniqueness, round-trip and ETSI checks all still apply. On
-read, unknown families, unsafe list keys and non-boolean values are dropped so a
-hand-edited file cannot break the administration pages. Writes are atomic, and
-the posted form is the complete new state: a box left unticked turns its flag off.
+`task build`, `task test`, `task lint`, `task format` and `task run` wrap the
+same scripts.
 
-## Intentionally broken Trusted Lists
+#### Adding a new TS 119 602 family
 
-Broken lists exist so EUDI implementations — wallets, Issuers, Verifiers — can
-register against a list that is *known* to violate a specific clause and confirm
-their runtime detects it. **A failing Trust Inspector verdict on one of these
-lists is the deliverable, not an error.**
+1. Add a directory under `src/core/profiles/` with the annex's constants.
+2. Register it in `src/core/profiles/registry.ts`.
+3. Add it to `LIST_FAMILIES` in `list-family-catalogue.ts` with an onboarding
+   route.
+4. Extend the submission parser, the application model and the list assembler.
+5. Add an acceptance test modelled on `test/annexh-pub-eaa.test.ts`.
 
-Currently implemented for the **Pub-EAA (Annex H)** family.
+#### Adding a new TS 119 612 service profile
 
-### How a broken list is generated
+1. Add the service type and status URIs to `src/core/tsl612/constants.ts`.
+2. Add the profile to `TSL_PROFILE_REGISTRY` in `src/core/tsl612/registry.ts` —
+   service type, initial and end status, lifecycle wording.
+3. Add it to `LIST_FAMILIES` with an onboarding route.
+4. Nothing in the compiler, signer, store or Inspector should need to change: a
+   profile is data, not a code path.
 
-The list is compiled **healthy first**, then cloned and mutated, so every broken
-fixture is a stated delta from a known-good baseline:
+#### Adding a new deterministic defect
 
-1. Compile the healthy document.
-2. Apply the selected **pre-sign** mutations to a clone (schema, profile,
-   lifecycle, certificate and content defects).
-3. Sign it.
-4. Apply the selected **post-sign** mutations (signature defects), which re-sign
-   rather than edit the serialization — a hand-edited JWS fails cryptographic
-   verification first and would mask the defect under test.
-5. Publish, submit the final Compact JAdES to the Trust Inspector, and store the
-   complete evaluation.
+1. Add it to `DEFECT_CATALOGUE` in `src/core/defects/registry.ts`, with one
+   binding per standard that can express it. State the stage, the mutation, the
+   clause, the conformant behaviour, and the expected local and Inspector
+   failures.
+2. Implement the mutation in `src/core/authoring/defects.ts` (JSON) and/or
+   `src/core/tsl612/defects.ts` (XML), recording whether it applied.
+3. Nothing else: the form, the API, the stored metadata, the fixture suite and
+   the tests all read the catalogue.
+4. Run `npm run fixtures:verify` and calibrate the expected Inspector rules
+   against what actually fires. Leave the honest gaps in place.
 
-Local schema and profile validation failures are **recorded, not fatal**: for a
-broken fixture a schema violation is the point. The signature must still verify
-and the certificate must still be current, so a broken fixture is never also an
-unauthenticated one, and the manifest hashes still cover the artifacts exactly
-as published.
+#### Testing rules
 
-### The defect catalogue
+- **Ordinary tests must not contact an external service.** Use a stub `fetch`,
+  or no Inspector client at all. A server created without `inspectorBaseUrl` has
+  no Inspector client, so no test can upload an artifact even by accident.
+- A test that publishes uses a temporary directory.
+- Assert the recorded evidence rather than the wording of a message, wherever
+  the evidence exists.
 
-| Defect ID | Stage | Primary expected Inspector rule |
-|-----------|-------|--------------------------------|
-| `non_strict_timestamps` | pre-sign | `ts119602.syntax.date_time` |
-| `scheme_name_without_territory` | pre-sign | `ts119602.scheme.name` |
-| `missing_scheme_information_uri` | pre-sign | `ts119602.structure.scheme_information_presence` |
-| `missing_policy_or_legal_notice` | pre-sign | `ts119602.scheme.policy_or_legal_notice` |
-| `missing_operator_email` | pre-sign | `ts119602.scheme.operator_address` |
-| `missing_self_pointer` | pre-sign | `ts119602.profile.pub_eaa_providers.scheme_information` |
-| `pem_service_certificate` | pre-sign | `ts119602.service.digital_identity` |
-| `extension_without_criticality` | pre-sign | `ts119602.service.extensions` |
-| `signer_organisation_mismatch` | post-sign | `json_lote.signature.jades_signer_subject.organization` |
-| `jades_without_signing_time` | post-sign | `json_lote.signature.jades_signing_time` |
+#### Trust Inspector integration
 
-Expected rule IDs were taken from live Inspector evaluations, not guessed. They
-remain an *expectation*: the stored metadata always reports expected against
-actual, so a drifting Inspector rule set is visible rather than hidden.
+The publisher submits the signed artifact inline to the Inspector's
+`POST /api/audit/artifact`, as JSON, with the artifact in `content` and its media
+type in `contentType` — `application/jose` for a Compact JAdES, and
+`application/vnd.etsi.tsl+xml` for a signed XML Trusted List. Nothing is
+uploaded by URL and nothing is multipart-encoded.
 
-**Annex H note.** Annex H forbids `PointersToOtherLoTE`, so a healthy Pub-EAA
-list already omits it and "omit the self pointer" would change nothing. For this
-family the defect is inverted — it *injects* the prohibited pointer. The runtime
-consequence a developer tests for is the same.
+Calls are **automatic** at exactly one point: publishing a version, when
+`TLP_INSPECTOR_URL` is configured. The complete response is stored as
+`inspector.json` beside the version and the derived summary drives the version
+page. There is no background re-evaluation.
 
-### Defects persist on the list
+An **explicit** live validation of the fixture suites is:
 
-The selection is stored on the signing-configuration entry, not applied once at
-creation. **Every later version of the list is mutated the same way**, including
-the version published when a developer's Issuer or Verifier is approved into it.
-A list declared broken stays broken. Without this, a developer registering into
-a broken list would get a clean entry back and the service-level defects would
-never reach them.
-
-Because a newly created list is empty, broken fixtures are seeded with one
-deterministic synthetic entity so the service-level defects have something to
-mutate. The healthy baseline stays empty, which is what keeps its verdict clean.
-
-### Evidence stored beside each version
-
-`fixture.json` sits next to `inspector.json`, outside the integrity-checked set
-for the same reason: it is evidence *about* the version. It records the selected
-defects, every mutation and whether it landed, local validation failures, and
-expected against actual Inspector failures split into matched, missing,
-additional and known-unrelated. Cascading failures are expected — one mutation
-can trip several rules — so an additional failure is reported, not treated as
-wrong.
-
-### Generating the fixture suite
-
-```sh
+```bash
 npm run build
-node scripts/generate-pub-eaa-fixtures.mjs           # real generator, live Inspector
-node scripts/generate-pub-eaa-fixtures.mjs --dry-run # list what would be created
+npm run fixtures:verify                      # both TS 119 612 fixture suites
+node scripts/verify-tsl612-acceptance.mjs    # the healthy TS 119 612 flow
 ```
 
-This produces `pub-eaa-healthy`, one `pub-eaa-broken-<defect-id>` per defect and
-`pub-eaa-broken-combined`. Each fixture is signed by its own certificate whose
-subject organisation equals its scheme operator name — sharing one would make
-every list fail the signer-organisation rule and drown the defect under test.
+Both fail closed. An Inspector that cannot be reached, or that returns a result
+it did not actually assess, is an unsuccessful run.
 
-All paths come from the environment; none are hardcoded:
+Three Inspector answers are represented as `status: "unavailable"` with the
+reason in `error`: the Inspector could not be reached; it reported the submitted
+standard as `not_applicable` or of unknown applicability; or it ran no check at
+all. **None of them may ever be presented as a pass** — a standard that was not
+applied cannot have been passed, and an artifact that was never assessed has not
+been found conformant. A fixture whose mutation prevents classification (the
+invalid-namespace one does) therefore records `unavailable`, not `pass`, and its
+`standardApplicability` and `artifactKind` are kept so a reader can see why.
 
-| Variable | Default | Holds |
-|----------|---------|-------|
-| `TLP_SIGNING_CONFIG` | `./.local-signing/signing-config.json` | the signing configuration the fixtures are appended to |
-| `TLP_FIXTURE_KEY_DIR` | `./.local-signing/fixtures` | per-fixture signing key and certificate pairs |
-| `TLP_FIXTURE_REPORT` | `./.local-signing/fixture-report.json` | the run report |
-| `TLP_PUBLICATION_DIR` | `./publications` | the published fixtures |
+#### Data migration and backward compatibility
 
-The run report is a human-readable summary of the generation: derived list keys,
-Inspector verdicts, and expected against actual failures per fixture. **Nothing
-in the application reads it** — it is an operator-facing record of one run, and
-deleting it affects nothing.
+- Signing-configuration entries with no `standard` field read as TS 119 602.
+- Fixture metadata is at schema version 2; version 1 files are still read and
+  are treated as TS 119 602 JSON with no local-failure axis.
+- Manifests written before XML fixtures have no `trustedListSha2Published`; it
+  is read as equal to `trustedListXmlSha256`.
+- Published versions are never rewritten by any of the above.
 
-Reruns are idempotent: a fixture is deleted and regenerated from scratch.
+#### Security considerations
 
-## Deployment
+- Private keys are read from local files and are **never** uploaded, echoed or
+  rendered. The administration UI shows paths and fingerprints only.
+- The admin token is compared in constant time, and enabling the GUI without one
+  is refused at startup.
+- Publication paths are validated against a strict key pattern, symlinks in a
+  publication path are rejected, and reads are size-bounded.
+- Publishing to the Trust Inspector **uploads the artifact to a third party**.
+  That is why the integration is opt-in and off unless configured.
+- Generated certificates are self-signed test material. Treat every artifact
+  this tool produces as untrusted input.
 
-Reference deployment: the Node app under pm2 listening on `TLP_PORT`, behind
-Caddy as a reverse proxy, with DNS at Cloudflare. See
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the full debugging guide and
-[`deploy/Caddyfile.example`](deploy/Caddyfile.example) for a ready site config.
+#### Known limitations
 
-```caddy
-lote.credimi.io {
-    reverse_proxy 127.0.0.1:23100
-}
-```
+- No PKIX path building, no revocation checking, no trust establishment.
+- No LoTL aggregation; only the mandatory pointer to the EU LOTL.
+- No EC TS02 notification API.
+- One signature per XML document; no timestamps, no long-term validation.
+- One locally decidable Annex H sub-rule (`pubEaaLawReferencePresent`) is not
+  satisfied — `STANDARDS.md` records what was probed and why it is reported
+  rather than hidden.
+- Expected Inspector rule IDs drift as the Inspector changes. That is recorded
+  per version as missing or additional failures rather than hidden.
+- Two Inspector observations on healthy XML lists are understood and expected:
+  `parse.schema_location` warns, and `ts119612.pointer.rollover` wants two key
+  pairs with shifted validity — an operational property of key management, not
+  something a generator produces.
 
-The app exposes `GET /healthz`, which returns `{"status":"ok"}` uncached, and
-writes one JSON line per request to stderr (`pm2 logs`). Probe the app, then
-Caddy, then Cloudflare — the first probe that fails identifies the broken layer.
+#### Contribution and handoff
 
-### Cloudflare: the proxied-record redirect loop
+`directives/BARIO.md` governs how work is done here: Conventional Commits
+carrying a `reason` and a `prompt`, formatting and linting before every commit,
+no pushing, no secrets, no artifacts in the repository root, and a rolling
+handoff under `./handoffs/` for every task. `CONTRIBUTING.md` and `AGENTS.md`
+point at it. `DESIGN.md`, `STANDARDS.md` and `SPECS.md` carry the design
+decisions, the standards provenance and the detailed specifications.
 
-If the site answers `ERR_TOO_MANY_REDIRECTS` in the browser, and `curl -I` shows
-a chain of `308 Permanent Redirect` responses whose `Location` equals the URL
-that was requested, the cause is the Cloudflare DNS record for the subdomain
-being set to **Proxied** (orange cloud) while the zone's SSL/TLS mode is
-**Flexible**.
+## Disclaimer
 
-In that combination Cloudflare fetches the origin over plain HTTP on port 80.
-Caddy's automatic HTTPS answers every path with its standard `308` redirect to
-`https://`. Cloudflare relays that redirect to the browser, which is already on
-HTTPS, so it requests the same URL again — indefinitely.
+This project is **non-normative** and currently **Beta**.
 
-Two details make this easy to recognise:
+No guarantee is given of standards conformance, legal validity, availability or
+fitness for production use.
 
-- **The status code is the fingerprint.** `308` is Caddy's automatic-HTTPS
-  redirect. Cloudflare's own "Always Use HTTPS" feature emits `301` instead.
-- **`pm2 logs` stays completely empty.** The loop resolves at the edge, so no
-  request ever reaches the app. An empty app log during a failing request is
-  itself a diagnosis: look at Caddy and Cloudflare, not at the application.
+The Trusted Lists, certificates and signatures it generates are **test
+fixtures**, unless explicitly replaced with properly governed production
+material.
 
-The fix is to set the DNS record for the subdomain to **DNS only** (grey cloud),
-so Caddy terminates TLS end-to-end with its own Let's Encrypt certificate. If
-the record must stay proxied, set the Cloudflare SSL/TLS encryption mode to
-**Full (strict)** instead.
+Trust Inspector results are **technical evidence — not accreditation and not
+legal qualification**. A passing evaluation is one tool's opinion of one artifact
+at one moment.
 
-Verify with `curl` before trusting a browser — browsers cache `308` responses
-aggressively and keep looping after the server is already fixed:
-
-```sh
-curl -sSI https://lote.credimi.io/healthz   # expect 200, not 308
-```
-
-## Environment variables
-
-| Variable | Used by | Default |
-|----------|---------|---------|
-| `TLP_SIGNING_KEY` | `sign` | — |
-| `TLP_SIGNING_CERT` | `sign`, `verify`, `publish` | — |
-| `TLP_PUBLICATION_DIR` | `publish`, `serve` | `./publications` |
-| `TLP_HOST` | `serve` | `127.0.0.1` |
-| `TLP_PORT` | `serve` | `8080` |
-| `DATA_COLLECTION_GUI` | `serve`  | `false` |
-| `AUTHORING_DIR` | `serve`  | `./authoring` |
-| `TLP_ADMIN_TOKEN` | `serve`  | — |
-| `TLP_SIGNING_CONFIG` | `serve`  | — |
-| `TLP_CERTIFICATES_DIR` | `serve` | — |
-| `TLP_SCHEME_OPERATOR_NAME` | `serve`  | `Credimi` |
-| `TLP_SCHEME_NAME` | `serve`  | `EU Wallet Providers List` |
-| `TLP_SCHEME_TERRITORY` | `serve`  | `EU` |
+Users remain responsible for independent standards, security and legal review of
+anything they do with this software.

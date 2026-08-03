@@ -247,8 +247,9 @@ section, which is the section this publisher's summary reads — reading the
 TS 119 602 section for an XML artifact would report zero checks and call that a
 pass.
 
-A conforming EAA list produced by this publisher scores **112 pass, 10
-not_applicable, 8 not_checked, 3 warn, 1 inconclusive, 0 fail**.
+A conforming EAA list produced by this publisher scores **121 pass, 11
+not_applicable, 7 not_checked, 2 warn, 2 inconclusive, 0 fail** (re-measured
+2026-08-03).
 
 Three findings shaped the implementation:
 
@@ -699,3 +700,103 @@ never an example to copy.
 EC TS02 v1.0.1 defines the provider notification/publication API for the EC to
 publish trusted lists. The documentation URL returned 404. This is a deferred
 concern for a future notification/registration API slice.
+
+## Trust Inspector integration, as this publisher uses it
+
+Re-established against the live OpenAPI document on **2026-08-03**
+(`GET https://trust-inspector.credimi.io/openapi.json`, "WE BUILD Trusted List
+Audit API" 0.1.0), rather than carried over from older code.
+
+| Question | Answer |
+| --- | --- |
+| XML Trusted List analysis endpoint | `POST /api/audit/artifact` |
+| Request media type | `application/json` |
+| How the XML is supplied | **Inline**, as the `content` string. Not multipart, and not by URL. |
+| Body | `{ content, source, contentType, declared?, options? }`, `additionalProperties: false` |
+| `contentType` for XML | `application/vnd.etsi.tsl+xml` |
+| `contentType` for a Compact JAdES | `application/jose` |
+| `declared` | Optional; when present, `pointerCertificateFingerprintsSha256` is required |
+| Response | `{ result: TrustedListAuditResult }` |
+| Artifact classification | `result.detected.artifactKind` ∈ `ts119612_xml_tsl`, `ts119612_xml_lotl`, `xml_lotl_like`, `xml_lote`, `json_lote`, `json_lotl`, `html_error`, `unknown` |
+| Standard applicability | `result.standardApplicability.ts119612` ∈ `applicable`, `not_applicable`, `unknown` |
+| Per-standard assessment | `result.ts119612` / `result.ts119602`: `applicable`, `conformanceLevel`, `score`, `checks[]`, `mandatoryFailures[]`, `warnings[]` |
+| Rule identifiers | `checks[].id`, with positional integers embedded for per-item checks |
+| Malformed XML | HTTP 200 with a `parse_failed` conformance level. HTTP 400 means the *request body* was invalid, not the artifact. |
+
+### What this publisher submits, and when
+
+Always the **signed** artifact, never a decoded one: half the requirements are
+signature requirements and a decoded document carries no signature evidence.
+For TS 119 602 that is the Compact JAdES serialization; for TS 119 612 it is the
+signed XML, whose XAdES signature is inside the file.
+
+There is exactly one **automatic** call: publishing a version, and only when
+`TLP_INSPECTOR_URL` is configured. The complete response is stored as
+`inspector.json` beside the version. There is no background re-evaluation, and a
+server started with no Inspector URL contacts nobody at all.
+
+**Explicit** live validation:
+
+```sh
+npm run build
+npm run fixtures:verify                      # both TS 119 612 fixture suites
+node scripts/verify-tsl612-acceptance.mjs    # the healthy TS 119 612 flow
+```
+
+### Unavailable, not applicable and empty responses
+
+Three answers are all represented as `summary.status: "unavailable"`, with the
+reason in `summary.error`:
+
+1. the Inspector could not be reached, or did not return a result;
+2. it reported the submitted standard as `not_applicable`, or its applicability
+   as `unknown`;
+3. it ran no check at all against the submitted standard.
+
+**None of them may ever be presented as a pass.** A standard that was not applied
+cannot have been passed, and an artifact that was never assessed has not been
+found conformant. The summary type has only `pass`, `fail` and `unavailable`, so
+there is nowhere for "assessed nothing, looked fine" to be recorded. The
+`standardApplicability` block and the detected `artifactKind` are stored beside
+the status so a reader can see why there is no verdict.
+
+## Fixture evidence against the conformance source of truth
+
+The TS 119 612 fixtures map onto the Credimi conformance objectives as follows.
+The source of truth defines **evidence objectives**; it does not define a defect
+catalogue. The concrete deterministic mutations belong to this publisher, and the
+mapping below is a claim about which objective each fixture exercises, not a
+claim that the objectives enumerate these defects.
+
+| Test | Objective | Fixtures that exercise it |
+| --- | --- | --- |
+| 139 | Trusted List schema is valid | `*-healthy` (passes); `*-broken-missing_scheme_information_uri`, `*-broken-pem_service_certificate`, `*-broken-extension_without_criticality`, `*-broken-invalid_tsl_namespace` (fail `schema.xsd` and `local.xml.schema`) |
+| 140 | Trusted List signature or seal validates | `*-healthy`; `*-broken-broken_xades_signature` (fails `signature.cryptographic_verification_result`), `*-broken-xades_without_signing_time` (valid signature, not Baseline B) |
+| 141 | Trusted List freshness is acceptable | `*-healthy`; `*-broken-expired_next_update` (fails `dates.next_after_issue` and `local.freshness`), `*-broken-non_strict_timestamps` (fails the lexical-form rules) |
+| 142 | Actor can be resolved | `*-healthy` (one seeded provider and service); `*-broken-incorrect_service_type` (the service is published under a type that is not the family's) |
+| 143 | Actor status is resolved correctly | `*-broken-incorrect_service_status` (the other family's vocabulary), `*-broken-invalid_service_history` (a superseded state that postdates the state replacing it) |
+| 144 | Trust anchor can be resolved | `*-broken-missing_self_pointer` (no pointer to the EU LOTL), `*-broken-pem_service_certificate` (a digital identity that does not decode) |
+| 145 | Certificate chain validates to the configured trust anchor | `*-broken-signer_organisation_mismatch` (signer subject is not the scheme operator), `*-broken-incorrect_signing_certificate` (a CA certificate signing a Trusted List) |
+
+`*-broken-incorrect_sha2_digest` maps to none of the seven: the Inspector
+assesses the artifact it is given and never sees the sidecar digest. It declares
+an empty Inspector expectation and is verified locally, through
+`local.sha2.digest`.
+
+### Calibration, and what the Inspector does not report
+
+The expected rule IDs in the catalogue were calibrated against a live run on
+**2026-08-03**, not guessed. Three expectations survive that the Inspector does
+not currently report; they are kept, and recorded per version as missing
+failures, because they are the correct expectation and a silent expectation is
+worse than a visible gap:
+
+- `ts119612.service.history.status_transition` for `invalid_service_history`.
+  The Inspector reports `status_start` for that mutation and not the transition
+  rule.
+- `ts119612.service.status` for `incorrect_service_type`, which fires for EAA
+  but not for QEAA: `granted` is a valid status for the substituted CA/QC type,
+  so the QEAA fixture trips the certificate-role rule alone.
+- Nothing at all for `invalid_tsl_namespace`, which the Inspector classifies as
+  `xml_lotl_like` and does not assess against TS 119 612. Recorded as
+  `unavailable`.

@@ -102,14 +102,16 @@ detected profile, conformance level, check counts, evaluation timestamp and
 Inspector origin follow as key/value rows. Unavailable never renders as
 conformance: the level reads "not evaluated" and the card says why.
 
-Downloads are three primary buttons in one row — JSON, Compact JAdES, Inspector
-report — plus the publication manifest as a plain link. The wording states which
-artifact is which, and that XML is not published yet.
+Downloads on a TS 119 602 version page are three primary buttons in one row —
+JSON, Compact JAdES, Inspector report — plus the publication manifest as a plain
+link. The wording states which artifact is which and which standard this list
+belongs to, so a reader never expects XML from a JSON list; the TS 119 612
+version pages offer XML, its SHA-256 digest and the Inspector report in the same
+shape.
 
 The Create Trusted List form reuses the onboarding form shell. The broken-list
-options are shown but disabled, under a legend carrying the same
-"Not implemented yet" neutral badge the disabled Trusted List Families use, so an
-unavailable capability looks the same everywhere in the product.
+options are live checkboxes: selecting one publishes an intentionally broken test
+fixture, and the copy says that leaving them clear is the healthy path.
 
 When server-side certificate generation is configured, the Signing Material
 card carries one secondary **Generate key and certificate** button. It submits
@@ -289,3 +291,64 @@ Inspector checks exactly that and the failure is otherwise cryptic.
 The **Service profiles accepted** card is a checkbox per profile, reusing the
 existing `settings-row` layout. One list may accept EAA, QEAA or both, and only
 the profiles chosen appear on the onboarding forms for that list.
+
+## Intentionally broken XML Trusted Lists
+
+### The list says what is wrong with it
+
+A broken list looks, at a glance, exactly like a healthy one that happens to be
+failing: same catalogue row, same red Inspector verdict. Every place an XML list
+can be chosen or inspected therefore carries an explicit marker, so nobody
+onboards to a deliberately bad list by accident and nobody files its failing
+verdict as a bug.
+
+- The Catalogue row gains the warning badge, the `catalogue-row-broken` class and
+  a Broken column listing each defect by label.
+- The list page opens with the warning notice and a table of what is broken:
+  what this list does, what a conformant list does instead, the clause, the
+  stage the mutation was applied at, and the Inspector rules it is expected to
+  trip.
+- The version page carries the same badge and the Negative fixture card.
+
+### The Negative fixture card
+
+One layout for both standards. A reader comparing a JSON fixture with an XML one
+should not have to learn two panels, and the evidence is format-independent by
+design.
+
+It states the fixture mode, the standard, the artifact format and the mutation
+stages, then pairs expectation with reality on both axes: expected and actual
+Inspector failures, matched, expected-but-not-reported, additional; then the
+same for the local checks. **Additional failures are listed rather than hidden**,
+because one mutation legitimately trips several rules and a catalogue that
+quietly agreed with reality would be one nobody could check.
+
+The Mutations table below it names every selected defect, its stage, whether it
+applied, and the detail. A defect that did not apply is shown in bold as **not
+applied**: a silently repaired defect is worse than a missing fixture.
+
+### Creation
+
+The Create XML Trusted List form gains an **Intentionally broken test fixture**
+card, below the scheme material and above the signing material, reusing the same
+`tl-broken-options` layout as the TS 119 602 form. Each checkbox states the
+defect, what the mutation does to the XML, when it is applied and the clause it
+violates. Leaving every box clear is the healthy path, and the copy says so
+first.
+
+A healthy creation redirects to the new list, as before. A broken creation stops
+at a confirmation page that states what was asked for and what actually failed —
+nobody should have to open the version page to discover that the fixture they
+generated did not produce the defect they selected.
+
+### Never a green light for an unassessed artifact
+
+The Trust Inspector card shows `Unavailable` — a neutral badge, not a green one —
+whenever no verdict was reached: the Inspector could not be reached, it did not
+apply the submitted standard, or it ran no check. The reason is printed
+underneath. The card also states the TS 119 612 applicability and the artifact
+kind the Inspector detected, so a reader can see *why* there is no verdict.
+
+A standard that was not applied cannot have been passed. This is a design rule,
+not an implementation detail: the summary type has no fourth status, so there is
+nowhere for "assessed nothing, looked fine" to be recorded.
