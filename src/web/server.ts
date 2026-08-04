@@ -184,6 +184,21 @@ const APPLY_CSS = `
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 `;
 
+/**
+ * Cross-promotional strips shared by every Credimi Extras application: one
+ * above the topbar, one closing the footer. Only the trailing word (top) or
+ * wordmark (bottom) is a link — the bar itself is not a click target.
+ */
+const CREDIMI_EXTRAS_BAR_TOP = `
+<div class="credimi-extras-bar">
+  <div class="credimi-extras-bar-inner"><img class="credimi-extras-mark" src="/assets/credimi_logo.svg" alt="" aria-hidden="true" width="16" height="16"> This app is part of <strong>Credimi Extras</strong>. Automate all your EUDI testing with <a href="https://credimi.io" target="_blank" rel="noopener">Credimi</a></div>
+</div>`;
+
+const CREDIMI_EXTRAS_BAR_BOTTOM = `
+  <div class="credimi-extras-bar-footer">
+    <div class="credimi-extras-bar-inner">This app is part of <strong>Credimi Extras</strong>. Automate all your EUDI testing with <a class="credimi-extras-wordmark-link" href="https://credimi.io" target="_blank" rel="noopener"><img class="credimi-extras-wordmark" src="/assets/credimi_logo-transp_white.svg" alt="Credimi"></a></div>
+  </div>`;
+
 const PRODUCT_NAME = "Credimi EUDI Trusted Lists";
 const REPOSITORY_URL =
   "https://github.com/ForkbombEu/eudi-trusted-list-publisher";
@@ -213,7 +228,7 @@ function htmlPage(title: string, body: string, guiNav?: string): string {
 <title>${escapeHtml(title)}</title>
 ${APPLY_CSS}
 </head>
-<body>
+<body>${CREDIMI_EXTRAS_BAR_TOP}
 <nav class="topbar">
   <div class="topbar-inner">
     <a href="/" class="topbar-logo" aria-label="${escapeHtml(PRODUCT_NAME)} home">
@@ -260,7 +275,7 @@ ${body}
   </div>
   <div class="footer-sub-bar">
     Signer trust status: not evaluated. This tool does not establish PKIX trust.
-  </div>
+  </div>${CREDIMI_EXTRAS_BAR_BOTTOM}
 </footer>
   </div>
 </div>
