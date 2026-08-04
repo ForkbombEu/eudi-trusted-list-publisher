@@ -1076,9 +1076,8 @@ export function createWebServer(config: ServerConfig) {
           <td><a href="/lists/${encodeURIComponent(listKey)}/versions/${version.sequenceNumber}">${version.sequenceNumber}</a></td>
           <td>${escapeHtml(version.issueDate)}</td>
           <td>${escapeHtml(version.nextUpdateDate)}</td>
-          <td>${version.signatureValid ? "valid" : "invalid"}</td>
-          <td>${version.schemaValid ? "valid" : "invalid"}</td>
-          <td><a class="btn btn-outline btn-sm" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${version.sequenceNumber}/trusted-list.xml">XML</a></td>
+          <td>${version.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
+          <td><a class="btn btn-sm" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${version.sequenceNumber}/trusted-list.xml">XML</a></td>
         </tr>`,
       )
       .join("");
@@ -1095,7 +1094,7 @@ ${xmlListSubtitle(acceptedProfiles)}
 ${brokenListSectionHtml(listDefects, "TS 119 612")}
 <div class="trust-notice"><strong>Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
 <table class="catalogue-table">
-  <thead><tr><th>Sequence</th><th>Issued</th><th>Next update</th><th>Signature</th><th>Schema</th><th>Open</th></tr></thead>
+  <thead><tr><th>Sequence</th><th>Issue Date</th><th>Next Update</th><th>Signature</th><th>Open</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>`;
     sendHtml(res, 200, page(listKey, body));
@@ -1435,8 +1434,8 @@ over the published Lists of Trusted Entities.</p>
         <td><a href="/lists/${escapeHtml(listKey)}/versions/${String(v.sequenceNumber)}">${String(v.sequenceNumber)}</a></td>
         <td>${escapeHtml(v.issueDate)}</td>
         <td>${escapeHtml(v.nextUpdateDate)}</td>
-        <td>${escapeHtml(v.publicationTimestamp)}</td>
         <td>${v.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
+        <td><a class="btn btn-sm" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${String(v.sequenceNumber)}/lote">JSON</a> <a class="btn btn-sm" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${String(v.sequenceNumber)}/signature">JAdES</a></td>
       </tr>`;
       }
       const family = signingConfig
@@ -1460,7 +1459,7 @@ over the published Lists of Trusted Entities.</p>
         ${brokenListSectionHtml(listDefects)}
         <div class="trust-notice"><strong>Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
         <table class="catalogue-table">
-        <thead><tr><th>Sequence</th><th>Issue Date</th><th>Next Update</th><th>Published</th><th>Signature</th></tr></thead>
+        <thead><tr><th>Sequence</th><th>Issue Date</th><th>Next Update</th><th>Signature</th><th>Open</th></tr></thead>
         <tbody>${rows}</tbody>
         </table>`,
         ),

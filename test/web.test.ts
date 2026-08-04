@@ -287,6 +287,12 @@ describe("Web UI", () => {
     expect(list.body).toContain("ETSI TS 119 602");
     expect(list.body).toContain("JSON / JAdES-B-B");
     expect(list.body).not.toContain("Trusted List Family:");
+    expect(list.body).toContain("<th>Issue Date</th>");
+    expect(list.body).toContain("<th>Next Update</th>");
+    expect(list.body).toContain("<th>Signature</th>");
+    expect(list.body).toContain("<th>Open</th>");
+    expect(list.body).toContain(">JSON</a>");
+    expect(list.body).toContain(">JAdES</a>");
     expect(list.body).toContain(
       "Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.",
     );

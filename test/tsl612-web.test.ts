@@ -334,6 +334,11 @@ describe("XML Trusted List creation and publication visibility", () => {
     expect(html).not.toContain("Allowed service profiles:");
     expect(html).toContain("ETSI TS 119 612");
     expect(html).toContain("XML / XAdES-B-B");
+    expect(html).toContain("<th>Issue Date</th>");
+    expect(html).toContain("<th>Next Update</th>");
+    expect(html).toContain("<th>Signature</th>");
+    expect(html).toContain("<th>Open</th>");
+    expect(html).toContain(">XML</a>");
     expect(html).toContain(
       "Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.",
     );
