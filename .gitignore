@@ -21,6 +21,7 @@ out/
 .cache/
 coverage/
 /handoffs/
+/.worktrees/
 
 # Agents files 
 /HITL/
