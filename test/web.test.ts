@@ -307,7 +307,7 @@ describe("Web UI", () => {
       "Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.",
     );
     expect(version.body).toContain("TrustedEntityName (TEName)");
-    expect(version.body).toContain("ServiceTypeIdentifier");
+    expect(version.body).not.toContain("ServiceTypeIdentifier:");
   });
 
   it("serves 404 for unknown list", async () => {

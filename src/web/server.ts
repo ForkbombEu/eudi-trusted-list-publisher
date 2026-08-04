@@ -1514,7 +1514,7 @@ over the published Lists of Trusted Entities.</p>
                     s?.ServiceInformation?.ServiceName?.map(
                       (n: { value: string }) => escapeHtml(n.value),
                     ).join(", ") ?? ""
-                  }</strong><br>ServiceTypeIdentifier: <code>${escapeHtml(s?.ServiceInformation?.ServiceTypeIdentifier?.value ?? "")}</code></li>`,
+                  }</strong><br><code>${escapeHtml(s?.ServiceInformation?.ServiceTypeIdentifier?.value ?? "")}</code></li>`,
               ).join("") ?? "";
             entityRows += `<tr><td>${names}</td><td><ul class="service-list">${svcs}</ul></td></tr>`;
           }
