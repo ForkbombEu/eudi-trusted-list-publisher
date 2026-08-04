@@ -1093,6 +1093,7 @@ export function createWebServer(config: ServerConfig) {
 <h1>${escapeHtml(listKey)}${listDefects.length > 0 ? ` ${brokenBadge()}` : ""}</h1>
 ${xmlListSubtitle(acceptedProfiles)}
 ${brokenListSectionHtml(listDefects, "TS 119 612")}
+<div class="trust-notice"><strong>Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
 <table class="catalogue-table">
   <thead><tr><th>Sequence</th><th>Issued</th><th>Next update</th><th>Signature</th><th>Schema</th><th>Open</th></tr></thead>
   <tbody>${rows}</tbody>

@@ -334,6 +334,9 @@ describe("XML Trusted List creation and publication visibility", () => {
     expect(html).not.toContain("Allowed service profiles:");
     expect(html).toContain("ETSI TS 119 612");
     expect(html).toContain("XML / XAdES-B-B");
+    expect(html).toContain(
+      "Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.",
+    );
     expect(html).toContain('class="catalogue-table"');
     expect(html).not.toContain("<h2>Trusted List</h2>");
     expect(html).not.toContain("<h2>Versions</h2>");
@@ -345,6 +348,9 @@ describe("XML Trusted List creation and publication visibility", () => {
     expect(html).toContain("chip-family--eaa");
     expect(html).toContain("ETSI TS 119 612");
     expect(html).toContain("XML / XAdES-B-B");
+    expect(html).toContain(
+      "Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.",
+    );
     expect(html).not.toContain("Allowed service profiles:");
     expect(html).toContain("List Information");
     expect(html).toContain("Signature &amp; Validation");

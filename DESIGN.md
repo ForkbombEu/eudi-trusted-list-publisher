@@ -294,8 +294,9 @@ is an address that does not change.
 The XML list page places its accepted EAA/QEAA family chips directly beneath its
 key title, without repeating the list-key chip or an **Allowed service profiles**
 label. It then shows only its unwrapped versions table, from sequence 1 upward,
-matching the JSON list page. Both standards use `{list key} - Version {n}` on
-version pages.
+matching the JSON list page. It also shows the same **Trust not evaluated**
+notice as the JSON page. Both standards use `{list key} - Version {n}` on
+version pages, with the same notice repeated on each version page.
 
 ### Create XML Trusted List
 

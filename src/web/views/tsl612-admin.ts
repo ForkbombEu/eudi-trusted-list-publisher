@@ -258,6 +258,7 @@ export function trustedListVersionHtml(
 ${subtitleHtml}
 ${latestNote}
 ${fixturePanelHtml(fixtureMetadataJson)}
+<div class="trust-notice"><strong>Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
 
 <div class="card">
   <h2>List Information</h2>
