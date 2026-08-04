@@ -802,6 +802,11 @@ is by artifact rather than by configuration — a directory holding
 because the published bytes are the authority. A directory holding both is
 refused with `ListKeyCollisionError` rather than resolved by preference.
 
+The Catalogue reads an XML list's accepted families from the latest manifest's
+`serviceProfiles.allowedServiceProfiles` and renders one family chip per unique
+entry. The legacy singular `family` remains the fallback for older manifests;
+it is not allowed to hide QEAA when a current list accepts both EAA and QEAA.
+
 ### Publication layout
 
 ```

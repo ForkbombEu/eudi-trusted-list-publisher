@@ -77,7 +77,8 @@ API. It verifies signatures cryptographically but **evaluates no signer trust**:
 
 Open `/` for the public catalogue, `/onboarding` to submit a provider to a
 compatible list, and `/admin` for authenticated review, publication, settings
-and list creation.
+and list creation. In the Catalogue's **Trusted List Family** column, an XML
+list accepting both EAA and QEAA displays both family chips.
 
 For a TS 119 612 XML list, choose **Create XML Trusted List** in administration.
 The first **List** panel selects EAA, QEAA or both and asks for the Trusted List

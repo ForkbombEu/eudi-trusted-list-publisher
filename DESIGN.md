@@ -157,6 +157,11 @@ downloading belongs.
 An absent button is the honest rendering: a disabled or dead link would promise
 an artifact that does not exist.
 
+For a TS 119 612 row, the **Trusted List Family** column renders one family chip
+for every profile the XML list accepts. A list accepting both EAA and QEAA shows
+both chips; the singular manifest family is only a compatibility fallback for
+older publications that did not record `allowedServiceProfiles`.
+
 ## Certificate input and guidance
 
 The onboarding certificate field is labelled **Service Digital Identity

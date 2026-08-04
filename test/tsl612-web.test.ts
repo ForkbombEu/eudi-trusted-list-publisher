@@ -192,6 +192,11 @@ beforeAll(async () => {
     "qeaa-signer",
     "QEAA Scheme Operator",
   );
+  const combinedSigner = generate(
+    materialDir,
+    "combined-signer",
+    "Combined Scheme Operator",
+  );
   signerCertDer = derOf(eaaSigner.pem);
   providerPem = generate(materialDir, "provider", "Example Provider SpA").pem;
 
@@ -224,6 +229,11 @@ beforeAll(async () => {
     qeaaSigner,
     "https://explicit.example.it/qeaa/latest/trusted-list.xml",
   );
+  (globalThis as Record<string, unknown>).__combinedList = await createList(
+    "Combined Scheme Operator",
+    ["eaa-providers", "qeaa-providers"],
+    combinedSigner,
+  );
 }, 60000);
 
 afterAll(async () => {
@@ -235,6 +245,8 @@ const eaaList = (): string =>
   (globalThis as Record<string, unknown>).__eaaList as string;
 const qeaaList = (): string =>
   (globalThis as Record<string, unknown>).__qeaaList as string;
+const combinedList = (): string =>
+  (globalThis as Record<string, unknown>).__combinedList as string;
 
 describe("XML Trusted List creation and publication visibility", () => {
   it("prefixes the Trusted List Name and derives a stable latest URL", async () => {
@@ -298,6 +310,19 @@ describe("XML Trusted List creation and publication visibility", () => {
     expect(html).toContain(
       `/api/v1/lists/${eaaList()}/versions/1/trusted-list.xml`,
     );
+  });
+
+  it("shows every accepted profile on a combined XML Catalogue row", async () => {
+    const html = await (await get("/")).text();
+    const row = [...html.matchAll(/<tr(?: [^>]*)?>[\s\S]*?<\/tr>/g)]
+      .map((match) => match[0])
+      .find((candidate) => candidate.includes(`/lists/${combinedList()}`));
+
+    expect(row).toBeDefined();
+    expect(row).toContain("chip-family--eaa");
+    expect(row).toContain(">EAA Providers</span>");
+    expect(row).toContain("chip-family--qeaa");
+    expect(row).toContain(">QEAA Providers</span>");
   });
 
   it("renders the list page with the standard and format labels", async () => {

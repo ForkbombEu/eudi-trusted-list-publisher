@@ -1337,6 +1337,19 @@ over the published Lists of Trusted Entities.</p>
           const versions = await publicationReader.versions(key);
           const newest = versions[versions.length - 1];
           if (!summary || !newest) continue;
+          const latest = trustedListStore.loadLatest(key);
+          const acceptedProfiles =
+            latest?.artifacts.manifest.serviceProfiles
+              ?.allowedServiceProfiles ?? [];
+          const catalogueFamilies = [
+            ...new Set(
+              acceptedProfiles.length > 0
+                ? acceptedProfiles
+                : summary.family
+                  ? [summary.family]
+                  : [],
+            ),
+          ];
           const xmlDefectIds = defectIdsFromFixture(
             trustedListStore.readFixtureMetadata(key, newest.sequenceNumber),
           );
@@ -1345,7 +1358,7 @@ over the published Lists of Trusted Entities.</p>
         <td><a href="/lists/${escapeHtml(key)}">${listChip(key)}</a>${
           xmlDefectIds.length > 0 ? ` ${brokenBadge()}` : ""
         }</td>
-        <td>${summary.family ? familyChip(summary.family) : "&mdash;"}</td>
+        <td>${catalogueFamilies.length > 0 ? catalogueFamilies.map((family) => familyChip(family)).join(" ") : "&mdash;"}</td>
         <td>${escapeHtml(String(newest.sequenceNumber))}</td>
         <td>${escapeHtml(newest.issueDate)}</td>
         <td>${escapeHtml(newest.nextUpdateDate)}</td>
