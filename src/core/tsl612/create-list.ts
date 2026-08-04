@@ -17,7 +17,11 @@ import {
   defaultLotlPointer,
   type TrustedListConfigEntry,
 } from "./list-config.js";
-import { fixtureSeedProvider, isKnownXmlDefect } from "./defects.js";
+import {
+  FIXTURE_PROVIDER_NAME,
+  fixtureSeedProvider,
+  isKnownXmlDefect,
+} from "./defects.js";
 import {
   buildFixtureMetadata,
   type FixtureMetadata,
@@ -320,14 +324,19 @@ export async function createTrustedListList(
   const input: TrustedListInput = {
     ...(seedProvider
       ? {
-          providers: [
+          providers: entry.allowedServiceProfiles.map((profileFamily) =>
             fixtureSeedProvider({
-              family,
+              family: profileFamily,
+              ...(entry.allowedServiceProfiles.length > 1
+                ? {
+                    providerName: `${FIXTURE_PROVIDER_NAME} (${profileFamily})`,
+                  }
+                : {}),
               territory: entry.schemeTerritory,
               fallbackCertificatePem: certificatePem,
               publishedAt: issue,
             }),
-          ],
+          ),
         }
       : {}),
     schemeInformation: {
@@ -377,7 +386,7 @@ export async function createTrustedListList(
             fixture: {
               defectIds: defects,
               context: {
-                family,
+                families: entry.allowedServiceProfiles,
                 schemeTerritory: entry.schemeTerritory,
                 schemeOperatorName: entry.schemeOperatorName,
               },

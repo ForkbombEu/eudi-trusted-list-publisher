@@ -777,6 +777,46 @@ describe("intentionally broken XML Trusted Lists", () => {
     apiKey = body.listKey;
   }, 60000);
 
+  it("mutates both accepted service profiles in a dual-profile fixture", async () => {
+    const material = generate(
+      join(root, "material"),
+      "broken-dual-profile",
+      "Broken Dual Profile Operator",
+    );
+    const response = await post("/admin/trusted-lists/create", {
+      ...declaration("Broken Dual Profile Operator", material),
+      allowedServiceProfiles: ["eaa-providers", "qeaa-providers"],
+      defects: ["incorrect_service_type", "incorrect_service_status"],
+    });
+    expect(response.status).toBe(200);
+
+    const artifact = await get(
+      "/api/v1/lists/it_broken_dual_profile_operator/versions/1/trusted-list.xml",
+    );
+    expect(artifact.status).toBe(200);
+    const parsed = readTrustedList(await artifact.text());
+    expect(parsed.providers).toHaveLength(2);
+    expect(
+      new Set(parsed.providers!.map((provider) => provider.tspName)).size,
+    ).toBe(2);
+    const services = parsed.providers!.flatMap((provider) => provider.services);
+    expect(services.map((service) => service.serviceTypeIdentifier)).toEqual([
+      "http://uri.etsi.org/TrstSvc/Svctype/CA/QC",
+      "http://uri.etsi.org/TrstSvc/Svctype/CA/QC",
+    ]);
+    expect(
+      services.some((service) => service.serviceTypeIdentifier === SVCTYPE_EAA),
+    ).toBe(false);
+    expect(
+      services.some(
+        (service) => service.serviceTypeIdentifier === SVCTYPE_QEAA,
+      ),
+    ).toBe(false);
+    expect(new Set(services.map((service) => service.serviceStatus))).toEqual(
+      new Set([SVCSTATUS_WITHDRAWN, SVCSTATUS_DEPRECATED_AT_NATIONAL_LEVEL]),
+    );
+  }, 60000);
+
   it("produces equivalent fixture metadata from the GUI and the API", async () => {
     const read = async (key: string) => {
       const response = await get(

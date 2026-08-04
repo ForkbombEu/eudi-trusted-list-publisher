@@ -51,6 +51,7 @@ import {
   SVCSTATUS_GRANTED,
   SVCSTATUS_RECOGNISED_AT_NATIONAL_LEVEL,
   SVCTYPE_EAA,
+  SVCTYPE_QEAA,
   NS_TSL,
 } from "../src/core/tsl612/constants.js";
 
@@ -394,7 +395,7 @@ describe("XML mutations", () => {
 </TrustServiceStatusList>
 `;
   const context = {
-    family: "eaa-providers" as const,
+    families: ["eaa-providers"] as const,
     schemeTerritory: "IT",
     schemeOperatorName: "Example Operator",
   };
@@ -454,9 +455,40 @@ describe("XML mutations", () => {
       .join(SVCSTATUS_GRANTED);
     const { xml } = applyXmlPreSignDefects(qeaa, ["incorrect_service_status"], {
       ...context,
-      family: "qeaa-providers",
+      families: ["qeaa-providers"],
     });
     expect(xml).toContain(SVCSTATUS_RECOGNISED_AT_NATIONAL_LEVEL);
+  });
+
+  it("applies each selected service defect across both accepted profiles", () => {
+    const provider = healthy.match(
+      /    <TrustServiceProvider>[\s\S]*?    <\/TrustServiceProvider>/,
+    )![0];
+    const qeaaProvider = provider
+      .split(SVCTYPE_EAA)
+      .join(SVCTYPE_QEAA)
+      .split(SVCSTATUS_RECOGNISED_AT_NATIONAL_LEVEL)
+      .join(SVCSTATUS_GRANTED);
+    const dualProfile = healthy.replace(
+      "  </TrustServiceProviderList>",
+      `${qeaaProvider}\n  </TrustServiceProviderList>`,
+    );
+
+    const { xml, mutations } = applyXmlPreSignDefects(
+      dualProfile,
+      ["incorrect_service_type", "incorrect_service_status"],
+      { ...context, families: ["eaa-providers", "qeaa-providers"] },
+    );
+
+    expect(
+      xml.match(/<ServiceTypeIdentifier>[^<]*CA\/QC<\/ServiceTypeIdentifier>/g),
+    ).toHaveLength(2);
+    expect(xml).not.toContain(SVCTYPE_EAA);
+    expect(xml).not.toContain(SVCTYPE_QEAA);
+    expect(xml).toContain(SVCSTATUS_GRANTED);
+    expect(xml).toContain(SVCSTATUS_RECOGNISED_AT_NATIONAL_LEVEL);
+    expect(mutations).toHaveLength(2);
+    expect(mutations.every((mutation) => mutation.applied)).toBe(true);
   });
 
   it("moves a history status time after the state that replaced it", () => {

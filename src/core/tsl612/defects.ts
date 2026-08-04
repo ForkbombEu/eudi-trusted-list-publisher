@@ -57,7 +57,7 @@ const SVCTYPE_CA_QC = "http://uri.etsi.org/TrstSvc/Svctype/CA/QC";
 const NS_TSL_INVALID = "http://uri.etsi.org/02231/v2-invalid#";
 
 export interface XmlDefectContext {
-  readonly family: TslFamily;
+  readonly families: readonly TslFamily[];
   readonly schemeTerritory: string;
   readonly schemeOperatorName: string;
 }
@@ -173,7 +173,6 @@ export function applyXmlPreSignDefects(
   context: XmlDefectContext,
 ): XmlMutationOutcome {
   const log = new MutationLog("pre-sign");
-  const profile = getTslProfile(context.family);
   let xml = healthyXml;
 
   for (const spec of defectsAtStageFor(defectIds, STANDARD, "pre-sign")) {
@@ -376,37 +375,59 @@ export function applyXmlPreSignDefects(
         break;
       }
       case "incorrect_service_type": {
-        const outcome = withinProviderList(xml, (subtree) =>
-          subtree.split(profile.serviceTypeIdentifier).join(SVCTYPE_CA_QC),
+        const serviceTypes = context.families.map(
+          (family) => getTslProfile(family).serviceTypeIdentifier,
         );
+        const outcome = withinProviderList(xml, (subtree) => {
+          let edited = subtree;
+          for (const serviceType of serviceTypes)
+            edited = edited
+              .split(
+                `<ServiceTypeIdentifier>${serviceType}</ServiceTypeIdentifier>`,
+              )
+              .join(
+                `<ServiceTypeIdentifier>${SVCTYPE_CA_QC}</ServiceTypeIdentifier>`,
+              );
+          return edited;
+        });
         xml = outcome.xml;
         log.record(
           spec.id,
           outcome.changed,
           outcome.changed
-            ? `Service type ${profile.serviceTypeIdentifier} republished as ${SVCTYPE_CA_QC}.`
-            : "No service carried this family's service type.",
+            ? `Service types for ${context.families.join(", ")} republished as ${SVCTYPE_CA_QC}.`
+            : "No service carried an accepted profile's service type.",
         );
         break;
       }
       case "incorrect_service_status": {
-        const wrong = wrongStatusesFor(context.family);
-        let applied = false;
-        for (const [correct, incorrect] of wrong) {
-          const outcome = withinProviderList(xml, (subtree) =>
-            subtree.split(correct).join(incorrect),
-          );
-          xml = outcome.xml;
-          applied = applied || outcome.changed;
-        }
+        /* Replace through placeholders so dual-profile mappings cannot undo
+           each other (EAA and QEAA deliberately swap the same vocabularies). */
+        const wrong = context.families.flatMap(wrongStatusesFor);
+        const outcome = withinProviderList(xml, (subtree) => {
+          let edited = subtree;
+          const replacements = wrong.map(([correct, incorrect], index) => ({
+            correct,
+            incorrect,
+            placeholder: `urn:tlp:fixture:status:${index}`,
+          }));
+          for (const replacement of replacements)
+            edited = edited
+              .split(replacement.correct)
+              .join(replacement.placeholder);
+          for (const replacement of replacements)
+            edited = edited
+              .split(replacement.placeholder)
+              .join(replacement.incorrect);
+          return edited;
+        });
+        xml = outcome.xml;
         log.record(
           spec.id,
-          applied,
-          applied
-            ? `Service statuses swapped for the ${
-                profile.qualified ? "non-qualified" : "qualified"
-              } vocabulary.`
-            : "No service carried this family's status.",
+          outcome.changed,
+          outcome.changed
+            ? `Service statuses swapped for ${context.families.join(", ")}.`
+            : "No service carried an accepted profile's status.",
         );
         break;
       }
@@ -650,6 +671,7 @@ export const FIXTURE_PROVIDER_NAME = "Broken Fixture Provider";
 
 export interface FixtureProviderOptions {
   readonly family: TslFamily;
+  readonly providerName?: string;
   readonly territory: string;
   /** PEM of the list signing certificate, used when openssl cannot mint one. */
   readonly fallbackCertificatePem: string;
@@ -661,9 +683,10 @@ export function fixtureSeedProvider(
   options: FixtureProviderOptions,
 ): TslProvider {
   const profile = getTslProfile(options.family);
+  const providerName = options.providerName ?? FIXTURE_PROVIDER_NAME;
   const minted = mintCertificate({
-    commonName: `${FIXTURE_PROVIDER_NAME} Service`,
-    organisation: FIXTURE_PROVIDER_NAME,
+    commonName: `${providerName} Service`,
+    organisation: providerName,
     country: options.territory,
   });
   const certificatePem =
@@ -687,14 +710,14 @@ export function fixtureSeedProvider(
 
   const service: TslService = {
     serviceTypeIdentifier: profile.serviceTypeIdentifier,
-    serviceName: `${FIXTURE_PROVIDER_NAME} Issuance`,
+    serviceName: `${providerName} Issuance`,
     digitalIdentity: { x509CertificateBase64Der: certificateBase64Der },
     serviceStatus: profile.endStatus,
     statusStartingTime: currentStart,
     serviceHistory: [
       {
         serviceTypeIdentifier: profile.serviceTypeIdentifier,
-        serviceName: `${FIXTURE_PROVIDER_NAME} Issuance`,
+        serviceName: `${providerName} Issuance`,
         digitalIdentity: { x509SkiBase64: ski },
         serviceStatus: profile.initialStatus,
         statusStartingTime: historyStart,
@@ -702,9 +725,9 @@ export function fixtureSeedProvider(
     ],
   };
 
-  const home = "https://fixture-provider.example/eaa";
+  const home = `https://fixture-provider.example/${options.family}`;
   return {
-    tspName: FIXTURE_PROVIDER_NAME,
+    tspName: providerName,
     tspTradeNames: [`NTR${options.territory}-FIXTURE-0001`],
     tspAddress: {
       streetAddress: "1 Fixture Street",
