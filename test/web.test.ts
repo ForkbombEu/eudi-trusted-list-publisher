@@ -280,6 +280,22 @@ describe("Web UI", () => {
     expect(res.body).toContain("Test Wallet Provider");
   });
 
+  it("aligns JSON list and version headings with the XML presentation", async () => {
+    const list = await httpGet(`/lists/${storedKey}`);
+    expect(list.status).toBe(200);
+    expect(list.body).toContain(`<h1>${storedKey}</h1>`);
+    expect(list.body).toContain("ETSI TS 119 602");
+    expect(list.body).toContain("JSON / JAdES-B-B");
+    expect(list.body).not.toContain("Trusted List Family:");
+
+    const version = await httpGet(`/lists/${storedKey}/versions/1`);
+    expect(version.status).toBe(200);
+    expect(version.body).toContain(`<h1>${storedKey} - Version 1</h1>`);
+    expect(version.body).toContain("ETSI TS 119 602");
+    expect(version.body).toContain("JSON / JAdES-B-B");
+    expect(version.body).not.toContain("Trusted List Family:");
+  });
+
   it("serves 404 for unknown list", async () => {
     const res = await httpGet("/lists/nonexistent");
     expect(res.status).toBe(404);

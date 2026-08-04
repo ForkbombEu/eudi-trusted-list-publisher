@@ -223,6 +223,7 @@ export function trustedListVersionHtml(
   inspector: InspectorSummary | null,
   isLatest: boolean,
   fixtureMetadataJson: string | null = null,
+  subtitleHtml: string,
 ): string {
   const base = `/api/v1/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}`;
   const tsl = manifest.trustedList;
@@ -253,14 +254,15 @@ export function trustedListVersionHtml(
     : "";
 
   return `
-<h1>${escape(listKey)} — version ${sequenceNumber}${manifest.fixture?.fixtureMode === "intentionally-broken" ? ` ${brokenBadge()}` : ""}</h1>
-<p>${listChip(listKey)} ${familyChip(manifest.family)} ${xmlStandardChips()}</p>
+<h1>${escape(listKey)} - Version ${sequenceNumber}${manifest.fixture?.fixtureMode === "intentionally-broken" ? ` ${brokenBadge()}` : ""}</h1>
+${subtitleHtml}
 ${latestNote}
 ${fixturePanelHtml(fixtureMetadataJson)}
 
 <div class="card">
-  <h2>Trusted List</h2>
+  <h2>List Information</h2>
   <table class="kv-table"><tbody>
+    ${row("Trusted List", listChip(listKey))}
     ${row("TSL sequence number", String(tsl.tslSequenceNumber))}
     ${row("TSL version identifier", String(tsl.tslVersionIdentifier))}
     ${row("TSL type", `<code>${escape(tsl.tslType)}</code>`)}
@@ -271,46 +273,66 @@ ${fixturePanelHtml(fixtureMetadataJson)}
     ${row("Historical information period", String(tsl.historicalInformationPeriod))}
     ${row("Issued", escape(tsl.issueDate))}
     ${row("Next update", escape(tsl.nextUpdateDate))}
-    ${row("Providers", String(tsl.providerCount))}
-    ${row("Services", String(tsl.serviceCount))}
-    ${row("Service types", tsl.serviceTypes.length > 0 ? tsl.serviceTypes.map((type) => `<code>${escape(type)}</code>`).join("<br>") : "none — this version lists no provider")}
   </tbody></table>
 </div>
 
 <div class="card">
-  <h2>Integrity</h2>
+  <h2>Signature &amp; Validation</h2>
   <table class="kv-table"><tbody>
-    ${row("XML SHA-256", `<code>${escape(manifest.trustedListXmlSha256)}</code>`)}
-    ${row(".sha2 published", manifest.trustedListSha2Published === undefined || manifest.trustedListSha2Published === manifest.trustedListXmlSha256 ? `<code>${escape(manifest.trustedListXmlSha256)}</code> — matches the XML` : `<code>${escape(manifest.trustedListSha2Published)}</code> — <strong>deliberately not the digest of this XML</strong>`)}
-    ${row("Schema", manifest.schemaValid ? "valid against the pinned TS 119 612 V2.4.1 schemas" : `invalid: ${escape(manifest.schemaFindings.join("; "))}`)}
+    ${row("Signature valid", manifest.signatureValid ? "&#x2705; Yes" : "&#x274C; No")}
+    ${row("ETSI schema valid", manifest.schemaValid ? "&#x2705; Yes" : "&#x274C; No")}
+    ${row("Signer trust", `${escape(manifest.signerTrustStatus)} — this publisher builds no certification path and makes no trust decision`)}
     ${row("Signature", manifest.signatureValid ? `${escape(manifest.signatureProfile)}, verified locally` : `invalid: ${escape(manifest.signatureFindings.join("; "))}`)}
     ${row("Signature algorithm", `<code>${escape(manifest.signatureAlgorithm)}</code>`)}
     ${row("Signing time", escape(manifest.signingTime))}
-    ${row("Signing certificate", escape(manifest.certificateSubject))}
-    ${row("Certificate profile", manifest.signingCertificateFindings.length === 0 ? "meets the TS 119 612 Scheme Operator profile" : `<strong>does not meet the profile:</strong> ${escape(manifest.signingCertificateFindings.join(" "))}`)}
     ${row("Freshness", manifest.freshnessValid ? "NextUpdate is later than the issue time and has not passed" : `<strong>stale:</strong> ${escape(manifest.freshnessFindings.join(" "))}`)}
-    ${row("Service profiles", manifest.serviceProfiles.serviceProfilesPresent.length > 0 ? manifest.serviceProfiles.serviceProfilesPresent.map((type) => `<code>${escape(type)}</code>`).join("<br>") : "none published in this version")}
-    ${row("Allowed service profiles", manifest.serviceProfiles.allowedServiceProfiles.length > 0 ? manifest.serviceProfiles.allowedServiceProfiles.map((profile) => `<code>${escape(profile)}</code>`).join("<br>") : "not recorded")}
+  </tbody></table>
+</div>
+
+<div class="card">
+  <h2>Signing Certificate</h2>
+  <table class="kv-table"><tbody>
+    ${row("Subject", escape(manifest.certificateSubject))}
+    ${row("Issuer", escape(manifest.certificateIssuer))}
+    ${row("Valid from", escape(manifest.certificateValidFrom))}
+    ${row("Valid to", escape(manifest.certificateValidTo))}
     ${row("Certificate SHA-256", `<code>${escape(manifest.signingCertificateSha256)}</code>`)}
-    ${row("Signer trust", `${escape(manifest.signerTrustStatus)} — this publisher builds no certification path and makes no trust decision`)}
-    ${row("Published", escape(manifest.publicationTimestamp))}
+    ${row("Certificate profile", manifest.signingCertificateFindings.length === 0 ? "meets the TS 119 612 Scheme Operator profile" : `<strong>does not meet the profile:</strong> ${escape(manifest.signingCertificateFindings.join(" "))}`)}
   </tbody></table>
 </div>
 
 ${inspectorCard}
 
 <div class="card">
+  <h2>Entities &amp; Services</h2>
+  <table class="kv-table"><tbody>
+    ${row("Providers", String(tsl.providerCount))}
+    ${row("Services", String(tsl.serviceCount))}
+    ${row("Service types", tsl.serviceTypes.length > 0 ? tsl.serviceTypes.map((type) => `<code>${escape(type)}</code>`).join("<br>") : "none — this version lists no provider")}
+    ${row("Allowed service profiles", manifest.serviceProfiles.allowedServiceProfiles.length > 0 ? manifest.serviceProfiles.allowedServiceProfiles.map((profile) => `<code>${escape(profile)}</code>`).join("<br>") : "not recorded")}
+  </tbody></table>
+</div>
+
+<div class="card">
   <h2>Downloads</h2>
-  <div class="form-actions">
+  <p class="version-downloads">
     <a class="btn btn-primary btn-md" href="${base}/trusted-list.xml">XML</a>
     <a class="btn btn-primary btn-md" href="${base}/trusted-list.sha2">SHA-256 digest</a>
     <a class="btn btn-primary btn-md" href="${base}/inspector?view=1">Inspector report</a>
-  </div>
+  </p>
   <p class="field-help">
     The XML is served as <code>application/vnd.etsi.tsl+xml</code>; its XAdES-B-B
     signature is inside the document. The <code>.sha2</code> file is the SHA-256
     of the exact published XML bytes. Publication
     <a href="${base}/manifest">manifest</a>.
   </p>
+</div>
+
+<div class="card">
+  <h2>Artifact Hashes</h2>
+  <table class="kv-table"><tbody>
+    ${row("XML SHA-256", `<code>${escape(manifest.trustedListXmlSha256)}</code>`)}
+    ${row(".sha2 published", manifest.trustedListSha2Published === undefined || manifest.trustedListSha2Published === manifest.trustedListXmlSha256 ? `<code>${escape(manifest.trustedListXmlSha256)}</code> — matches the XML` : `<code>${escape(manifest.trustedListSha2Published)}</code> — <strong>deliberately not the digest of this XML</strong>`)}
+  </tbody></table>
 </div>`;
 }

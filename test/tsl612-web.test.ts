@@ -328,17 +328,27 @@ describe("XML Trusted List creation and publication visibility", () => {
 
   it("renders accepted profiles without repeating the list key as a chip", async () => {
     const html = await (await get(`/lists/${combinedList()}`)).text();
-    expect(html).toContain("Allowed service profiles:");
     expect(html).toContain("chip-family--eaa");
     expect(html).toContain("chip-family--qeaa");
     expect(html).not.toContain("chip-list--");
+    expect(html).not.toContain("Allowed service profiles:");
     expect(html).toContain("ETSI TS 119 612");
     expect(html).toContain("XML / XAdES-B-B");
     expect(html).toContain("latest/trusted-list.xml");
   });
 
-  it("renders the version page with XML downloads and no JSON promise", async () => {
+  it("aligns the XML version page with the shared heading and sections", async () => {
     const html = await (await get(`/lists/${eaaList()}/versions/1`)).text();
+    expect(html).toContain(`<h1>${eaaList()} - Version 1</h1>`);
+    expect(html).toContain("chip-family--eaa");
+    expect(html).toContain("ETSI TS 119 612");
+    expect(html).toContain("XML / XAdES-B-B");
+    expect(html).not.toContain("Allowed service profiles:");
+    expect(html).toContain("List Information");
+    expect(html).toContain("Signature &amp; Validation");
+    expect(html).toContain("Signing Certificate");
+    expect(html).toContain("Entities &amp; Services");
+    expect(html).toContain("Artifact Hashes");
     expect(html).toContain("trusted-list.xml");
     expect(html).toContain("SHA-256 digest");
     expect(html).toContain("XAdES-B-B");
@@ -481,10 +491,10 @@ describe("a combined-profile XML list after onboarding", () => {
     writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
 
     const listHtml = await (await get(`/lists/${combinedList()}`)).text();
-    expect(listHtml).toContain("Allowed service profiles:");
     expect(listHtml).toContain("chip-family--eaa");
     expect(listHtml).toContain("chip-family--qeaa");
     expect(listHtml).not.toContain("chip-list--");
+    expect(listHtml).not.toContain("Allowed service profiles:");
     expect(listHtml.indexOf(`/versions/1`)).toBeLessThan(
       listHtml.indexOf(`/versions/2`),
     );

@@ -93,6 +93,14 @@ const MIME: Record<string, string> = {
 const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ADMIN_COOKIE = "tlp_admin_token";
 
+function jsonListSubtitle(family: string | undefined): string {
+  return `<div class="chip-group">${family ? familyChip(family) : ""}<span class="chip chip-standard">ETSI TS 119 602</span><span class="chip chip-format">JSON / JAdES-B-B</span></div>`;
+}
+
+function xmlListSubtitle(profiles: readonly string[]): string {
+  return `<div class="chip-group">${profiles.map((profile) => familyChip(profile)).join("")}<span class="chip chip-standard">ETSI TS 119 612</span><span class="chip chip-format">XML / XAdES-B-B</span></div>`;
+}
+
 type OnboardingViews = typeof import("./views/onboarding.js");
 type OnboardingFormRenderer = (
   values?: Record<string, string>,
@@ -993,8 +1001,9 @@ export function createWebServer(config: ServerConfig) {
       const listKey = versionMatch[1]!;
       const sequence = parseInt(versionMatch[2]!, 10);
       if (publicationReader.formatOf(listKey) === "xml") {
-        serveTrustedListVersion(res, listKey, sequence);
-        logRequest("GET", path, res.statusCode, requestId);
+        void serveTrustedListVersion(res, listKey, sequence).then(() => {
+          logRequest("GET", path, res.statusCode, requestId);
+        });
         return;
       }
       serveVersionDetail(res, store, listKey, sequence);
@@ -1073,10 +1082,7 @@ export function createWebServer(config: ServerConfig) {
         </tr>`,
       )
       .join("");
-    const acceptedProfileChips =
-      summary?.allowedServiceProfiles
-        ?.map((profile) => familyChip(profile))
-        .join("") ?? "&mdash;";
+    const acceptedProfiles = summary?.allowedServiceProfiles ?? [];
     const newest = versions[versions.length - 1];
     const listDefects = newest
       ? defectIdsFromFixture(
@@ -1085,8 +1091,7 @@ export function createWebServer(config: ServerConfig) {
       : [];
     const body = `
 <h1>${escapeHtml(listKey)}${listDefects.length > 0 ? ` ${brokenBadge()}` : ""}</h1>
-<p><strong>Allowed service profiles:</strong> <span class="chip-group">${acceptedProfileChips}</span></p>
-<div class="chip-group"><span class="chip chip-standard">ETSI TS 119 612</span><span class="chip chip-format">XML / XAdES-B-B</span></div>
+${xmlListSubtitle(acceptedProfiles)}
 ${brokenListSectionHtml(listDefects, "TS 119 612")}
 <div class="card">
   <h2>Trusted List</h2>
@@ -1110,11 +1115,11 @@ ${brokenListSectionHtml(listDefects, "TS 119 612")}
     sendHtml(res, 200, page(listKey, body));
   }
 
-  function serveTrustedListVersion(
+  async function serveTrustedListVersion(
     res: ServerResponse,
     listKey: string,
     sequenceNumber: number,
-  ): void {
+  ): Promise<void> {
     const artifacts = publicationReader.xmlVersion(listKey, sequenceNumber);
     if (!artifacts) {
       send404(res);
@@ -1127,11 +1132,19 @@ ${brokenListSectionHtml(listDefects, "TS 119 612")}
     );
     const evaluation = stored ? parseTslInspector(stored) : null;
     const latest = publicationReader.latestXmlSequence(listKey);
+    const summary = await publicationReader.listSummary(listKey);
+    const acceptedProfiles =
+      summary?.allowedServiceProfiles &&
+      summary.allowedServiceProfiles.length > 0
+        ? summary.allowedServiceProfiles
+        : artifacts.manifest.serviceProfiles.allowedServiceProfiles.length
+          ? artifacts.manifest.serviceProfiles.allowedServiceProfiles
+          : [artifacts.manifest.family];
     sendHtml(
       res,
       200,
       page(
-        `${listKey} version ${sequenceNumber}`,
+        `${listKey} - Version ${sequenceNumber}`,
         trustedListVersionHtml(
           listKey,
           sequenceNumber,
@@ -1139,6 +1152,7 @@ ${brokenListSectionHtml(listDefects, "TS 119 612")}
           evaluation?.summary ?? null,
           latest === sequenceNumber,
           trustedListStore.readFixtureMetadata(listKey, sequenceNumber),
+          xmlListSubtitle(acceptedProfiles),
         ),
       ),
     );
@@ -1439,7 +1453,6 @@ over the published Lists of Trusted Entities.</p>
         <td>${v.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
       </tr>`;
       }
-      const { listChip, familyChip } = await import("./views/colors.js");
       const family = signingConfig
         ? findSigningConfig(signingConfig, listKey)?.family
         : undefined;
@@ -1453,12 +1466,12 @@ over the published Lists of Trusted Entities.</p>
         res,
         200,
         page(
-          `List: ${listKey}`,
-          `<h1>Trusted List: ${listChip(listKey)}${
+          listKey,
+          `<h1>${escapeHtml(listKey)}${
             listDefects.length > 0 ? ` ${brokenBadge()}` : ""
           }</h1>
+        ${jsonListSubtitle(family)}
         ${brokenListSectionHtml(listDefects)}
-        ${family ? `<p>Trusted List Family: ${familyChip(family)}</p>` : ""}
         <div class="trust-notice"><strong>Trust not evaluated.</strong></div>
         <table class="catalogue-table">
         <thead><tr><th>Sequence</th><th>Issue Date</th><th>Next Update</th><th>Published</th><th>Signature</th></tr></thead>
@@ -1511,13 +1524,16 @@ over the published Lists of Trusted Entities.</p>
           entityRows = `<tr><td colspan="2">Could not parse LoTE</td></tr>`;
         }
       }
-      const { listChip } = await import("./views/colors.js");
+      const family = signingConfig
+        ? findSigningConfig(signingConfig, listKey)?.family
+        : undefined;
       sendHtml(
         res,
         200,
         page(
-          `Version ${sequence} — ${listKey}`,
-          `<h1>Version ${sequence} — ${listChip(listKey)}</h1>
+          `${listKey} - Version ${sequence}`,
+          `<h1>${escapeHtml(listKey)} - Version ${sequence}</h1>
+${jsonListSubtitle(family)}
 ${fixturePanelHtml(s.readFixtureMetadata(listKey, sequence))}
 <div class="trust-notice"><strong>Signer trust: not evaluated.</strong> Cryptographic signature is ${manifest.signatureValid ? "valid" : "INVALID"}.</div>
 <div class="card"><h2>List Information</h2>

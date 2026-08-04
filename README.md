@@ -79,8 +79,10 @@ Open `/` for the public catalogue, `/onboarding` to submit a provider to a
 compatible list, and `/admin` for authenticated review, publication, settings
 and list creation. In the Catalogue's **Trusted List Family** column, an XML
 list accepting both EAA and QEAA displays both family chips with a small gap.
-Open the list to see the same chips under **Allowed service profiles** and its
-versions in ascending order from sequence 1.
+List pages use the list key as their title and show only tags beneath it: family
+or accepted-profile tags, the ETSI standard and the artifact format. Version
+pages use `<list-key> - Version <n>` and keep the same tags; XML histories run
+from sequence 1 upward.
 
 For a TS 119 612 XML list, choose **Create XML Trusted List** in administration.
 The first **List** panel selects EAA, QEAA or both and asks for the Trusted List

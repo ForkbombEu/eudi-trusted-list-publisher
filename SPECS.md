@@ -809,9 +809,17 @@ only to support existing immutable publications that omitted it. The legacy
 singular `family` is the last fallback.
 
 The Catalogue and XML list page render one family chip per unique accepted
-profile in a wrapping group with a minimal gap. The list page labels the group
-**Allowed service profiles**, omits the redundant list-key chip, and lists
-immutable versions in ascending sequence order from 1, matching JSON lists.
+profile in a wrapping group with a minimal gap. Both JSON and XML list pages use
+the list key as the title, then a tag-only subtitle: family/profile chips where
+available plus their standard and format (`ETSI TS 119 602` / `JSON / JAdES-B-B`
+or `ETSI TS 119 612` / `XML / XAdES-B-B`). Version pages use
+`{listKey} - Version {sequence}` and repeat the same subtitle. XML histories
+list immutable versions in ascending sequence order from 1, matching JSON.
+
+An XML version page has the same section sequence as a JSON version page:
+List Information, Signature & Validation, Signing Certificate, Trust Inspector,
+Entities & Services, Downloads, and Artifact Hashes. XML-specific metadata stays
+in the matching section; the page does not invent JSON artifacts.
 
 ### Publication layout
 

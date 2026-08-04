@@ -222,11 +222,12 @@ error: a withdrawn notification is a normal end state, not a failure.
 
 ## Phase 10 EAA and QEAA
 
-The product now shows two standards. Every page that names a family also says
-which standard and which artifact format it uses, through two neutral chips —
-`ETSI TS 119 612` and `XML / XAdES-B-B` — rendered beside the existing family
-chip. The catalogue module decides both; no page infers a format from a family
-name, which is how a page ends up promising JSON for an XML list.
+The product now shows two standards. Every list and version page places its
+family/profile chips, standard and artifact-format chips directly below its
+key-first title, with no textual prefix. XML uses `ETSI TS 119 612` and
+`XML / XAdES-B-B`; JSON uses `ETSI TS 119 602` and `JSON / JAdES-B-B`. The
+catalogue module decides both; no page infers a format from a family name, which
+is how a page ends up promising JSON for an XML list.
 
 EAA and QEAA take two adjacent hues in the existing chip palette, 145 and 175,
 the same sibling treatment WRPAC and WRPRC already have at 25 and 345: related
@@ -274,24 +275,26 @@ error, because a deprecated recognition is a normal end state.
 
 ### Version pages
 
-An XML version page carries four cards: the Trusted List's own values, an
-Integrity card, the Trust Inspector verdict and Downloads. Downloads offers
-**XML**, **SHA-256 digest** and **Inspector report** as primary buttons with the
-manifest as a plain link — the same shape as the JSON pages, naming the
-artifacts this list actually has. The copy never mentions JSON or Compact JAdES.
+An XML version page follows the JSON version-page structure: **List
+Information**, **Signature & Validation**, **Signing Certificate**, **Trust
+Inspector**, **Entities & Services**, **Downloads** and **Artifact Hashes**.
+The values remain XML-specific. Downloads offers **XML**, **SHA-256 digest** and
+**Inspector report** as primary buttons with the manifest as a plain link — the
+same shape as the JSON pages, naming the artifacts this list actually has. The
+copy never mentions JSON or Compact JAdES.
 
-The Integrity card states `signer trust: not_evaluated` in words: this publisher
-builds no certification path and makes no trust decision, and a page that showed
-a green signature without saying so would imply one.
+The Signature & Validation section states `signer trust: not_evaluated` in
+words: this publisher builds no certification path and makes no trust decision,
+and a page that showed a green signature without saying so would imply one.
 
 The latest version says it is also served at the stable
 `/lists/<key>/latest/trusted-list.xml` and `.sha2` URLs, so a reader knows there
 is an address that does not change.
 
-The XML list page places its accepted EAA/QEAA family chips under **Allowed
-service profiles** at the top. It does not repeat the list-key chip because the
-key is already the page title. Its immutable versions are listed from sequence
-1 upward, matching the JSON list page.
+The XML list page places its accepted EAA/QEAA family chips directly beneath its
+key title, without repeating the list-key chip or an **Allowed service profiles**
+label. Its immutable versions are listed from sequence 1 upward, matching the
+JSON list page. Both standards use `{list key} - Version {n}` on version pages.
 
 ### Create XML Trusted List
 
