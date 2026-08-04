@@ -278,7 +278,9 @@ error, because a deprecated recognition is a normal end state.
 An XML version page follows the JSON version-page structure: **List
 Information**, **Signature & Validation**, **Signing Certificate**, **Trust
 Inspector**, **Entities & Services**, **Downloads** and **Artifact Hashes**.
-The values remain XML-specific. Downloads offers **XML**, **SHA-256 digest** and
+The Entities & Services section lists one row per `TSPName`, with each row's
+services showing the service name and service type together. The values remain
+XML-specific. Downloads offers **XML**, **SHA-256 digest** and
 **Inspector report** as primary buttons with the manifest as a plain link — the
 same shape as the JSON pages, naming the artifacts this list actually has. The
 copy never mentions JSON or Compact JAdES.

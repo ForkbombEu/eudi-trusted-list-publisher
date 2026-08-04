@@ -57,6 +57,8 @@ import { TslApplicationService } from "../core/tsl612/authoring/application-serv
 import { parseTslSubmission } from "../core/tsl612/authoring/submission-parser.js";
 import { createTrustedListList } from "../core/tsl612/create-list.js";
 import { TSL_MEDIA_TYPE } from "../core/tsl612/constants.js";
+import { readTrustedList } from "../core/tsl612/read.js";
+import type { TslProvider } from "../core/tsl612/model.js";
 import { type TslFamily } from "../core/tsl612/registry.js";
 import {
   getTrustedListConfigsForFamily,
@@ -1117,6 +1119,13 @@ ${brokenListSectionHtml(listDefects, "TS 119 612")}
     );
     const evaluation = stored ? parseTslInspector(stored) : null;
     const latest = publicationReader.latestXmlSequence(listKey);
+    let providers: readonly TslProvider[] = [];
+    try {
+      providers = readTrustedList(artifacts.xml).providers ?? [];
+    } catch {
+      // Keep the version page available when an intentionally broken XML
+      // fixture cannot be parsed into provider details.
+    }
     const summary = await publicationReader.listSummary(listKey);
     const acceptedProfiles =
       summary?.allowedServiceProfiles &&
@@ -1138,6 +1147,7 @@ ${brokenListSectionHtml(listDefects, "TS 119 612")}
           latest === sequenceNumber,
           trustedListStore.readFixtureMetadata(listKey, sequenceNumber),
           xmlListSubtitle(acceptedProfiles),
+          providers,
         ),
       ),
     );

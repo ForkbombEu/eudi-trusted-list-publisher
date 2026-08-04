@@ -820,7 +820,9 @@ list immutable versions in an unwrapped table in ascending sequence order from
 An XML version page has the same section sequence as a JSON version page:
 List Information, Signature & Validation, Signing Certificate, Trust Inspector,
 Entities & Services, Downloads, and Artifact Hashes. XML-specific metadata stays
-in the matching section; the page does not invent JSON artifacts.
+in the matching section; Entities & Services renders one row per TSPName and
+lists each service as ServiceName plus ServiceType. The page does not invent
+JSON artifacts.
 
 ### Publication layout
 

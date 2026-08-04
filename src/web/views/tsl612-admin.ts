@@ -15,6 +15,7 @@ import { getTslProfile } from "../../core/tsl612/registry.js";
 import type { TslApplicationRecord } from "../../core/tsl612/authoring/application-model.js";
 import type { PublishPreview } from "../../core/tsl612/authoring/application-service.js";
 import type { TrustedListManifest } from "../../core/publication/tsl-manifest.js";
+import type { TslProvider } from "../../core/tsl612/model.js";
 import type { InspectorSummary } from "../../core/inspector/inspector.js";
 
 function escape(value: string): string {
@@ -224,6 +225,7 @@ export function trustedListVersionHtml(
   isLatest: boolean,
   fixtureMetadataJson: string | null = null,
   subtitleHtml: string,
+  providers: readonly TslProvider[] = [],
 ): string {
   const base = `/api/v1/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}`;
   const tsl = manifest.trustedList;
@@ -252,6 +254,27 @@ export function trustedListVersionHtml(
         <code>/lists/${escape(listKey)}/latest/trusted-list.xml</code> and
         <code>/lists/${escape(listKey)}/latest/trusted-list.sha2</code>.</p>`
     : "";
+  const providerRows = providers
+    .map(
+      (provider) => `
+    <tr>
+      <td>${escape(provider.tspName)}</td>
+      <td><ul class="service-list">${provider.services
+        .map(
+          (service) =>
+            `<li><strong>${escape(service.serviceName)}</strong><br><code>${escape(service.serviceTypeIdentifier)}</code></li>`,
+        )
+        .join("")}</ul></td>
+    </tr>`,
+    )
+    .join("");
+  const providerTable =
+    providers.length > 0
+      ? `<table class="catalogue-table">
+  <thead><tr><th>TrustServiceProviderName (TSPName)</th><th>Services</th></tr></thead>
+  <tbody>${providerRows}</tbody>
+</table>`
+      : `<p class="field-help">No trusted service providers are recorded in this version.</p>`;
 
   return `
 <h1>${escape(listKey)} - Version ${sequenceNumber}${manifest.fixture?.fixtureMode === "intentionally-broken" ? ` ${brokenBadge()}` : ""}</h1>
@@ -306,12 +329,8 @@ ${inspectorCard}
 
 <div class="card">
   <h2>Entities &amp; Services</h2>
-  <table class="kv-table"><tbody>
-    ${row("Providers", String(tsl.providerCount))}
-    ${row("Services", String(tsl.serviceCount))}
-    ${row("Service types", tsl.serviceTypes.length > 0 ? tsl.serviceTypes.map((type) => `<code>${escape(type)}</code>`).join("<br>") : "none — this version lists no provider")}
-    ${row("Allowed service profiles", manifest.serviceProfiles.allowedServiceProfiles.length > 0 ? manifest.serviceProfiles.allowedServiceProfiles.map((profile) => `<code>${escape(profile)}</code>`).join("<br>") : "not recorded")}
-  </tbody></table>
+  ${providerTable}
+  <p class="field-help">${tsl.providerCount} trusted service provider(s), ${tsl.serviceCount} service(s). Allowed profiles: ${manifest.serviceProfiles.allowedServiceProfiles.length > 0 ? manifest.serviceProfiles.allowedServiceProfiles.map((profile) => `<code>${escape(profile)}</code>`).join(", ") : "not recorded"}</p>
 </div>
 
 <div class="card">

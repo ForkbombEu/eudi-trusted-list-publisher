@@ -512,6 +512,14 @@ describe("a combined-profile XML list after onboarding", () => {
       listHtml.indexOf(`/versions/2`),
     );
 
+    const versionHtml = await (
+      await get(`/lists/${combinedList()}/versions/2`)
+    ).text();
+    expect(versionHtml).toContain("TrustServiceProviderName (TSPName)");
+    expect(versionHtml).toContain("Example Provider SpA");
+    expect(versionHtml).toContain("Combined List EAA Issuance");
+    expect(versionHtml).toContain(SVCTYPE_EAA);
+
     const catalogue = await (await get("/")).text();
     const row = [...catalogue.matchAll(/<tr(?: [^>]*)?>[\s\S]*?<\/tr>/g)]
       .map((match) => match[0])
