@@ -69,6 +69,34 @@ export function familyChip(family: string, label?: string): string {
   )}</span>`;
 }
 
+/** Family slug used by the plain list-name colour, or `unknown` when absent. */
+export function listNameColorClass(
+  family: string | readonly string[] | undefined,
+): string {
+  /*
+    An XML list can accept more than one profile. Its first family gives the
+    plain name its colour; the row keeps showing every family chip.
+  */
+  const first = typeof family === "string" ? family : family?.[0];
+  const slug = first ? FAMILY_SLUGS[first as FamilyKey] : undefined;
+  return slug ? `list-name--${slug}` : "list-name--unknown";
+}
+
+/**
+ * A single Trusted List named as plain monospace text in its family's colour.
+ *
+ * The Catalogue already shows the family as a filled chip on the same row, so
+ * a second filled chip for the list key would read as a badge inside a badge.
+ */
+export function listPlainName(
+  listKey: string,
+  family?: string | readonly string[],
+): string {
+  return `<code class="list-name ${listNameColorClass(family)}">${escape(
+    listKey,
+  )}</code>`;
+}
+
 /** Colour-coded chip naming a single Trusted List, shown by its list key. */
 export function listChip(listKey: string): string {
   return `<span class="chip chip-list ${listColorClass(

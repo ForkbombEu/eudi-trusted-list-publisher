@@ -1406,7 +1406,7 @@ over the published Lists of Trusted Entities.</p>
     s: PublicationStore,
   ): Promise<void> {
     try {
-      const { listChip, familyChip } = await import("./views/colors.js");
+      const { listPlainName, familyChip } = await import("./views/colors.js");
       const lead = `<p class="lead">Browse here EUDI Trusted lists. For testing
         and debugging purposes only.</p>`;
 
@@ -1449,7 +1449,7 @@ over the published Lists of Trusted Entities.</p>
           );
           rows += `
       <tr${xmlDefectIds.length > 0 ? ' class="catalogue-row-broken"' : ""}>
-        <td><a href="/lists/${escapeHtml(key)}">${listChip(key)}</a>${
+        <td><a href="/lists/${escapeHtml(key)}">${listPlainName(key, catalogueFamilies)}</a>${
           xmlDefectIds.length > 0 ? ` ${brokenBadge()}` : ""
         }</td>
         <td>${catalogueFamilies.length > 0 ? `<span class="chip-group">${catalogueFamilies.map((family) => familyChip(family)).join("")}</span>` : "&mdash;"}</td>
@@ -1480,7 +1480,7 @@ over the published Lists of Trusted Entities.</p>
         );
         rows += `
       <tr${defectIds.length > 0 ? ' class="catalogue-row-broken"' : ""}>
-        <td><a href="/lists/${escapeHtml(key)}">${listChip(key)}</a>${
+        <td><a href="/lists/${escapeHtml(key)}">${listPlainName(key, family)}</a>${
           defectIds.length > 0 ? ` ${brokenBadge()}` : ""
         }</td>
         <td>${family ? familyChip(family) : "&mdash;"}</td>

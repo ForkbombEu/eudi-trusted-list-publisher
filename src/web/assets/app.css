@@ -251,6 +251,64 @@ a .chip {
   color: oklch(0.42 0.16 285);
 }
 
+/*
+  The Catalogue names a list as plain text, not as a chip: the row already
+  carries the family chip, so a filled list chip beside it would be a badge
+  inside a badge. The colour is the family's chip text colour, so the plain
+  name still reads as belonging to that family.
+*/
+.list-name {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-weight: 500;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+/*
+  The underline belongs to the link, not to the name inside it, so it has to
+  be switched off on the anchor: a descendant cannot cancel it.
+*/
+a:has(.list-name) {
+  text-decoration: none;
+}
+
+.list-name--wallet {
+  color: oklch(0.42 0.18 300);
+}
+
+.list-name--pid {
+  color: oklch(0.42 0.16 235);
+}
+
+.list-name--pubeaa {
+  color: oklch(0.42 0.13 85);
+}
+
+.list-name--wrpac {
+  color: oklch(0.45 0.18 25);
+}
+
+.list-name--wrprc {
+  color: oklch(0.44 0.17 345);
+}
+
+.list-name--registrar {
+  color: oklch(0.4 0.12 200);
+}
+
+.list-name--eaa {
+  color: oklch(0.41 0.13 145);
+}
+
+.list-name--qeaa {
+  color: oklch(0.4 0.11 175);
+}
+
+.list-name--unknown {
+  color: var(--fg-muted);
+}
+
 /* --- Page rhythm --- */
 .content h1,
 .content h2 {

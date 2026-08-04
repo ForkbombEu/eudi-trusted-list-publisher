@@ -322,6 +322,11 @@ describe("XML Trusted List creation and publication visibility", () => {
       .find((candidate) => candidate.includes(`/lists/${combinedList()}`));
 
     expect(row).toBeDefined();
+    /* The name is plain text in the colour of the first family it accepts. */
+    expect(row).toContain(
+      `<code class="list-name list-name--eaa">${combinedList()}</code>`,
+    );
+    expect(row).not.toContain("chip-list--");
     expect(row).toContain("chip-family--eaa");
     expect(row).toContain(">EAA Providers</span>");
     expect(row).toContain("chip-family--qeaa");

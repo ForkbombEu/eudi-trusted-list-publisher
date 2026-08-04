@@ -11,6 +11,8 @@ import {
   familyColorClass,
   listChip,
   listColorClass,
+  listNameColorClass,
+  listPlainName,
   LIST_SWATCH_COUNT,
 } from "../src/web/views/colors.js";
 import { adminSettingsHtml, adminIndexHtml } from "../src/web/views/admin.js";
@@ -188,9 +190,30 @@ describe("Trusted List colour coding", () => {
     expect(index).toBeLessThan(LIST_SWATCH_COUNT);
   });
 
+  it("names a Catalogue list as plain text in its family's colour", () => {
+    const html = listPlainName("eu_credimi", "wallet-providers");
+    expect(html).toBe(
+      '<code class="list-name list-name--wallet">eu_credimi</code>',
+    );
+    expect(html).not.toContain("chip");
+  });
+
+  it("colours an XML list by the first family it accepts", () => {
+    expect(listNameColorClass(["eaa-providers", "qeaa-providers"])).toBe(
+      "list-name--eaa",
+    );
+  });
+
+  it("falls back to a neutral list name when the family is unknown", () => {
+    expect(listNameColorClass(undefined)).toBe("list-name--unknown");
+    expect(listNameColorClass([])).toBe("list-name--unknown");
+    expect(listNameColorClass("not-a-family")).toBe("list-name--unknown");
+  });
+
   it("escapes untrusted text inside chips", () => {
     expect(familyChip("wallet-providers", "<b>x</b>")).toContain("&lt;b&gt;x");
     expect(listChip('a"b')).toContain("a&quot;b");
+    expect(listPlainName('a"b')).toContain("a&quot;b");
   });
 
   it("declares every chip class it can emit in app.css", () => {
@@ -200,10 +223,45 @@ describe("Trusted List colour coding", () => {
     );
     for (const family of LIST_FAMILIES) {
       expect(css).toContain(`.${familyColorClass(family.key)} {`);
+      expect(css).toContain(`.${listNameColorClass(family.key)} {`);
     }
+    expect(css).toContain(".list-name--unknown {");
     for (let i = 0; i < LIST_SWATCH_COUNT; i++) {
       expect(css).toContain(`.chip-list--${i} {`);
     }
+  });
+
+  it("tints a plain list name with its family chip's text colour", () => {
+    const css = readFileSync(
+      resolve(import.meta.dirname, "..", "src", "web", "assets", "app.css"),
+      "utf-8",
+    );
+    const colorOf = (selector: string): string => {
+      const rule = new RegExp(`\\.${selector} \\{([^}]*)\\}`).exec(css)?.[1];
+      expect(rule, `missing rule for .${selector}`).toBeDefined();
+      /* `(?:^|\n)\s*` keeps `border-color` out of the match. */
+      const color = /(?:^|\n)\s*color:\s*([^;]+);/.exec(rule!)?.[1];
+      expect(color, `missing color in .${selector}`).toBeDefined();
+      return color!.trim();
+    };
+    for (const family of LIST_FAMILIES) {
+      expect(colorOf(listNameColorClass(family.key))).toBe(
+        colorOf(familyColorClass(family.key)),
+      );
+    }
+  });
+
+  it("carries no chip background, border or padding on a plain list name", () => {
+    const css = readFileSync(
+      resolve(import.meta.dirname, "..", "src", "web", "assets", "app.css"),
+      "utf-8",
+    );
+    const rule = /\.list-name \{([^}]*)\}/.exec(css)?.[1];
+    expect(rule).toBeDefined();
+    expect(rule).toMatch(/background:\s*none;/);
+    expect(rule).toMatch(/border:\s*0;/);
+    expect(rule).toMatch(/padding:\s*0;/);
+    expect(rule).toContain("monospace");
   });
 
   it("keeps a minimal gap between grouped chips", () => {
@@ -433,6 +491,16 @@ describe("Auto-approval of onboarding applications", () => {
       // The publication really happened: it is visible in the catalogue.
       const catalogue = await request(`${gui.url}/`);
       expect(catalogue.body).toContain("eu_test_authority");
+
+      /* The row names the list plainly and keeps the pill for its family. */
+      const row = [...catalogue.body.matchAll(/<tr(?: [^>]*)?>[\s\S]*?<\/tr>/g)]
+        .map((match) => match[0])
+        .find((candidate) => candidate.includes("/lists/eu_test_authority"));
+      expect(row).toContain(
+        '<code class="list-name list-name--wallet">eu_test_authority</code>',
+      );
+      expect(row).not.toContain("chip-list--");
+      expect(row).toContain("chip chip-family chip-family--wallet");
     } finally {
       await gui.cleanup();
     }
