@@ -277,6 +277,76 @@ describe("expected against actual failure comparison", () => {
 });
 
 describe("other families stay healthy", () => {
+  it.each([
+    [
+      "pid-providers",
+      "http://uri.etsi.org/19602/SvcType/PID/Issuance",
+      "http://uri.etsi.org/19602/ListOfTrustedEntities/PIDProvider/EU",
+      true,
+      false,
+    ],
+    [
+      "wallet-providers",
+      "http://uri.etsi.org/19602/SvcType/WalletSolution/Issuance",
+      "http://uri.etsi.org/19602/ListOfTrustedEntities/WalletProvider/EU",
+      true,
+      false,
+    ],
+    [
+      "wrpac-providers",
+      "http://uri.etsi.org/19602/SvcType/WRPAC/Issuance",
+      "http://uri.etsi.org/19602/ListOfTrustedEntities/WRPACProvider/EU",
+      false,
+      false,
+    ],
+    [
+      "wrprc-providers",
+      "http://uri.etsi.org/19602/SvcType/WRPRC/Issuance",
+      "http://uri.etsi.org/19602/ListOfTrustedEntities/WRPRCProvider/EU",
+      false,
+      false,
+    ],
+    [
+      "pub-eaa-providers",
+      "http://uri.etsi.org/19602/SvcType/PubEAA/Issuance",
+      "http://uri.etsi.org/19602/ListOfTrustedEntities/PubEAAProvider/EU",
+      false,
+      true,
+    ],
+  ] as const)(
+    "%s builds a compilable healthy fixture seed",
+    (family, serviceType, roleUri, hasUniqueIdentifier, hasStatus) => {
+      const seed = fixtureSeedEntity(
+        family,
+        CERT_DER,
+        "2026-01-01T00:00:00Z",
+        "EU",
+      );
+      const service = seed.services[0]!;
+
+      expect(service.serviceTypeIdentifier).toBe(serviceType);
+      expect("serviceUniqueIdentifier" in service).toBe(hasUniqueIdentifier);
+      expect("serviceStatus" in service).toBe(hasStatus);
+      expect(
+        seed.teElectronicAddress.some(
+          (address) => address.uriValue === roleUri,
+        ),
+      ).toBe(family === "pub-eaa-providers");
+      expect(
+        seed.teInformationURI.some((address) => address.uriValue === roleUri),
+      ).toBe(family !== "pub-eaa-providers");
+      expect(
+        seed.teTradeName?.some((name) => name.value === "OJ:EU32024R1183") ??
+          false,
+      ).toBe(family === "pub-eaa-providers");
+
+      const input = pubEaaInput([seed]);
+      if (family !== "pub-eaa-providers")
+        delete input.scheme.historicalInformationPeriod;
+      expect(() => compileForProfile(family, input)).not.toThrow();
+    },
+  );
+
   /*
     Broken generation is opt-in per list. A family that was never asked for a
     defect must compile exactly as before.

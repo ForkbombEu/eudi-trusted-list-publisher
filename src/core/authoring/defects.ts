@@ -17,17 +17,16 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as jose from "jose";
+import type { AuthoringEntity, AuthoringService } from "../model/authoring.js";
 import type {
   LoTEDocument,
   OtherLoTEPointer,
   ServiceInformationExtensionsItem,
 } from "../model/types.js";
-import type { EnabledProfileFamily } from "../profiles/registry.js";
 import {
-  PUB_EAA_PROVIDER_ROLE_URI_PREFIX,
-  PUB_EAA_SERVICE_TYPE_ISSUANCE,
-  PUB_EAA_SVC_STATUS_NOTIFIED,
-} from "../profiles/pub-eaa-provider/constants.js";
+  getEnabledProfile,
+  type EnabledProfileFamily,
+} from "../profiles/registry.js";
 import {
   defectForStandard,
   defectsAtStageFor,
@@ -328,33 +327,32 @@ export function fixtureSeedEntity(
   serviceCertificateDerBase64: string,
   statusStartingTime: string,
   country: string,
-): {
-  teName: { lang: string; value: string }[];
-  teTradeName?: { lang: string; value: string }[];
-  tePostalAddress: {
-    lang: string;
-    StreetAddress: string;
-    Locality?: string;
-    PostalCode?: string;
-    Country: string;
-  }[];
-  teElectronicAddress: { lang: string; uriValue: string }[];
-  teInformationURI: { lang: string; uriValue: string }[];
-  services: {
-    serviceTypeIdentifier: string;
-    serviceName: { lang: string; value: string }[];
-    serviceDigitalIdentity: { x509Certificates: string[] };
-    serviceStatus?: string;
-    statusStartingTime?: string;
-  }[];
-} {
-  const roleUri = `${PUB_EAA_PROVIDER_ROLE_URI_PREFIX}/${country}`;
+): AuthoringEntity {
+  const profile = getEnabledProfile(family);
+  const roleUri = `${profile.roleUriPrefix}/${country}`;
   const legalBasis = "OJ:EU32024R1183";
-  const home = "https://fixture-entity.example/pub-eaa";
-  const annexH = family === "pub-eaa-providers";
+  const home = `https://fixture-entity.example/${family}`;
+  const service: AuthoringService = {
+    serviceTypeIdentifier: profile.allowedServiceTypes[0]!,
+    serviceName: [{ lang: "en", value: "Broken Fixture Issuance" }],
+    serviceDigitalIdentity: {
+      x509Certificates: [serviceCertificateDerBase64],
+    },
+    ...(profile.requiresServiceUniqueIdentifier
+      ? { serviceUniqueIdentifier: `urn:fixture:${family}:issuance` }
+      : {}),
+    ...(profile.usesServiceStatus
+      ? {
+          serviceStatus: profile.serviceStatuses!.notified,
+          statusStartingTime,
+        }
+      : {}),
+  };
   return {
     teName: [{ lang: "en", value: FIXTURE_ENTITY_NAME }],
-    ...(annexH ? { teTradeName: [{ lang: "en", value: legalBasis }] } : {}),
+    ...(profile.requiresLegalBasisReference
+      ? { teTradeName: [{ lang: "en", value: legalBasis }] }
+      : {}),
     tePostalAddress: [
       {
         lang: "en",
@@ -368,24 +366,17 @@ export function fixtureSeedEntity(
       { lang: "en", uriValue: "mailto:fixture@fixture-entity.example" },
       { lang: "en", uriValue: home },
       { lang: "en", uriValue: "tel:+3220000000" },
-      ...(annexH ? [{ lang: "en", uriValue: roleUri }] : []),
+      ...(profile.roleUriInElectronicAddress
+        ? [{ lang: "en", uriValue: roleUri }]
+        : []),
     ],
-    teInformationURI: [{ lang: "en", uriValue: home }],
-    services: [
-      {
-        serviceTypeIdentifier: PUB_EAA_SERVICE_TYPE_ISSUANCE,
-        serviceName: [{ lang: "en", value: "Broken Fixture Issuance" }],
-        serviceDigitalIdentity: {
-          x509Certificates: [serviceCertificateDerBase64],
-        },
-        ...(annexH
-          ? {
-              serviceStatus: PUB_EAA_SVC_STATUS_NOTIFIED,
-              statusStartingTime,
-            }
-          : {}),
-      },
+    teInformationURI: [
+      { lang: "en", uriValue: home },
+      ...(profile.roleUriInInformationUri
+        ? [{ lang: "en", uriValue: roleUri }]
+        : []),
     ],
+    services: [service],
   };
 }
 
