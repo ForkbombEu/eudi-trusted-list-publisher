@@ -398,6 +398,7 @@ export interface PostSignContext {
   document: LoTEDocument;
   signingTime: Date;
   schemeOperatorName: string;
+  schemeTerritory: string;
 }
 
 export interface PostSignOutcome {
@@ -439,7 +440,10 @@ export async function applyPostSignDefects(
   let signingKey = context.signingKey;
 
   if (wantsMismatch) {
-    const substitute = mintMismatchedSigner(context.schemeOperatorName);
+    const substitute = mintMismatchedSigner(
+      context.schemeOperatorName,
+      context.schemeTerritory,
+    );
     if (substitute) {
       certificatePem = substitute.certificatePem;
       signingKey = await importPrivateKey(substitute.privateKeyPem);
@@ -447,7 +451,7 @@ export async function applyPostSignDefects(
         defectId: "signer_organisation_mismatch",
         stage: "post-sign",
         applied: true,
-        detail: `Re-signed with a self-signed certificate whose subject organisation is "${mismatchOrganisation(context.schemeOperatorName)}".`,
+        detail: `Re-signed with a self-signed certificate whose subject organisation is "${mismatchOrganisation(context.schemeOperatorName)}" and country is "${mismatchCountry(context.schemeTerritory)}".`,
       });
     } else {
       mutations.push({
@@ -504,13 +508,18 @@ function mismatchOrganisation(schemeOperatorName: string): string {
   return `Not ${schemeOperatorName}`.slice(0, 64);
 }
 
+function mismatchCountry(territory: string): string {
+  return territory === "IT" ? "DE" : "IT";
+}
+
 function mintMismatchedSigner(
   schemeOperatorName: string,
+  schemeTerritory: string,
 ): { certificatePem: string; privateKeyPem: string } | null {
   return mintCertificate({
     commonName: "Intentionally Broken Fixture Signer",
     organisation: mismatchOrganisation(schemeOperatorName),
-    country: "EU",
+    country: mismatchCountry(schemeTerritory),
   });
 }
 

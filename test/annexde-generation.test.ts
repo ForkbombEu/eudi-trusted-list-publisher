@@ -1,8 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
-import { randomBytes } from "node:crypto";
+import { randomBytes, X509Certificate } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import type { IncomingMessage } from "node:http";
 import { get as httpGetRaw, request as httpRequestRaw } from "node:http";
@@ -11,6 +17,7 @@ import { validateEtsiStruct } from "../src/core/validate/validate.js";
 import {
   ApplicationService,
   AuthoringStore,
+  checkRelyingPartyCaCertificate,
   createTrustedList,
   deriveListKeyFromParts,
   LIST_DEFECTS,
@@ -769,6 +776,221 @@ describe("Trusted List creation", () => {
     expect(uris.distributionPointUri).toBe("https://example.eu/wallet/latest");
   });
 
+  it.each([
+    "pid-providers",
+    "wallet-providers",
+    "wrpac-providers",
+    "wrprc-providers",
+    "pub-eaa-providers",
+  ] as const)("%s creates a broken fixture", async (family) => {
+    const publicationDir = tmpDir();
+    const configDir = tmpDir();
+    const signingConfigPath = join(configDir, "signing-config.json");
+    try {
+      const store = new PublicationStore({ publicationDir });
+      const result = await createTrustedList(
+        {
+          ...baseRequest,
+          family,
+          baseUrl: `https://scheme.example/${family}`,
+          defects: [
+            "missing_operator_email",
+            "scheme_name_without_territory",
+            "missing_operator_email",
+          ],
+        },
+        {
+          publicationStore: store,
+          signingConfigPath,
+          inspectorClient: stubInspector(),
+          now: () => new Date("2026-07-30T09:00:00Z"),
+        },
+      );
+
+      expect(result.success, result.success ? "" : result.error).toBe(true);
+      if (!result.success) return;
+      expect(result.fixture?.selectedDefects).toEqual([
+        "scheme_name_without_territory",
+        "missing_operator_email",
+      ]);
+      expect(
+        result.fixture?.mutations.every((mutation) => mutation.applied),
+      ).toBe(true);
+
+      if (family === "wrpac-providers" || family === "wrprc-providers") {
+        const document = JSON.parse(
+          (await store.loadVersionBytes(result.listKey, 1, "lote")) ?? "{}",
+        ) as LoTEDocument;
+        const certificate =
+          document.LoTE.TrustedEntitiesList?.[0]?.TrustedEntityServices[0]
+            ?.ServiceInformation.ServiceDigitalIdentity.X509Certificates?.[0]
+            ?.val;
+        expect(certificate).toBeDefined();
+        expect(
+          checkRelyingPartyCaCertificate(
+            new X509Certificate(Buffer.from(certificate!, "base64")),
+            family === "wrpac-providers" ? "WRPAC" : "WRPRC",
+          ),
+        ).toBeNull();
+      }
+    } finally {
+      for (const dir of [publicationDir, configDir])
+        rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses publication when a selected JSON defect cannot be applied", async () => {
+    const publicationDir = tmpDir();
+    const configDir = tmpDir();
+    const signingConfigPath = join(configDir, "signing-config.json");
+    const originalPath = process.env.PATH;
+    try {
+      process.env.PATH = "";
+      const store = new PublicationStore({ publicationDir });
+      const result = await createTrustedList(
+        {
+          ...baseRequest,
+          defects: ["signer_organisation_mismatch"],
+        },
+        {
+          publicationStore: store,
+          signingConfigPath,
+          inspectorClient: stubInspector(),
+          now: () => new Date("2026-07-30T09:00:00Z"),
+        },
+      );
+
+      expect(result.success).toBe(false);
+      if (result.success) return;
+      expect(result.error).toContain("signer_organisation_mismatch");
+      expect(store.getHighestStoredSequence("eu_test")).toBeNull();
+      expect(existsSync(signingConfigPath)).toBe(false);
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      for (const dir of [publicationDir, configDir])
+        rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(LIST_DEFECTS)(
+    "$id can be selected as an individual JSON defect",
+    async (defect) => {
+      const publicationDir = tmpDir();
+      const configDir = tmpDir();
+      try {
+        const result = await createTrustedList(
+          {
+            ...baseRequest,
+            defects: [defect.id],
+          },
+          {
+            publicationStore: new PublicationStore({ publicationDir }),
+            signingConfigPath: join(configDir, "signing-config.json"),
+            inspectorClient: stubInspector(),
+            now: () => new Date("2026-07-30T09:00:00Z"),
+          },
+        );
+
+        expect(result.success, result.success ? "" : result.error).toBe(true);
+        if (!result.success) return;
+        expect(result.fixture?.selectedDefects).toEqual([defect.id]);
+        expect(
+          result.fixture?.mutations.find(
+            (mutation) => mutation.defectId === defect.id,
+          ),
+        ).toMatchObject({ applied: true });
+      } finally {
+        for (const dir of [publicationDir, configDir])
+          rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  const ALL_JSON_DEFECTS = [
+    "non_strict_timestamps",
+    "scheme_name_without_territory",
+    "missing_scheme_information_uri",
+    "missing_policy_or_legal_notice",
+    "missing_operator_email",
+    "missing_self_pointer",
+    "pem_service_certificate",
+    "extension_without_criticality",
+    "signer_organisation_mismatch",
+    "jades_without_signing_time",
+  ] as const;
+
+  it.each([
+    "pid-providers",
+    "wallet-providers",
+    "wrpac-providers",
+    "wrprc-providers",
+    "pub-eaa-providers",
+  ] as const)("%s composes every JSON defect", async (family) => {
+    const publicationDir = tmpDir();
+    const configDir = tmpDir();
+    try {
+      const store = new PublicationStore({ publicationDir });
+      const result = await createTrustedList(
+        {
+          ...baseRequest,
+          family,
+          baseUrl: `https://scheme.example/all/${family}`,
+          defects: [...ALL_JSON_DEFECTS].reverse(),
+        },
+        {
+          publicationStore: store,
+          signingConfigPath: join(configDir, "signing-config.json"),
+          inspectorClient: stubInspector(),
+          now: () => new Date("2026-07-30T09:00:00Z"),
+        },
+      );
+
+      expect(result.success, result.success ? "" : result.error).toBe(true);
+      if (!result.success) return;
+      expect(result.fixture?.selectedDefects).toEqual(ALL_JSON_DEFECTS);
+      expect(
+        new Set(
+          result.fixture?.mutations
+            .filter((mutation) => mutation.applied)
+            .map((mutation) => mutation.defectId),
+        ),
+      ).toEqual(new Set(ALL_JSON_DEFECTS));
+
+      const compact = await store.loadVersionBytes(
+        result.listKey,
+        1,
+        "signature",
+      );
+      expect(compact).not.toBeNull();
+      const [encodedHeader, encodedPayload] = compact!.split(".");
+      const header = JSON.parse(
+        Buffer.from(encodedHeader!, "base64url").toString("utf-8"),
+      ) as { iat?: number; x5c: string[] };
+      const document = JSON.parse(
+        Buffer.from(encodedPayload!, "base64url").toString("utf-8"),
+      ) as LoTEDocument;
+      const information = document.LoTE.ListAndSchemeInformation;
+      expect(header.iat).toBeUndefined();
+      expect(information.SchemeName?.[0]?.value).not.toMatch(/^EU:/);
+      expect(
+        information.SchemeOperatorAddress.SchemeOperatorElectronicAddress.some(
+          (address) => address.uriValue.startsWith("mailto:"),
+        ),
+      ).toBe(false);
+      expect(information.PointersToOtherLoTE !== undefined).toBe(
+        family === "pub-eaa-providers",
+      );
+
+      const signer = new X509Certificate(Buffer.from(header.x5c[0]!, "base64"));
+      expect(signer.subject).toContain("O=Not Test");
+      expect(signer.subject).toContain("C=IT");
+    } finally {
+      for (const dir of [publicationDir, configDir])
+        rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("publishes an empty, valid, assessed version 1 and registers the list", async () => {
     const publicationDir = tmpDir();
     const configDir = tmpDir();
@@ -885,6 +1107,14 @@ describe("Trusted List creation", () => {
     expect(html.match(/name="defects"/g)).toHaveLength(LIST_DEFECTS.length);
     expect(html).not.toContain("disabled");
     expect(html).toContain("Intentionally broken test fixture");
+  });
+
+  it("preserves every selected JSON defect after a form error", () => {
+    const html = createListFormHtml({
+      defects: ["missing_operator_email", "jades_without_signing_time"],
+    });
+    expect(html).toMatch(/value="missing_operator_email" checked/);
+    expect(html).toMatch(/value="jades_without_signing_time" checked/);
   });
 });
 

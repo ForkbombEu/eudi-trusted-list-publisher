@@ -15,6 +15,8 @@ import {
 import { MAX_NEXT_UPDATE_MONTHS } from "../profiles/wallet-provider/constants.js";
 import { certificateDerBase64, toUtcDateTime } from "../model/lexical.js";
 import type { AuthoringInput } from "../model/authoring.js";
+import { normalizeDefectSelectionForStandard } from "../defects/registry.js";
+import { unappliedSelectedDefects } from "../defects/fixture-metadata.js";
 import {
   loadSigningConfig,
   type SigningConfig,
@@ -224,6 +226,10 @@ export async function createTrustedList(
 ): Promise<CreateListResult> {
   const invalid = validateRequest(request);
   if (invalid) return { success: false, error: invalid };
+  const defects = normalizeDefectSelectionForStandard(
+    request.defects,
+    "TS 119 602",
+  );
 
   const listKey = deriveListKeyFromParts(
     request.schemeTerritory,
@@ -243,7 +249,7 @@ export async function createTrustedList(
       error: `Publications already exist for list key "${listKey}".`,
     };
 
-  const broken = request.defects.length > 0;
+  const broken = defects.length > 0;
   const uris = schemeUrisFor(request.baseUrl);
   const entry: SigningConfigEntry = {
     listKey,
@@ -262,7 +268,7 @@ export async function createTrustedList(
     schemeInformationUris: uris.schemeInformationUris,
     policyUri: uris.policyUri,
     /* Persisted so every later version of this list is mutated the same way. */
-    ...(broken ? { defects: [...request.defects] } : {}),
+    ...(broken ? { defects: [...defects] } : {}),
   };
 
   const now = (deps.now ?? (() => new Date()))();
@@ -294,6 +300,18 @@ export async function createTrustedList(
     empty list is a valid, signable, assessable LoTE — which is what makes the
     new list inspectable before anyone applies to it.
   */
+  const needsCaServiceCertificate =
+    request.family === "wrpac-providers" ||
+    request.family === "wrprc-providers";
+  const fixtureCertificatePem = broken
+    ? (mintCertificate({
+        commonName: `${FIXTURE_ENTITY_NAME} Issuance`,
+        organisation: FIXTURE_ENTITY_NAME,
+        country: entry.schemeOperatorCountry,
+        ...(needsCaServiceCertificate ? { certificateAuthority: true } : {}),
+      })?.certificatePem ?? certPem)
+    : certPem;
+
   const input: AuthoringInput = {
     schemeOperator: {
       name: [{ lang: "en", value: entry.schemeOperatorName }],
@@ -340,13 +358,7 @@ export async function createTrustedList(
               signing certificate keeps generation working without openssl, at
               the cost of one extra recorded failure.
             */
-            certificateDerBase64(
-              mintCertificate({
-                commonName: `${FIXTURE_ENTITY_NAME} Issuance`,
-                organisation: FIXTURE_ENTITY_NAME,
-                country: entry.schemeOperatorCountry,
-              })?.certificatePem ?? certPem,
-            ),
+            certificateDerBase64(fixtureCertificatePem),
             toUtcDateTime(now),
             entry.schemeOperatorCountry,
           ),
@@ -371,7 +383,7 @@ export async function createTrustedList(
       };
 
     const preSign = broken
-      ? applyPreSignDefects(compiled.document, request.defects, {
+      ? applyPreSignDefects(compiled.document, defects, {
           family: request.family,
           schemeTerritory: entry.schemeTerritory,
           distributionPointUri: entry.distributionPointUri,
@@ -415,18 +427,27 @@ export async function createTrustedList(
     });
 
     const postSign = broken
-      ? await applyPostSignDefects(signed.compact, request.defects, {
+      ? await applyPostSignDefects(signed.compact, defects, {
           certificatePem: certPem,
           signingKey,
           document: preSign.document,
           signingTime: now,
           schemeOperatorName: entry.schemeOperatorName,
+          schemeTerritory: entry.schemeTerritory,
         })
       : {
           compact: signed.compact,
           certificatePem: certPem,
           mutations: [] as AppliedMutation[],
         };
+
+    const mutations = [...preSign.mutations, ...postSign.mutations];
+    const unapplied = unappliedSelectedDefects(defects, mutations);
+    if (unapplied.length > 0)
+      return {
+        success: false,
+        error: `Selected defects were not applied: ${unapplied.join(", ")}.`,
+      };
 
     /*
       The signature must verify even for a broken fixture, against whichever
@@ -479,8 +500,8 @@ export async function createTrustedList(
     let fixture: FixtureMetadata | undefined;
     if (broken) {
       fixture = buildFixtureMetadata(
-        request.defects,
-        [...preSign.mutations, ...postSign.mutations],
+        defects,
+        mutations,
         [...localValidationFailures, ...published.structuralFindings],
         inspector.summary.locallyDecidableFailures ?? [],
         now,

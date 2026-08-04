@@ -27,6 +27,7 @@ export interface CreateListFormValues {
   baseUrl?: string;
   keyFile?: string;
   certFile?: string;
+  defects?: string | string[];
 }
 
 export interface CreateListFormOptions {
@@ -34,11 +35,12 @@ export interface CreateListFormOptions {
   signingMaterialNotice?: string;
 }
 
-function defectOptions(): string {
+function defectOptions(selected: readonly string[]): string {
+  const selectedIds = new Set(selected);
   return LIST_DEFECTS.map(
     (defect) => `
       <label class="tl-broken-option">
-        <input type="checkbox" name="defects" value="${escape(defect.id)}">
+        <input type="checkbox" name="defects" value="${escape(defect.id)}"${selectedIds.has(defect.id) ? " checked" : ""}>
         <span><strong>${escape(defect.label)}</strong>
         <span class="field-help">${escape(defect.description)}</span></span>
       </label>`,
@@ -51,6 +53,11 @@ export function createListFormHtml(
   options: CreateListFormOptions = {},
 ): string {
   const v = values ?? {};
+  const selectedDefects = Array.isArray(v.defects)
+    ? v.defects
+    : v.defects
+      ? [v.defects]
+      : [];
   const families = Object.values(PROFILE_REGISTRY).filter(
     (profile) => profile.enabled,
   );
@@ -202,7 +209,7 @@ ${
       be bad. The selection is remembered, so every later version of the list,
       including one published when an entity is registered, is mutated the same
       way.</p>
-      <div class="tl-broken-options">${defectOptions()}
+      <div class="tl-broken-options">${defectOptions(selectedDefects)}
       </div>
     </fieldset>
   </div>

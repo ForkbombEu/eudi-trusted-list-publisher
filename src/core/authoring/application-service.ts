@@ -23,6 +23,8 @@ import { validateEtsiStruct } from "../validate/validate.js";
 import { sign as signLote } from "../signing/signing.js";
 import { verify } from "../verification/verification.js";
 import { publish, PublicationError } from "../publication/manifest.js";
+import { normalizeDefectSelectionForStandard } from "../defects/registry.js";
+import { unappliedSelectedDefects } from "../defects/fixture-metadata.js";
 import {
   canTransition,
   buildAuthoringEntity,
@@ -436,7 +438,10 @@ export class ApplicationService {
       onboarding an Issuer or Verifier to test that their runtime rejects a bad
       list — is published through the same mutations.
     */
-    const defects = listEntry.defects ?? [];
+    const defects = normalizeDefectSelectionForStandard(
+      listEntry.defects ?? [],
+      "TS 119 602",
+    );
     const broken = defects.length > 0;
     const etsiResult = await validateEtsiStruct(compileResult.document);
     if (!etsiResult.valid && !broken) {
@@ -495,12 +500,20 @@ export class ApplicationService {
           document: preSign.document,
           signingTime,
           schemeOperatorName: listEntry.schemeOperatorName,
+          schemeTerritory: listEntry.schemeTerritory,
         })
       : {
           compact: signed.compact,
           certificatePem: certPem,
           mutations: [] as AppliedMutation[],
         };
+    const mutations = [...preSign.mutations, ...postSign.mutations];
+    const unapplied = unappliedSelectedDefects(defects, mutations);
+    if (unapplied.length > 0)
+      return {
+        success: false,
+        error: `Selected defects were not applied: ${unapplied.join(", ")}.`,
+      };
     const verifyResult = await verify({
       compactJws: postSign.compact,
       certificatePem: postSign.certificatePem,
@@ -546,7 +559,7 @@ export class ApplicationService {
           JSON.stringify(
             buildFixtureMetadata(
               defects,
-              [...preSign.mutations, ...postSign.mutations],
+              mutations,
               [...localValidationFailures, ...pubResult.structuralFindings],
               evaluation?.summary.locallyDecidableFailures ?? [],
               signingTime,
