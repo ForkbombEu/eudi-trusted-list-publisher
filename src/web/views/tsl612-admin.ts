@@ -262,7 +262,7 @@ export function trustedListVersionHtml(
       <td><ul class="service-list">${provider.services
         .map(
           (service) =>
-            `<li><strong>${escape(service.serviceName)}</strong><br><code>${escape(service.serviceTypeIdentifier)}</code></li>`,
+            `<li><strong>${escape(service.serviceName)}</strong><br>ServiceType: <code>${escape(service.serviceTypeIdentifier)}</code></li>`,
         )
         .join("")}</ul></td>
     </tr>`,
