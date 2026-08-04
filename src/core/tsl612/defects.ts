@@ -507,23 +507,44 @@ export function planXmlSigning(
   let privateKeyPem = healthy.privateKeyPem;
   let certificatePem = healthy.certificatePem;
   let omitSigningTime = false;
+  const signingDefects = defectsAtStageFor(defectIds, STANDARD, "post-sign");
+  const wantsSubjectMismatch = signingDefects.some(
+    (spec) => spec.id === "signer_organisation_mismatch",
+  );
+  const wantsIncorrectProfile = signingDefects.some(
+    (spec) => spec.id === "incorrect_signing_certificate",
+  );
+  const substitute =
+    wantsSubjectMismatch || wantsIncorrectProfile
+      ? mintCertificate({
+          commonName: "Intentionally Broken Trusted List Signer",
+          organisation: wantsSubjectMismatch
+            ? `Not ${context.schemeOperatorName}`.slice(0, 64)
+            : context.schemeOperatorName,
+          country: wantsSubjectMismatch
+            ? context.schemeTerritory === "IT"
+              ? "DE"
+              : "IT"
+            : context.schemeTerritory,
+          ...(wantsIncorrectProfile
+            ? { certificateAuthority: true }
+            : { trustedListProfile: true }),
+        })
+      : null;
 
-  for (const spec of defectsAtStageFor(defectIds, STANDARD, "post-sign")) {
+  if (substitute) {
+    privateKeyPem = substitute.privateKeyPem;
+    certificatePem = substitute.certificatePem;
+  }
+
+  for (const spec of signingDefects) {
     switch (spec.id) {
       case "signer_organisation_mismatch": {
-        const substitute = mintCertificate({
-          commonName: "Intentionally Broken Trusted List Signer",
-          organisation: `Not ${context.schemeOperatorName}`.slice(0, 64),
-          country: context.schemeTerritory === "IT" ? "DE" : "IT",
-          trustedListProfile: true,
-        });
         if (substitute) {
-          privateKeyPem = substitute.privateKeyPem;
-          certificatePem = substitute.certificatePem;
           log.record(
             spec.id,
             true,
-            `Re-signed with a TLSO-shaped certificate whose subject O is "Not ${context.schemeOperatorName}".`,
+            `Re-signed with one certificate whose subject O is "Not ${context.schemeOperatorName}" and whose country differs from ${context.schemeTerritory}.`,
           );
         } else {
           log.record(
@@ -535,20 +556,11 @@ export function planXmlSigning(
         break;
       }
       case "incorrect_signing_certificate": {
-        const substitute = mintCertificate({
-          commonName:
-            `${context.schemeOperatorName} Certificate Authority`.slice(0, 64),
-          organisation: context.schemeOperatorName,
-          country: context.schemeTerritory,
-          certificateAuthority: true,
-        });
         if (substitute) {
-          privateKeyPem = substitute.privateKeyPem;
-          certificatePem = substitute.certificatePem;
           log.record(
             spec.id,
             true,
-            "Re-signed with a CA certificate: basicConstraints CA:TRUE, keyUsage keyCertSign and cRLSign.",
+            "The substitute signer is a CA certificate: basicConstraints CA:TRUE, keyUsage keyCertSign and cRLSign.",
           );
         } else {
           log.record(

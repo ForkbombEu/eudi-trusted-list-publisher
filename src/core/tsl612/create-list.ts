@@ -26,6 +26,7 @@ import {
   buildFixtureMetadata,
   type FixtureMetadata,
 } from "../defects/fixture-metadata.js";
+import { normalizeDefectSelectionForStandard } from "../defects/registry.js";
 import { SAFE_KEY_RE } from "../publication/store.js";
 import { isTslFamily, type TslFamily } from "./registry.js";
 import { MAX_NEXT_UPDATE_MONTHS, TSL_MEDIA_TYPE } from "./constants.js";
@@ -216,7 +217,10 @@ export async function createTrustedListList(
   const invalid = validate(request);
   if (invalid) return { success: false, error: invalid };
 
-  const defects = request.defects ?? [];
+  const defects = normalizeDefectSelectionForStandard(
+    request.defects ?? [],
+    "TS 119 612",
+  );
   const broken = defects.length > 0;
 
   /* One list key names one list, across both standards. */

@@ -30,7 +30,10 @@ import {
 } from "./defects.js";
 import { verifyEnveloped } from "../../xmlsec/index.js";
 import { LOCAL_FAILURE_IDS } from "../defects/registry.js";
-import type { AppliedMutation } from "../defects/fixture-metadata.js";
+import {
+  unappliedSelectedDefects,
+  type AppliedMutation,
+} from "../defects/fixture-metadata.js";
 import type { TrustedListInput } from "./model.js";
 import {
   buildTrustedListManifest,
@@ -149,6 +152,14 @@ export function publishTrustedList(
     ? planSha2Digest(honestDigest, fixture.defectIds)
     : { digest: honestDigest, mutations: [] as AppliedMutation[] };
   mutations.push(...digest.mutations);
+
+  if (fixture) {
+    const unapplied = unappliedSelectedDefects(fixture.defectIds, mutations);
+    if (unapplied.length > 0)
+      throw new Error(
+        `Selected defects were not applied: ${unapplied.join(", ")}.`,
+      );
+  }
 
   const certificate = new X509Certificate(plan.certificatePem);
   /*

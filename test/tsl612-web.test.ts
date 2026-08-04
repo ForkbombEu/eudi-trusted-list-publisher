@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, X509Certificate } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import type { AddressInfo } from "node:net";
 import { createWebServer } from "../src/web/server.js";
 import { verifyTrustedList } from "../src/core/tsl612/sign.js";
 import { readTrustedList } from "../src/core/tsl612/read.js";
+import { xmlDefects } from "../src/core/tsl612/defects.js";
 import {
   SVCSTATUS_DEPRECATED_AT_NATIONAL_LEVEL,
   SVCSTATUS_GRANTED,
@@ -815,6 +816,86 @@ describe("intentionally broken XML Trusted Lists", () => {
     expect(new Set(services.map((service) => service.serviceStatus))).toEqual(
       new Set([SVCSTATUS_WITHDRAWN, SVCSTATUS_DEPRECATED_AT_NATIONAL_LEVEL]),
     );
+  }, 60000);
+
+  it("applies every selected XML defect to EAA, QEAA, and dual-profile lists", async () => {
+    const defects = xmlDefects().map((defect) => defect.id);
+    const cases = [
+      {
+        operator: "All EAA Defects",
+        key: "it_all_eaa_defects",
+        profiles: ["eaa-providers"],
+      },
+      {
+        operator: "All QEAA Defects",
+        key: "it_all_qeaa_defects",
+        profiles: ["qeaa-providers"],
+      },
+      {
+        operator: "All Dual Defects",
+        key: "it_all_dual_defects",
+        profiles: ["eaa-providers", "qeaa-providers"],
+      },
+    ] as const;
+
+    for (const fixtureCase of cases) {
+      const material = generate(
+        join(root, "material"),
+        fixtureCase.key,
+        fixtureCase.operator,
+      );
+      const created = await post("/admin/trusted-lists/create", {
+        ...declaration(fixtureCase.operator, material),
+        allowedServiceProfiles: [...fixtureCase.profiles],
+        defects,
+      });
+      expect(created.status).toBe(200);
+
+      const artifact = await get(
+        `/api/v1/lists/${fixtureCase.key}/versions/1/trusted-list.xml`,
+      );
+      expect(artifact.status).toBe(200);
+      const xml = await artifact.text();
+      expect(xml.match(/<TrustServiceProvider>/g)).toHaveLength(
+        fixtureCase.profiles.length,
+      );
+      expect(xml).not.toContain(SVCTYPE_EAA);
+      expect(xml).not.toContain(SVCTYPE_QEAA);
+      expect(xml).not.toContain("<xades:SigningTime>");
+
+      const signingCertificate = xml.match(
+        /<ds:X509Certificate>([^<]+)<\/ds:X509Certificate>/,
+      )![1];
+      const certificate = new X509Certificate(
+        Buffer.from(signingCertificate!, "base64"),
+      );
+      expect(certificate.subject).toContain(`O=Not ${fixtureCase.operator}`);
+      expect(certificate.subject).not.toContain(`C=${TERRITORY}`);
+      expect(certificate.ca).toBe(true);
+      expect(verifyTrustedList(xml).signature.valid).toBe(false);
+
+      const sha2 = await get(
+        `/api/v1/lists/${fixtureCase.key}/versions/1/trusted-list.sha2`,
+      );
+      expect(await sha2.text()).not.toBe(
+        createHash("sha256").update(Buffer.from(xml, "utf-8")).digest("hex"),
+      );
+
+      const evidence = await get(
+        `/api/v1/lists/${fixtureCase.key}/versions/1/fixture`,
+      );
+      expect(evidence.status).toBe(200);
+      const fixture = (await evidence.json()) as {
+        selectedDefects: string[];
+        mutations: Array<{ defectId: string; applied: boolean }>;
+      };
+      expect(fixture.selectedDefects).toEqual(defects);
+      const applied = fixture.mutations
+        .filter((mutation) => mutation.applied)
+        .map((mutation) => mutation.defectId);
+      expect(applied).toHaveLength(defects.length);
+      expect(new Set(applied)).toEqual(new Set(defects));
+    }
   }, 60000);
 
   it("produces equivalent fixture metadata from the GUI and the API", async () => {

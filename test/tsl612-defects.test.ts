@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, X509Certificate } from "node:crypto";
 
 import {
   DEFECT_CATALOGUE,
@@ -30,11 +30,15 @@ import {
   type AppliedMutation,
 } from "../src/core/defects/fixture-metadata.js";
 import { LIST_DEFECTS } from "../src/core/authoring/list-creation.js";
-import { DEFECT_SPECS } from "../src/core/authoring/defects.js";
+import {
+  DEFECT_SPECS,
+  mintCertificate,
+} from "../src/core/authoring/defects.js";
 import {
   applyXmlPostSignDefects,
   applyXmlPreSignDefects,
   isKnownXmlDefect,
+  planXmlSigning,
   planSha2Digest,
   xmlDefects,
 } from "../src/core/tsl612/defects.js";
@@ -54,6 +58,7 @@ import {
   SVCTYPE_QEAA,
   NS_TSL,
 } from "../src/core/tsl612/constants.js";
+import { checkTrustedListSigningCertificate } from "../src/core/tsl612/signing-certificate.js";
 
 const AT = new Date("2026-08-03T12:00:00Z");
 
@@ -71,6 +76,11 @@ let suiteDir: string | null = null;
 let suite: Awaited<ReturnType<typeof generateTrustedListFixtureSuite>> | null =
   null;
 let suiteStore: TrustedListStore | null = null;
+let qeaaSuiteDir: string | null = null;
+let qeaaFixtures: Awaited<
+  ReturnType<typeof generateTrustedListFixtureSuite>
+> | null = null;
+let qeaaSuiteStore: TrustedListStore | null = null;
 
 async function eaaSuite(): Promise<{
   fixtures: NonNullable<typeof suite>;
@@ -91,6 +101,27 @@ async function eaaSuite(): Promise<{
     });
   }
   return { fixtures: suite, store: suiteStore };
+}
+
+async function qeaaSuite(): Promise<{
+  fixtures: NonNullable<typeof qeaaFixtures>;
+  store: TrustedListStore;
+}> {
+  if (!qeaaFixtures || !qeaaSuiteStore) {
+    qeaaSuiteDir = scratch();
+    qeaaSuiteStore = new TrustedListStore({
+      publicationDir: join(qeaaSuiteDir, "publications"),
+    });
+    qeaaFixtures = await generateTrustedListFixtureSuite({
+      store: qeaaSuiteStore,
+      signingConfigPath: join(qeaaSuiteDir, "signing.json"),
+      certificatesDir: join(qeaaSuiteDir, "certs"),
+      families: ["qeaa-providers"],
+      inspectorClient: null,
+      now: () => AT,
+    });
+  }
+  return { fixtures: qeaaFixtures, store: qeaaSuiteStore };
 }
 
 // ============================================================
@@ -522,6 +553,51 @@ describe("XML mutations", () => {
     expect(xml).toContain("2026-11-03T12:00:00.000Z");
   });
 
+  it("combines signer subject and certificate profile defects", () => {
+    const healthySigner = mintCertificate({
+      commonName: "Expected Operator Trusted List Signer",
+      organisation: "Expected Operator",
+      country: "IT",
+      trustedListProfile: true,
+    });
+    expect(healthySigner).not.toBeNull();
+
+    const plan = planXmlSigning(
+      ["signer_organisation_mismatch", "incorrect_signing_certificate"],
+      healthySigner!,
+      {
+        families: ["eaa-providers"],
+        schemeTerritory: "IT",
+        schemeOperatorName: "Expected Operator",
+      },
+    );
+    const certificate = new X509Certificate(plan.certificatePem);
+
+    expect(certificate.subject).toContain("O=Not Expected Operator");
+    expect(certificate.subject).not.toContain("C=IT");
+    expect(
+      plan.mutations
+        .filter((mutation) => mutation.applied)
+        .map((mutation) => mutation.defectId),
+    ).toEqual([
+      "signer_organisation_mismatch",
+      "incorrect_signing_certificate",
+    ]);
+    expect(
+      checkTrustedListSigningCertificate(certificate, {
+        schemeTerritory: "IT",
+        schemeOperatorName: "Expected Operator",
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/organisation/i),
+        expect.stringMatching(/country/i),
+        expect.stringMatching(/CA:FALSE|end.entity/i),
+        expect.stringMatching(/key.?usage/i),
+      ]),
+    );
+  });
+
   it("edits signed content for the broken-signature defect", () => {
     const { xml, mutations } = applyXmlPostSignDefects(healthy, [
       "broken_xades_signature",
@@ -583,6 +659,23 @@ describe("the EAA fixture suite", () => {
   it("applies exactly one mutation to every single-defect fixture", async () => {
     const { fixtures } = await eaaSuite();
     for (const fixture of fixtures.filter((f) => f.defects.length === 1)) {
+      const applied = (fixture.fixture?.mutations ?? []).filter(
+        (mutation) => mutation.applied,
+      );
+      expect(applied).toHaveLength(1);
+      expect(applied[0]!.defectId).toBe(fixture.defects[0]);
+    }
+  });
+
+  it("applies every defect individually to a QEAA fixture", async () => {
+    const { fixtures } = await qeaaSuite();
+    expect(fixtures.map((fixture) => fixture.listKey)).toEqual(
+      fixtureKeys("qeaa-providers"),
+    );
+    for (const fixture of fixtures.filter(
+      (entry) => entry.defects.length === 1,
+    )) {
+      expect(fixture.error).toBeUndefined();
       const applied = (fixture.fixture?.mutations ?? []).filter(
         (mutation) => mutation.applied,
       );
@@ -881,6 +974,7 @@ describe("Trust Inspector verdicts", () => {
 describe("suite cleanup", () => {
   it("removes the generated fixtures", () => {
     if (suiteDir) rmSync(suiteDir, { recursive: true, force: true });
+    if (qeaaSuiteDir) rmSync(qeaaSuiteDir, { recursive: true, force: true });
     expect(true).toBe(true);
   });
 });

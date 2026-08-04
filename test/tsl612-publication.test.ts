@@ -324,6 +324,35 @@ describe("TS 119 612 publication store", () => {
     });
   });
 
+  it("rejects an unapplied selected defect before storing the version", () => {
+    withStore((store) => {
+      const { providers: _providers, ...withoutProviders } = input(1);
+      expect(() =>
+        publishTrustedList({
+          store,
+          listKey: "it_unapplied_xml_fixture",
+          family: "eaa-providers",
+          input: withoutProviders,
+          privateKeyPem: key,
+          certificatePem: certificate,
+          publishedAt: new Date("2026-08-03T11:00:00Z"),
+          signingTime: new Date("2026-08-03T11:00:00Z"),
+          fixture: {
+            defectIds: ["pem_service_certificate"],
+            context: {
+              families: ["eaa-providers"],
+              schemeTerritory: TERRITORY,
+              schemeOperatorName: OPERATOR,
+            },
+          },
+        }),
+      ).toThrow(/Selected defects were not applied: pem_service_certificate/);
+      expect(
+        store.getHighestStoredSequence("it_unapplied_xml_fixture"),
+      ).toBeNull();
+    });
+  });
+
   it("refuses a list key that is not a safe path segment", () => {
     withStore((store) => {
       expect(() => store.versionDir("../escape", 1)).toThrow(/Unsafe list key/);
