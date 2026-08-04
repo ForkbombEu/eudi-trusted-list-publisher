@@ -287,6 +287,9 @@ describe("Web UI", () => {
     expect(list.body).toContain("ETSI TS 119 602");
     expect(list.body).toContain("JSON / JAdES-B-B");
     expect(list.body).not.toContain("Trusted List Family:");
+    expect(list.body).toContain(
+      "Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.",
+    );
 
     const version = await httpGet(`/lists/${storedKey}/versions/1`);
     expect(version.status).toBe(200);
@@ -294,6 +297,9 @@ describe("Web UI", () => {
     expect(version.body).toContain("ETSI TS 119 602");
     expect(version.body).toContain("JSON / JAdES-B-B");
     expect(version.body).not.toContain("Trusted List Family:");
+    expect(version.body).toContain(
+      "Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.",
+    );
   });
 
   it("serves 404 for unknown list", async () => {

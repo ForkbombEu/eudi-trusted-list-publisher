@@ -1458,7 +1458,7 @@ over the published Lists of Trusted Entities.</p>
           }</h1>
         ${jsonListSubtitle(family)}
         ${brokenListSectionHtml(listDefects)}
-        <div class="trust-notice"><strong>Trust not evaluated.</strong></div>
+        <div class="trust-notice"><strong>Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
         <table class="catalogue-table">
         <thead><tr><th>Sequence</th><th>Issue Date</th><th>Next Update</th><th>Published</th><th>Signature</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -1521,7 +1521,7 @@ over the published Lists of Trusted Entities.</p>
           `<h1>${escapeHtml(listKey)} - Version ${sequence}</h1>
 ${jsonListSubtitle(family)}
 ${fixturePanelHtml(s.readFixtureMetadata(listKey, sequence))}
-<div class="trust-notice"><strong>Signer trust: not evaluated.</strong> Cryptographic signature is ${manifest.signatureValid ? "valid" : "INVALID"}.</div>
+<div class="trust-notice"><strong>Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.</div>
 <div class="card"><h2>List Information</h2>
 <table class="kv-table">
 <tr><th>Trusted List</th><td>${listChip(manifest.listKey)}</td></tr>
