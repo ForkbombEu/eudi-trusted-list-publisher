@@ -37,6 +37,19 @@ export interface AppliedMutation {
   detail: string;
 }
 
+/** Selected defects for which no successful mutation was recorded. */
+export function unappliedSelectedDefects(
+  selectedDefects: readonly string[],
+  mutations: readonly AppliedMutation[],
+): string[] {
+  const applied = new Set(
+    mutations
+      .filter((mutation) => mutation.applied)
+      .map((mutation) => mutation.defectId),
+  );
+  return selectedDefects.filter((defectId) => !applied.has(defectId));
+}
+
 /**
  * Failures split by who decided them. `local` is this publisher's own schema,
  * signature, certificate, freshness and digest checks; `inspector` is what the

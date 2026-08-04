@@ -19,12 +19,15 @@ import {
   defectsForStandard,
   expectedLocalFailuresForStandard,
   expectedRuleIdsForStandard,
+  normalizeDefectSelectionForStandard,
   normalizeInspectorRuleId,
   LOCAL_FAILURE_IDS,
 } from "../src/core/defects/registry.js";
 import {
   buildFixtureMetadata,
   parseFixtureMetadata,
+  unappliedSelectedDefects,
+  type AppliedMutation,
 } from "../src/core/defects/fixture-metadata.js";
 import { LIST_DEFECTS } from "../src/core/authoring/list-creation.js";
 import { DEFECT_SPECS } from "../src/core/authoring/defects.js";
@@ -93,6 +96,47 @@ async function eaaSuite(): Promise<{
 // 1. One catalogue
 // ============================================================
 describe("the canonical defect catalogue", () => {
+  it("normalizes selected defects to canonical XML catalogue order", () => {
+    expect(
+      normalizeDefectSelectionForStandard(
+        [
+          "expired_next_update",
+          "invalid_tsl_version_identifier",
+          "expired_next_update",
+        ],
+        "TS 119 612",
+      ),
+    ).toEqual(["invalid_tsl_version_identifier", "expired_next_update"]);
+  });
+
+  it("reports selected defects without applied mutation evidence", () => {
+    const mutations: AppliedMutation[] = [
+      {
+        defectId: "scheme_name_without_territory",
+        stage: "pre-sign",
+        applied: true,
+        detail: "changed",
+      },
+      {
+        defectId: "missing_operator_email",
+        stage: "pre-sign",
+        applied: false,
+        detail: "no mailto URI",
+      },
+    ];
+
+    expect(
+      unappliedSelectedDefects(
+        [
+          "scheme_name_without_territory",
+          "missing_operator_email",
+          "jades_without_signing_time",
+        ],
+        mutations,
+      ),
+    ).toEqual(["missing_operator_email", "jades_without_signing_time"]);
+  });
+
   it("is the only catalogue: LIST_DEFECTS is a view of it", () => {
     expect(LIST_DEFECTS.map((defect) => defect.id)).toEqual(
       DEFECT_SPECS.map((spec) => spec.id),

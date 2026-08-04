@@ -755,6 +755,17 @@ export function defectsForStandard(
   return BY_STANDARD.get(standard) ?? [];
 }
 
+/** Deduplicates a selection and returns it in canonical catalogue order. */
+export function normalizeDefectSelectionForStandard(
+  ids: readonly string[],
+  standard: DefectStandard,
+): string[] {
+  const selected = new Set(ids);
+  return defectsForStandard(standard)
+    .filter((spec) => selected.has(spec.id))
+    .map((spec) => spec.id);
+}
+
 export function defectForStandard(
   id: string,
   standard: DefectStandard,

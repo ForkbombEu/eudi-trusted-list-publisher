@@ -16,6 +16,7 @@ import {
 import { compileForProfile } from "../src/core/compile/compile.js";
 import type { AuthoringInput } from "../src/core/model/authoring.js";
 import type { LoTEDocument } from "../src/core/model/types.js";
+import { normalizeDefectSelectionForStandard } from "../src/core/defects/registry.js";
 
 const CERT_DER = "MIIBdummyBase64DerValue";
 
@@ -75,6 +76,19 @@ function healthyPubEaa(withEntity = false): LoTEDocument {
 }
 
 describe("defect catalogue", () => {
+  it("normalizes selected defects to canonical JSON catalogue order", () => {
+    expect(
+      normalizeDefectSelectionForStandard(
+        [
+          "missing_operator_email",
+          "scheme_name_without_territory",
+          "missing_operator_email",
+        ],
+        "TS 119 602",
+      ),
+    ).toEqual(["scheme_name_without_territory", "missing_operator_email"]);
+  });
+
   it("defines a spec for every advertised defect", () => {
     expect(DEFECT_SPECS).toHaveLength(LIST_DEFECTS.length);
     for (const defect of LIST_DEFECTS) {
