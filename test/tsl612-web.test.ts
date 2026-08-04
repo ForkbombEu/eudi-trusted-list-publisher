@@ -307,9 +307,10 @@ describe("XML Trusted List creation and publication visibility", () => {
   it("shows the XML list in the Catalogue with an XML button", async () => {
     const html = await (await get("/")).text();
     expect(html).toContain(eaaList());
-    expect(html).toContain(
-      `/api/v1/lists/${eaaList()}/versions/1/trusted-list.xml`,
-    );
+    expect(html).toContain(`/lists/${eaaList()}/versions/1/xml`);
+    const view = await get(`/lists/${eaaList()}/versions/1/xml`);
+    expect(view.status).toBe(200);
+    expect(await view.text()).toContain("&lt;TrustServiceStatusList");
   });
 
   it("shows every accepted profile on a combined XML Catalogue row", async () => {

@@ -996,6 +996,19 @@ export function createWebServer(config: ServerConfig) {
       return;
     }
 
+    const xmlViewMatch = path.match(
+      /^\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/xml$/,
+    );
+    if (xmlViewMatch) {
+      serveTrustedListXmlView(
+        res,
+        xmlViewMatch[1]!,
+        parseInt(xmlViewMatch[2]!, 10),
+      );
+      logRequest("GET", path, res.statusCode, requestId);
+      return;
+    }
+
     const versionMatch = path.match(
       /^\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)$/,
     );
@@ -1061,6 +1074,27 @@ export function createWebServer(config: ServerConfig) {
     res.end(body);
   }
 
+  /** Renders a published XML artifact for inspection in the browser. */
+  function serveTrustedListXmlView(
+    res: ServerResponse,
+    listKey: string,
+    sequenceNumber: number,
+  ): void {
+    const artifacts = publicationReader.xmlVersion(listKey, sequenceNumber);
+    if (!artifacts) {
+      send404(res);
+      return;
+    }
+    const body = `<h1>${escapeHtml(listKey)} - Version ${sequenceNumber} XML</h1>
+<p><a href="/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}">Back to version details</a></p>
+<pre><code>${escapeHtml(artifacts.xml)}</code></pre>`;
+    sendHtml(
+      res,
+      200,
+      page(`${listKey} - Version ${sequenceNumber} XML`, body),
+    );
+  }
+
   async function serveTrustedListDetail(
     res: ServerResponse,
     listKey: string,
@@ -1079,7 +1113,7 @@ export function createWebServer(config: ServerConfig) {
           <td>${escapeHtml(version.issueDate)}</td>
           <td>${escapeHtml(version.nextUpdateDate)}</td>
           <td>${version.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
-          <td><a class="btn btn-sm" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${version.sequenceNumber}/trusted-list.xml">XML</a></td>
+          <td><a class="btn btn-sm" href="/lists/${encodeURIComponent(listKey)}/versions/${version.sequenceNumber}/xml">XML</a></td>
         </tr>`,
       )
       .join("");
@@ -1373,7 +1407,7 @@ over the published Lists of Trusted Entities.</p>
         <td>${newest.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
         <td><strong>not evaluated</strong></td>
         <td class="catalogue-broken">${brokenColumnHtml(xmlDefectIds, "TS 119 612")}</td>
-        <td class="catalogue-open"><a class="btn btn-outline btn-sm" href="/api/v1/lists/${encodeURIComponent(key)}/versions/${newest.sequenceNumber}/trusted-list.xml">XML</a></td>
+        <td class="catalogue-open"><a class="btn btn-outline btn-sm" href="/lists/${encodeURIComponent(key)}/versions/${newest.sequenceNumber}/xml">XML</a></td>
       </tr>`;
           continue;
         }
