@@ -111,6 +111,12 @@
   white-space: nowrap;
 }
 
+.chip-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
 .chip code {
   font-size: inherit;
   color: inherit;

@@ -466,6 +466,7 @@ export class TslApplicationService {
           certificatePem: material.certificate,
           publishedAt: issue,
           signingTime: issue,
+          allowedServiceProfiles: config.allowedServiceProfiles,
         });
       } catch (error) {
         return fail<TslApplicationRecord>(
@@ -626,6 +627,7 @@ export class TslApplicationService {
           certificatePem: material.certificate,
           publishedAt: issue,
           signingTime: issue,
+          allowedServiceProfiles: config.allowedServiceProfiles,
         });
       } catch (error) {
         return fail<TslApplicationRecord>(

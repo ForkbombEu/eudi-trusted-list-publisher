@@ -1061,8 +1061,6 @@ export function createWebServer(config: ServerConfig) {
     }
     const summary = await publicationReader.listSummary(listKey);
     const rows = versions
-      .slice()
-      .reverse()
       .map(
         (version) => `
         <tr>
@@ -1075,6 +1073,10 @@ export function createWebServer(config: ServerConfig) {
         </tr>`,
       )
       .join("");
+    const acceptedProfileChips =
+      summary?.allowedServiceProfiles
+        ?.map((profile) => familyChip(profile))
+        .join("") ?? "&mdash;";
     const newest = versions[versions.length - 1];
     const listDefects = newest
       ? defectIdsFromFixture(
@@ -1083,7 +1085,8 @@ export function createWebServer(config: ServerConfig) {
       : [];
     const body = `
 <h1>${escapeHtml(listKey)}${listDefects.length > 0 ? ` ${brokenBadge()}` : ""}</h1>
-<p>${listChip(listKey)} ${summary?.family ? familyChip(summary.family) : ""} <span class="chip chip-standard">ETSI TS 119 612</span> <span class="chip chip-format">XML / XAdES-B-B</span></p>
+<p><strong>Allowed service profiles:</strong> <span class="chip-group">${acceptedProfileChips}</span></p>
+<div class="chip-group"><span class="chip chip-standard">ETSI TS 119 612</span><span class="chip chip-format">XML / XAdES-B-B</span></div>
 ${brokenListSectionHtml(listDefects, "TS 119 612")}
 <div class="card">
   <h2>Trusted List</h2>
@@ -1337,14 +1340,10 @@ over the published Lists of Trusted Entities.</p>
           const versions = await publicationReader.versions(key);
           const newest = versions[versions.length - 1];
           if (!summary || !newest) continue;
-          const latest = trustedListStore.loadLatest(key);
-          const acceptedProfiles =
-            latest?.artifacts.manifest.serviceProfiles
-              ?.allowedServiceProfiles ?? [];
           const catalogueFamilies = [
             ...new Set(
-              acceptedProfiles.length > 0
-                ? acceptedProfiles
+              summary.allowedServiceProfiles?.length
+                ? summary.allowedServiceProfiles
                 : summary.family
                   ? [summary.family]
                   : [],
@@ -1358,7 +1357,7 @@ over the published Lists of Trusted Entities.</p>
         <td><a href="/lists/${escapeHtml(key)}">${listChip(key)}</a>${
           xmlDefectIds.length > 0 ? ` ${brokenBadge()}` : ""
         }</td>
-        <td>${catalogueFamilies.length > 0 ? catalogueFamilies.map((family) => familyChip(family)).join(" ") : "&mdash;"}</td>
+        <td>${catalogueFamilies.length > 0 ? `<span class="chip-group">${catalogueFamilies.map((family) => familyChip(family)).join("")}</span>` : "&mdash;"}</td>
         <td>${escapeHtml(String(newest.sequenceNumber))}</td>
         <td>${escapeHtml(newest.issueDate)}</td>
         <td>${escapeHtml(newest.nextUpdateDate)}</td>

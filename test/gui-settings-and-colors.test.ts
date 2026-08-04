@@ -205,6 +205,16 @@ describe("Trusted List colour coding", () => {
       expect(css).toContain(`.chip-list--${i} {`);
     }
   });
+
+  it("keeps a minimal gap between grouped chips", () => {
+    const css = readFileSync(
+      resolve(import.meta.dirname, "..", "src", "web", "assets", "app.css"),
+      "utf-8",
+    );
+    expect(css).toMatch(
+      /\.chip-group\s*{[^}]*display:\s*inline-flex;[^}]*gap:\s*var\(--space-1\);/s,
+    );
+  });
 });
 
 describe("Publisher page shell", () => {

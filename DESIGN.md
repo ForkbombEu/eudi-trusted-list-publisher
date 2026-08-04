@@ -159,8 +159,11 @@ an artifact that does not exist.
 
 For a TS 119 612 row, the **Trusted List Family** column renders one family chip
 for every profile the XML list accepts. A list accepting both EAA and QEAA shows
-both chips; the singular manifest family is only a compatibility fallback for
-older publications that did not record `allowedServiceProfiles`.
+both chips. Adjacent chips sit in a wrapping group with the smallest shared
+spacing token between them, so they remain distinct without opening a large gap.
+For older publications, the newest historical manifest that recorded
+`allowedServiceProfiles` supplies the list-level labels; the singular manifest
+family is the last compatibility fallback.
 
 ## Certificate input and guidance
 
@@ -284,6 +287,11 @@ a green signature without saying so would imply one.
 The latest version says it is also served at the stable
 `/lists/<key>/latest/trusted-list.xml` and `.sha2` URLs, so a reader knows there
 is an address that does not change.
+
+The XML list page places its accepted EAA/QEAA family chips under **Allowed
+service profiles** at the top. It does not repeat the list-key chip because the
+key is already the page title. Its immutable versions are listed from sequence
+1 upward, matching the JSON list page.
 
 ### Create XML Trusted List
 

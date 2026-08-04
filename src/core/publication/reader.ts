@@ -45,6 +45,8 @@ export interface ListSummary {
   readonly versionCount: number;
   /** Family from the manifest, where the format records one. */
   readonly family?: string;
+  /** XML service profiles accepted by the list, where recorded. */
+  readonly allowedServiceProfiles?: readonly string[];
   readonly schemeOperatorName?: string;
   readonly territory?: string;
 }
@@ -130,6 +132,18 @@ export class PublicationReader {
     if (format === "xml") {
       const latest = this.xml.loadLatest(listKey);
       if (!latest) return null;
+      let allowedServiceProfiles: readonly string[] = [];
+      const sequences = this.xml.sequences(listKey);
+      for (let index = sequences.length - 1; index >= 0; index--) {
+        const outcome = this.xml.loadVersion(listKey, sequences[index]!);
+        const recorded =
+          outcome.artifacts?.manifest.serviceProfiles.allowedServiceProfiles ??
+          [];
+        if (recorded.length > 0) {
+          allowedServiceProfiles = [...new Set(recorded)];
+          break;
+        }
+      }
       return {
         listKey,
         format: "xml",
@@ -137,6 +151,10 @@ export class PublicationReader {
         latestSequence: latest.sequenceNumber,
         versionCount: this.xml.sequences(listKey).length,
         family: latest.artifacts.manifest.family,
+        allowedServiceProfiles:
+          allowedServiceProfiles.length > 0
+            ? allowedServiceProfiles
+            : [latest.artifacts.manifest.family],
         schemeOperatorName:
           latest.artifacts.manifest.trustedList.schemeOperatorName,
         territory: latest.artifacts.manifest.trustedList.schemeTerritory,

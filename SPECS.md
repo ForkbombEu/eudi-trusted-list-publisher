@@ -802,10 +802,16 @@ is by artifact rather than by configuration — a directory holding
 because the published bytes are the authority. A directory holding both is
 refused with `ListKeyCollisionError` rather than resolved by preference.
 
-The Catalogue reads an XML list's accepted families from the latest manifest's
-`serviceProfiles.allowedServiceProfiles` and renders one family chip per unique
-entry. The legacy singular `family` remains the fallback for older manifests;
-it is not allowed to hide QEAA when a current list accepts both EAA and QEAA.
+Every XML publication, including onboarding and supersession versions, copies
+the list configuration's `allowedServiceProfiles` into the manifest. The reader
+uses the newest manifest that records this list-level value, scanning backward
+only to support existing immutable publications that omitted it. The legacy
+singular `family` is the last fallback.
+
+The Catalogue and XML list page render one family chip per unique accepted
+profile in a wrapping group with a minimal gap. The list page labels the group
+**Allowed service profiles**, omits the redundant list-key chip, and lists
+immutable versions in ascending sequence order from 1, matching JSON lists.
 
 ### Publication layout
 

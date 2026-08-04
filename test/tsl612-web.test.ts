@@ -323,10 +323,15 @@ describe("XML Trusted List creation and publication visibility", () => {
     expect(row).toContain(">EAA Providers</span>");
     expect(row).toContain("chip-family--qeaa");
     expect(row).toContain(">QEAA Providers</span>");
+    expect(row).toContain('class="chip-group"');
   });
 
-  it("renders the list page with the standard and format labels", async () => {
-    const html = await (await get(`/lists/${eaaList()}`)).text();
+  it("renders accepted profiles without repeating the list key as a chip", async () => {
+    const html = await (await get(`/lists/${combinedList()}`)).text();
+    expect(html).toContain("Allowed service profiles:");
+    expect(html).toContain("chip-family--eaa");
+    expect(html).toContain("chip-family--qeaa");
+    expect(html).not.toContain("chip-list--");
     expect(html).toContain("ETSI TS 119 612");
     expect(html).toContain("XML / XAdES-B-B");
     expect(html).toContain("latest/trusted-list.xml");
@@ -440,6 +445,59 @@ describe("EAA and QEAA onboarding routes", () => {
   });
 });
 
+describe("a combined-profile XML list after onboarding", () => {
+  it("preserves both allowed profiles and lists versions oldest first", async () => {
+    await submit("/onboarding/eaa-provider", combinedList(), {
+      serviceName: "Combined List EAA Issuance",
+    });
+    const id = await applicationId();
+    expect(
+      (await post(`/admin/xml-applications/${id}/approve`, {})).status,
+    ).toBe(200);
+    expect(
+      (await post(`/admin/xml-applications/${id}/publish`, {})).status,
+    ).toBe(200);
+
+    const manifest = await (
+      await get(`/api/v1/lists/${combinedList()}/versions/2/manifest`)
+    ).json();
+    expect(manifest.serviceProfiles.allowedServiceProfiles).toEqual([
+      "eaa-providers",
+      "qeaa-providers",
+    ]);
+
+    /* Simulate a version published before later publications preserved this
+       list-level metadata. The UI must recover it from the immutable history. */
+    const manifestPath = join(
+      root,
+      "publications",
+      combinedList(),
+      "versions",
+      "2",
+      "manifest.json",
+    );
+    const legacyManifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    legacyManifest.serviceProfiles.allowedServiceProfiles = [];
+    writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
+
+    const listHtml = await (await get(`/lists/${combinedList()}`)).text();
+    expect(listHtml).toContain("Allowed service profiles:");
+    expect(listHtml).toContain("chip-family--eaa");
+    expect(listHtml).toContain("chip-family--qeaa");
+    expect(listHtml).not.toContain("chip-list--");
+    expect(listHtml.indexOf(`/versions/1`)).toBeLessThan(
+      listHtml.indexOf(`/versions/2`),
+    );
+
+    const catalogue = await (await get("/")).text();
+    const row = [...catalogue.matchAll(/<tr(?: [^>]*)?>[\s\S]*?<\/tr>/g)]
+      .map((match) => match[0])
+      .find((candidate) => candidate.includes(`/lists/${combinedList()}`));
+    expect(row).toContain("chip-family--eaa");
+    expect(row).toContain("chip-family--qeaa");
+  }, 60000);
+});
+
 describe("the full EAA lifecycle through the GUI", () => {
   it("submits, approves, publishes and then deprecates", async () => {
     await submit("/onboarding/eaa-provider", eaaList());
@@ -469,6 +527,12 @@ describe("the full EAA lifecycle through the GUI", () => {
     const v3 = await (
       await get(`/api/v1/lists/${eaaList()}/versions/3/trusted-list.xml`)
     ).text();
+    const v3Manifest = await (
+      await get(`/api/v1/lists/${eaaList()}/versions/3/manifest`)
+    ).json();
+    expect(v3Manifest.serviceProfiles.allowedServiceProfiles).toEqual([
+      "eaa-providers",
+    ]);
     const deprecated = readTrustedList(v3).providers![0]!.services[0]!;
     expect(deprecated.serviceStatus).toBe(
       SVCSTATUS_DEPRECATED_AT_NATIONAL_LEVEL,

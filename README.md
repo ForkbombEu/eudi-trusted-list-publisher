@@ -78,7 +78,9 @@ API. It verifies signatures cryptographically but **evaluates no signer trust**:
 Open `/` for the public catalogue, `/onboarding` to submit a provider to a
 compatible list, and `/admin` for authenticated review, publication, settings
 and list creation. In the Catalogue's **Trusted List Family** column, an XML
-list accepting both EAA and QEAA displays both family chips.
+list accepting both EAA and QEAA displays both family chips with a small gap.
+Open the list to see the same chips under **Allowed service profiles** and its
+versions in ascending order from sequence 1.
 
 For a TS 119 612 XML list, choose **Create XML Trusted List** in administration.
 The first **List** panel selects EAA, QEAA or both and asks for the Trusted List
@@ -464,7 +466,8 @@ A list is declared, its first version is published, and every later publication
 appends an immutable version. A status change publishes sequence + 1 and moves
 the previous state into history. For TS 119 612 that history is permanent,
 ordinary republication preserves `StatusStartingTime`, and a superseded status is
-always strictly earlier than the status that replaced it.
+always strictly earlier than the status that replaced it. Every XML version's
+manifest also preserves the list's complete allowed-service-profile selection.
 
 Each TS 119 612 version publishes:
 
