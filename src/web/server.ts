@@ -1507,14 +1507,14 @@ over the published Lists of Trusted Entities.</p>
                 (s: {
                   ServiceInformation: {
                     ServiceName: Array<{ value: string }>;
-                    ServiceTypeIdentifier: { value: string };
+                    ServiceTypeIdentifier: string;
                   };
                 }) =>
                   `<li><strong>${
                     s?.ServiceInformation?.ServiceName?.map(
                       (n: { value: string }) => escapeHtml(n.value),
                     ).join(", ") ?? ""
-                  }</strong><br><code>${escapeHtml(s?.ServiceInformation?.ServiceTypeIdentifier?.value ?? "")}</code></li>`,
+                  }</strong><br><code>${escapeHtml(s?.ServiceInformation?.ServiceTypeIdentifier ?? "")}</code></li>`,
               ).join("") ?? "";
             entityRows += `<tr><td>${names}</td><td><ul class="service-list">${svcs}</ul></td></tr>`;
           }
