@@ -227,8 +227,10 @@ describe("Web UI", () => {
     const sequence = store.getHighestStoredSequence(key);
     expect(sequence).not.toBeNull();
     const jsonHref = `/api/v1/lists/${key}/versions/${sequence}/lote`;
-    const jadesHref = `/api/v1/lists/${key}/versions/${sequence}/signature`;
-    const xmlHref = `/api/v1/lists/${key}/versions/${sequence}/xml`;
+    const jadesHref = `/lists/${key}/versions/${sequence}/jades`;
+    const jadesApiHref = `/api/v1/lists/${key}/versions/${sequence}/signature`;
+    const xmlHref = `/lists/${key}/versions/${sequence}/xml`;
+    const xmlApiHref = `/api/v1/lists/${key}/versions/${sequence}/xml`;
 
     const before = await httpGet("/");
     expect(before.body).toContain("<th>Open</th>");
@@ -248,8 +250,9 @@ describe("Web UI", () => {
     expect(jades.status).toBe(200);
     expect(jades.contentType).toContain("application/jose");
     expect(jades.body.split(".")).toHaveLength(3);
+    expect((await httpGet(jadesApiHref)).status).toBe(200);
 
-    const missing = await httpGet(xmlHref);
+    const missing = await httpGet(xmlApiHref);
     expect(missing.status).toBe(404);
     expect(missing.body).toContain("This is an ETSI TS 119 602 list");
 
@@ -261,7 +264,7 @@ describe("Web UI", () => {
     try {
       const after = await httpGet("/");
       expect(after.body).toContain(`href="${xmlHref}">XML<`);
-      const served = await httpGet(xmlHref);
+      const served = await httpGet(xmlApiHref);
       expect(served.status).toBe(200);
       expect(served.contentType).toContain("application/xml");
       expect(served.body).toContain("TrustServiceStatusList");

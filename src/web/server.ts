@@ -1009,6 +1009,21 @@ export function createWebServer(config: ServerConfig) {
       return;
     }
 
+    const jadesViewMatch = path.match(
+      /^\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/jades$/,
+    );
+    if (jadesViewMatch) {
+      void serveJadesView(
+        res,
+        store,
+        jadesViewMatch[1]!,
+        parseInt(jadesViewMatch[2]!, 10),
+      ).then(() => {
+        logRequest("GET", path, res.statusCode, requestId);
+      });
+      return;
+    }
+
     const versionMatch = path.match(
       /^\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)$/,
     );
@@ -1093,6 +1108,26 @@ export function createWebServer(config: ServerConfig) {
       "Cache-Control": "no-store",
     });
     res.end(artifacts.xml);
+  }
+
+  async function serveJadesView(
+    res: ServerResponse,
+    s: PublicationStore,
+    listKey: string,
+    sequenceNumber: number,
+  ): Promise<void> {
+    const content = await s.loadVersionBytes(
+      listKey,
+      sequenceNumber,
+      "signature",
+    );
+    if (content === null) {
+      send404(res);
+      return;
+    }
+    sendResponse(res, 200, content, "application/jose", "no-store", {
+      "Content-Disposition": "inline",
+    });
   }
 
   async function serveTrustedListDetail(
@@ -1341,9 +1376,11 @@ over the published Lists of Trusted Entities.</p>
     const base = `/api/v1/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}`;
     const links = [
       `<a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="${base}/lote">JSON</a>`,
-      `<a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="${base}/signature">JAdES</a>`,
+      `<a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}/jades">JAdES</a>`,
       ...(s.hasLoteXml(listKey, sequenceNumber)
-        ? [`<a class="btn btn-sm" href="${base}/xml">XML</a>`]
+        ? [
+            `<a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}/xml">XML</a>`,
+          ]
         : []),
     ];
     return links.join(" ");
@@ -1479,7 +1516,7 @@ over the published Lists of Trusted Entities.</p>
         <td>${escapeHtml(v.issueDate)}</td>
         <td>${escapeHtml(v.nextUpdateDate)}</td>
         <td>${v.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
-        <td><a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${String(v.sequenceNumber)}/lote">JSON</a> <a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${String(v.sequenceNumber)}/signature">JAdES</a></td>
+        <td><a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${String(v.sequenceNumber)}/lote">JSON</a> <a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="/lists/${encodeURIComponent(listKey)}/versions/${String(v.sequenceNumber)}/jades">JAdES</a></td>
       </tr>`;
       }
       const family = signingConfig
