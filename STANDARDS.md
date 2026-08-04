@@ -129,8 +129,13 @@ Every list this publisher produces states:
   `.../StatusDetn/EUappropriate`
 - three `SchemeTypeCommunityRules` URIs: `.../schemerules/EUcommon`,
   `.../schemerules/<CC>` and the operator's national rules URI
+- `SchemeName` = `<SchemeTerritory>:<Trusted List Name>`; creation adds the
+  prefix idempotently so an already-prefixed API value is not doubled
 - `SchemeTerritory` = the responsible **Member State**. `EU` is refused: a
   Member State list is not published for the Union as a whole
+- `DistributionPoints` names the stable XML publication URL. When the operator
+  does not override it, this publisher uses the deployed public origin and
+  `/lists/<listKey>/latest/trusted-list.xml`, never a fixed sequence URL
 - `HistoricalInformationPeriod` 65535 — permanent history, which is what makes
   a superseded state meaningful
 - `NextUpdate` at most six months after `ListIssueDateTime`

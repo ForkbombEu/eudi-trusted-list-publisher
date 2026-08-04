@@ -88,6 +88,7 @@ async function get(path: string): Promise<Response> {
 async function post(
   path: string,
   fields: Record<string, string | string[]>,
+  headers: Record<string, string> = {},
 ): Promise<Response> {
   const body = new URLSearchParams();
   for (const [key, value] of Object.entries(fields)) {
@@ -99,6 +100,7 @@ async function post(
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Cookie: `tlp_admin_token=${TOKEN}`,
+      ...headers,
     },
     body: body.toString(),
     redirect: "manual",
@@ -110,27 +112,33 @@ async function createList(
   operator: string,
   profiles: string[],
   material: { keyFile: string; certFile: string },
+  distributionPointUri?: string,
+  forwardedProto?: string,
 ): Promise<string> {
-  const response = await post("/admin/trusted-lists/create", {
-    schemeOperatorName: operator,
-    schemeTerritory: TERRITORY,
-    schemeName: `${TERRITORY}:${operator}`,
-    schemeOperatorStreet: "Via Roma 1",
-    schemeOperatorLocality: "Roma",
-    schemeOperatorPostalCode: "00100",
-    schemeOperatorCountry: TERRITORY,
-    schemeOperatorEmail: "op@example.it",
-    schemeOperatorWebsite: "https://example.it",
-    schemeInformationUri: "https://example.it/scheme",
-    nationalSchemeRulesUri: "https://example.it/rules",
-    policyUri: "https://example.it/policy",
-    distributionPointUri: "https://example.it/trusted-list.xml",
-    lotlSchemeOperatorNames: operator,
-    lotlCertificatesBase64Der: signerCertDer,
-    keyFile: material.keyFile,
-    certFile: material.certFile,
-    allowedServiceProfiles: profiles,
-  });
+  const response = await post(
+    "/admin/trusted-lists/create",
+    {
+      schemeOperatorName: operator,
+      schemeTerritory: TERRITORY,
+      schemeName: `${operator} Trusted List`,
+      schemeOperatorStreet: "Via Roma 1",
+      schemeOperatorLocality: "Roma",
+      schemeOperatorPostalCode: "00100",
+      schemeOperatorCountry: TERRITORY,
+      schemeOperatorEmail: "op@example.it",
+      schemeOperatorWebsite: "https://example.it",
+      schemeInformationUri: "https://example.it/scheme",
+      nationalSchemeRulesUri: "https://example.it/rules",
+      policyUri: "https://example.it/policy",
+      ...(distributionPointUri ? { distributionPointUri } : {}),
+      lotlSchemeOperatorNames: operator,
+      lotlCertificatesBase64Der: signerCertDer,
+      keyFile: material.keyFile,
+      certFile: material.certFile,
+      allowedServiceProfiles: profiles,
+    },
+    forwardedProto ? { "X-Forwarded-Proto": forwardedProto } : {},
+  );
   expect(response.status).toBe(303);
   const location = response.headers.get("location") ?? "";
   return location.replace("/lists/", "");
@@ -207,11 +215,14 @@ beforeAll(async () => {
     "EAA Scheme Operator",
     ["eaa-providers"],
     eaaSigner,
+    undefined,
+    "https",
   );
   (globalThis as Record<string, unknown>).__qeaaList = await createList(
     "QEAA Scheme Operator",
     ["qeaa-providers"],
     qeaaSigner,
+    "https://explicit.example.it/qeaa/latest/trusted-list.xml",
   );
 }, 60000);
 
@@ -226,6 +237,29 @@ const qeaaList = (): string =>
   (globalThis as Record<string, unknown>).__qeaaList as string;
 
 describe("XML Trusted List creation and publication visibility", () => {
+  it("prefixes the Trusted List Name and derives a stable latest URL", async () => {
+    const xml = await (
+      await get(`/lists/${eaaList()}/latest/trusted-list.xml`)
+    ).text();
+    const trustedList = readTrustedList(xml);
+
+    expect(trustedList.schemeInformation.schemeName).toBe(
+      `${TERRITORY}:EAA Scheme Operator Trusted List`,
+    );
+    expect(trustedList.schemeInformation.distributionPointUri).toBe(
+      `${baseUrl.replace(/^http:/, "https:")}/lists/${eaaList()}/latest/trusted-list.xml`,
+    );
+  });
+
+  it("preserves an explicitly entered stable XML distribution URL", async () => {
+    const xml = await (
+      await get(`/lists/${qeaaList()}/latest/trusted-list.xml`)
+    ).text();
+    expect(readTrustedList(xml).schemeInformation.distributionPointUri).toBe(
+      "https://explicit.example.it/qeaa/latest/trusted-list.xml",
+    );
+  });
+
   it("creates a list whose version 1 is empty and signed", async () => {
     const response = await get(
       `/api/v1/lists/${eaaList()}/versions/1/trusted-list.xml`,

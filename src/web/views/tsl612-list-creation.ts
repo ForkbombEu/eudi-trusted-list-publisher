@@ -3,9 +3,10 @@
  *
  * It reuses the onboarding form shell. The fields it adds over the TS 119 602
  * form are the ones a TS 119 612 list cannot be published without: the national
- * scheme-rules URI, the stable XML distribution URL, and the pointer material
- * for the EU LOTL — a Member State list that does not point at the LOTL is not
- * a Member State list.
+ * scheme-rules URI and the pointer material for the EU LOTL — a Member State
+ * list that does not point at the LOTL is not a Member State list. The stable
+ * XML distribution URL may be entered explicitly or derived from the deployed
+ * origin and the list's stable latest route.
  */
 import { xmlStandardChips } from "./tsl612-onboarding.js";
 import { familyChip } from "./colors.js";
@@ -133,19 +134,27 @@ ${options.notice ? `<div class="notice notice-info">${escape(options.notice)}</d
 <form method="post" action="/admin/trusted-lists/create" class="onboarding-form">
 
   <div class="card">
-    <h2>Scheme operator</h2>
-    ${field("schemeOperatorName", "Scheme operator name", v, {
+    <h2>List</h2>
+    <h3>Service profiles accepted</h3>
+    <p class="field-help">One XML Trusted List may accept EAA, QEAA or both.
+    Only the profiles chosen here appear on the onboarding forms for this list.</p>
+    ${profileChecks}
+    ${field("schemeName", "Trusted List Name", v, {
       required: true,
-      help: "Published as <code>SchemeOperatorName</code>. The signing certificate's subject organisation (O) must equal this exactly.",
+      help: "Published as <code>SchemeName</code>, prefixed with the Scheme Territory automatically.",
     })}
-    ${field("schemeTerritory", "Scheme territory", v, {
+    ${field("schemeTerritory", "Scheme Territory", v, {
       required: true,
       placeholder: "IT",
       help: "The responsible EU Member State, as a 2-letter code. Not <code>EU</code>: a Member State list states its own territory. The signing certificate's subject country (C) must equal this.",
     })}
-    ${field("schemeName", "Scheme name", v, {
+  </div>
+
+  <div class="card">
+    <h2>Scheme operator</h2>
+    ${field("schemeOperatorName", "Scheme operator name", v, {
       required: true,
-      help: "Published as <code>SchemeName</code>, conventionally <code>&lt;CC&gt;:&lt;operator name&gt;</code>.",
+      help: "Published as <code>SchemeOperatorName</code>. The signing certificate's subject organisation (O) must equal this exactly.",
     })}
     ${derivedKey ? `<p><strong>List key:</strong> <code>${escape(derivedKey)}</code> <span class="field-help">Derived from the territory and operator name.</span></p>` : ""}
     ${field("schemeOperatorStreet", "Street address", v, { required: true })}
@@ -181,9 +190,8 @@ ${options.notice ? `<div class="notice notice-info">${escape(options.notice)}</d
       placeholder: "https://",
     })}
     ${field("distributionPointUri", "Stable XML distribution URL", v, {
-      required: true,
-      placeholder: "https://example.eu/tl/trusted-list.xml",
-      help: "Where the signed XML is published. It is stated in <code>DistributionPoints</code>.",
+      placeholder: "https://example.eu/lists/list-key/latest/trusted-list.xml",
+      help: "Optional. Leave blank to use the deployed site URL plus <code>/lists/&lt;list-key&gt;/latest/trusted-list.xml</code>. An explicit URL is preserved. The result is stated in <code>DistributionPoints</code>.",
     })}
   </div>
 
@@ -203,13 +211,6 @@ ${options.notice ? `<div class="notice notice-info">${escape(options.notice)}</d
       rows: 6,
       help: "One Base64 DER certificate per line, with no PEM armour.",
     })}
-  </div>
-
-  <div class="card">
-    <h2>Service profiles accepted</h2>
-    <p class="field-help">One XML Trusted List may accept EAA, QEAA or both.
-    Only the profiles chosen here appear on the onboarding forms for this list.</p>
-    ${profileChecks}
   </div>
 
   <div class="card">

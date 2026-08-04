@@ -282,15 +282,23 @@ is an address that does not change.
 
 ### Create XML Trusted List
 
-The form reuses the onboarding shell. Beyond the TS 119 602 fields it collects
-the national scheme-rules URI, the stable XML distribution URL, and the EU LOTL
-pointer material. The pointer card states that the declared scheme operator and
-the pointer certificates must describe the same list, because the Trust
-Inspector checks exactly that and the failure is otherwise cryptic.
+The form reuses the onboarding shell and opens like the JSON form: a **List**
+card contains the accepted service profiles, Trusted List Name and Scheme
+Territory. The name is entered without a territory prefix; publication adds
+`<SchemeTerritory>:` idempotently to form `SchemeName`. Scheme name and
+territory do not appear again in the Scheme operator card.
 
-The **Service profiles accepted** card is a checkbox per profile, reusing the
-existing `settings-row` layout. One list may accept EAA, QEAA or both, and only
-the profiles chosen appear on the onboarding forms for that list.
+Each accepted profile is a checkbox reusing the existing `settings-row` layout.
+One list may accept EAA, QEAA or both, and only the profiles chosen appear on the
+onboarding forms for that list.
+
+Beyond the TS 119 602 fields the form collects the national scheme-rules URI,
+an optional stable XML distribution URL, and the EU LOTL pointer material. A
+blank distribution URL is derived from the deployed public origin, the list key
+and `/latest/trusted-list.xml`; an explicit URL is preserved. The pointer card
+states that the declared scheme operator and the pointer certificates must
+describe the same list, because the Trust Inspector checks exactly that and the
+failure is otherwise cryptic.
 
 ## Intentionally broken XML Trusted Lists
 

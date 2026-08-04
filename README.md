@@ -73,6 +73,21 @@ API. It verifies signatures cryptographically but **evaluates no signer trust**:
   the defect catalogue expected to fail against what actually failed — both
   locally and at the Trust Inspector.
 
+### Quick GUI guide
+
+Open `/` for the public catalogue, `/onboarding` to submit a provider to a
+compatible list, and `/admin` for authenticated review, publication, settings
+and list creation.
+
+For a TS 119 612 XML list, choose **Create XML Trusted List** in administration.
+The first **List** panel selects EAA, QEAA or both and asks for the Trusted List
+Name and Scheme Territory. Enter the name without the country prefix; the
+publisher writes `SchemeName` as `<SchemeTerritory>:<Trusted List Name>`. The
+**Stable XML distribution URL** in the Scheme URIs panel is optional. Leaving it
+blank publishes the deployed site's stable
+`/lists/<list-key>/latest/trusted-list.xml` URL; enter a URL only when the XML is
+distributed from a different public address.
+
 ### Intentionally broken fixtures
 
 A broken list is a deliverable, not a failure mode. Each fixture is compiled

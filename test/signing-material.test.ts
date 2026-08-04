@@ -339,6 +339,35 @@ describe("Signing Material administration action", () => {
 });
 
 describe("Signing Material on the Create XML Trusted List form", () => {
+  it("starts with a List panel matching the JSON creation form", () => {
+    const form = createTrustedListFormHtml();
+    const listStart = form.indexOf("<h2>List</h2>");
+    const operatorStart = form.indexOf("<h2>Scheme operator</h2>");
+    const urisStart = form.indexOf("<h2>Scheme URIs</h2>");
+
+    expect(listStart).toBeGreaterThan(-1);
+    expect(listStart).toBeLessThan(operatorStart);
+    expect(operatorStart).toBeLessThan(urisStart);
+
+    const listPanel = form.slice(listStart, operatorStart);
+    expect(listPanel).toContain("Service profiles accepted");
+    expect(listPanel).toContain('name="allowedServiceProfiles"');
+    expect(listPanel).toContain(">Trusted List Name");
+    expect(listPanel).toContain(">Scheme Territory");
+    expect(listPanel).toContain("prefixed with the Scheme Territory");
+
+    const operatorPanel = form.slice(operatorStart, urisStart);
+    expect(operatorPanel).not.toContain('id="schemeName"');
+    expect(operatorPanel).not.toContain('id="schemeTerritory"');
+
+    const distributionInput = form.match(
+      /<input[^>]+id="distributionPointUri"[^>]*>/,
+    )?.[0];
+    expect(distributionInput).toBeDefined();
+    expect(distributionInput).not.toContain(" required");
+    expect(form).toContain("/lists/&lt;list-key&gt;/latest/trusted-list.xml");
+  });
+
   it("offers the same box the TS 119 602 form offers, in the same place", () => {
     const jsonForm = createListFormHtml(undefined, undefined, {
       canGenerateSigningMaterial: true,

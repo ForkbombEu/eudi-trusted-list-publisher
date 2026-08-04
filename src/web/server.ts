@@ -416,6 +416,21 @@ function logRequest(
   );
 }
 
+/**
+ * The public origin seen by the browser. Caddy preserves Host and supplies
+ * X-Forwarded-Proto when it terminates TLS, so the stable URL keeps its public
+ * HTTPS scheme without teaching the publisher about a particular deployment.
+ */
+function requestPublicOrigin(req: IncomingMessage, url: URL): string {
+  const forwarded = req.headers["x-forwarded-proto"];
+  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)
+    ?.split(",", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  const protocol = first === "http" || first === "https" ? first : url.protocol;
+  return `${protocol.replace(/:$/, "")}://${url.host}`;
+}
+
 function readFileBounded(filePath: string, maxBytes: number): string | null {
   if (!existsSync(filePath)) return null;
   try {
@@ -2630,9 +2645,11 @@ ${versionDownloadsHtml(listKey, sequence)}
   }
 
   async function handleCreateXmlTrustedList(
+    req: IncomingMessage,
     res: ServerResponse,
     fields: Record<string, string>,
     multi: Record<string, string[]>,
+    url: URL,
     requestId: string,
   ): Promise<void> {
     if (!signingConfigPath) {
@@ -2680,6 +2697,7 @@ ${versionDownloadsHtml(listKey, sequence)}
         store: trustedListStore,
         signingConfigPath,
         inspectorClient,
+        publicBaseUrl: requestPublicOrigin(req, url),
       },
     );
     if (!result.success) {
@@ -2915,7 +2933,12 @@ ${fixturePanelHtml(JSON.stringify(result.fixture))}
           : {}),
         ...(text("listKey") ? { listKey: text("listKey") } : {}),
       },
-      { store: trustedListStore, signingConfigPath, inspectorClient },
+      {
+        store: trustedListStore,
+        signingConfigPath,
+        inspectorClient,
+        publicBaseUrl: requestPublicOrigin(req, url),
+      },
     );
     if (!result.success) {
       sendJson(res, 400, { error: "bad_request", message: result.error });
@@ -3248,9 +3271,11 @@ ${outcome}
 
       if (path === "/admin/trusted-lists/create") {
         await handleCreateXmlTrustedList(
+          req,
           res,
           parseFormBody(body),
           parseFormBodyMulti(body),
+          url,
           requestId,
         );
         return;

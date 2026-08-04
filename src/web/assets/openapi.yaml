@@ -571,7 +571,6 @@ components:
         - schemeInformationUri
         - nationalSchemeRulesUri
         - policyUri
-        - distributionPointUri
         - lotlCertificatesBase64Der
         - lotlSchemeOperatorNames
         - keyFile
@@ -590,6 +589,9 @@ components:
             Member State list states its own territory.
         schemeName:
           type: string
+          description: >-
+            The Trusted List Name. It is published as SchemeName after the
+            Scheme Territory and colon are added idempotently.
         schemeOperatorStreet:
           type: string
         schemeOperatorLocality:
@@ -614,7 +616,11 @@ components:
           type: string
         distributionPointUri:
           type: string
-          description: The stable URL the signed XML is published at.
+          description: >-
+            Optional stable URL at which the signed XML is published. When
+            omitted or blank, the publisher derives the request's public
+            origin plus /lists/{listKey}/latest/trusted-list.xml. An explicit
+            URL is preserved.
         lotlCertificatesBase64Der:
           type: array
           description: >-

@@ -25,7 +25,11 @@ import {
 import { SAFE_KEY_RE } from "../publication/store.js";
 import { isTslFamily, type TslFamily } from "./registry.js";
 import { MAX_NEXT_UPDATE_MONTHS, TSL_MEDIA_TYPE } from "./constants.js";
-import { toUtcDateTime, EU_MEMBER_STATE_CODES } from "../model/lexical.js";
+import {
+  toUtcDateTime,
+  EU_MEMBER_STATE_CODES,
+  schemeNameWithTerritory,
+} from "../model/lexical.js";
 import type { TrustedListStore } from "../publication/tsl-store.js";
 import type {
   InspectorClient,
@@ -48,8 +52,11 @@ export interface CreateTrustedListRequest {
   readonly schemeInformationUri: string;
   readonly nationalSchemeRulesUri: string;
   readonly policyUri: string;
-  /** The stable URL the signed XML is published at. */
-  readonly distributionPointUri: string;
+  /**
+   * The stable URL the signed XML is published at. When absent or blank,
+   * `publicBaseUrl` is combined with the list's stable latest route.
+   */
+  readonly distributionPointUri?: string;
   /** Base64 DER of the EU LOTL signing certificates. */
   readonly lotlCertificatesBase64Der: readonly string[];
   readonly lotlSchemeOperatorNames: readonly string[];
@@ -101,7 +108,14 @@ export type CreateTrustedListResult =
     }
   | { readonly success: false; readonly error: string };
 
-function validate(request: CreateTrustedListRequest): string | null {
+type ResolvedCreateTrustedListRequest = Omit<
+  CreateTrustedListRequest,
+  "distributionPointUri"
+> & {
+  readonly distributionPointUri: string;
+};
+
+function validate(request: ResolvedCreateTrustedListRequest): string | null {
   const required: ReadonlyArray<readonly [string, string]> = [
     ["schemeOperatorName", request.schemeOperatorName],
     ["schemeTerritory", request.schemeTerritory],
@@ -161,15 +175,43 @@ function validate(request: CreateTrustedListRequest): string | null {
 }
 
 export async function createTrustedListList(
-  request: CreateTrustedListRequest,
+  submitted: CreateTrustedListRequest,
   deps: CreateTrustedListDeps,
 ): Promise<CreateTrustedListResult> {
+  if (submitted.schemeName.trim() === "")
+    return { success: false, error: "schemeName is required." };
+  const listKey =
+    submitted.listKey ??
+    deriveListKeyFromParts(
+      submitted.schemeTerritory,
+      submitted.schemeOperatorName,
+    );
+  let distributionPointUri = submitted.distributionPointUri?.trim() ?? "";
+  if (!distributionPointUri && deps.publicBaseUrl?.trim()) {
+    try {
+      distributionPointUri = new URL(
+        `/lists/${encodeURIComponent(listKey)}/latest/trusted-list.xml`,
+        deps.publicBaseUrl,
+      ).toString();
+    } catch {
+      return {
+        success: false,
+        error:
+          "distributionPointUri could not be derived because publicBaseUrl is not a valid URL.",
+      };
+    }
+  }
+  const request: ResolvedCreateTrustedListRequest = {
+    ...submitted,
+    schemeName: schemeNameWithTerritory(
+      submitted.schemeName.trim(),
+      submitted.schemeTerritory,
+    ),
+    distributionPointUri,
+  };
   const invalid = validate(request);
   if (invalid) return { success: false, error: invalid };
 
-  const listKey =
-    request.listKey ??
-    deriveListKeyFromParts(request.schemeTerritory, request.schemeOperatorName);
   const defects = request.defects ?? [];
   const broken = defects.length > 0;
 

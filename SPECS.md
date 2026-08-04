@@ -852,6 +852,19 @@ GET      /admin/xml-applications/{id}
 POST     /admin/xml-applications/{id}/{approve|reject|publish|supersede|delete}
 ```
 
+The XML creation form starts with a `List` panel containing the accepted EAA
+and/or QEAA service profiles, Trusted List Name and Scheme Territory. Creation
+publishes the name as an idempotently prefixed
+`<SchemeTerritory>:<Trusted List Name>` `SchemeName`; the operator panel does
+not repeat those two fields.
+
+`distributionPointUri` is optional at both XML creation entry points. When it
+is blank, the web adapter supplies the request's public origin and the core
+derives `/lists/<listKey>/latest/trusted-list.xml`, using the stable `latest`
+route rather than an immutable sequence URL. The TLS-terminating proxy's
+`X-Forwarded-Proto` is honoured while the request Host identifies the deployed
+site. An explicitly supplied HTTP(S) URL is retained unchanged.
+
 ### Cumulative publication and the per-list lock
 
 A new version is the published version, read back through
