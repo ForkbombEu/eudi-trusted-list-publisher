@@ -343,6 +343,9 @@ describe("XML Trusted List creation and publication visibility", () => {
     expect(html).toContain("<th>Open</th>");
     expect(html).toContain(">XML</a>");
     expect(html).toContain(
+      `target="_blank" rel="noopener noreferrer" href="/lists/${combinedList()}/versions/1/xml"`,
+    );
+    expect(html).toContain(
       "Trust not evaluated.</strong> Signatures are verified cryptographically but signer trust is not evaluated by this tool.",
     );
     expect(html).toContain('class="catalogue-table"');

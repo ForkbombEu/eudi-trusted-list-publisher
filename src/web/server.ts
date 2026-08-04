@@ -1113,7 +1113,7 @@ export function createWebServer(config: ServerConfig) {
           <td>${escapeHtml(version.issueDate)}</td>
           <td>${escapeHtml(version.nextUpdateDate)}</td>
           <td>${version.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
-          <td><a class="btn btn-sm" href="/lists/${encodeURIComponent(listKey)}/versions/${version.sequenceNumber}/xml">XML</a></td>
+          <td><a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="/lists/${encodeURIComponent(listKey)}/versions/${version.sequenceNumber}/xml">XML</a></td>
         </tr>`,
       )
       .join("");
@@ -1340,8 +1340,8 @@ over the published Lists of Trusted Entities.</p>
   ): string {
     const base = `/api/v1/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}`;
     const links = [
-      `<a class="btn btn-sm" href="${base}/lote">JSON</a>`,
-      `<a class="btn btn-sm" href="${base}/signature">JAdES</a>`,
+      `<a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="${base}/lote">JSON</a>`,
+      `<a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="${base}/signature">JAdES</a>`,
       ...(s.hasLoteXml(listKey, sequenceNumber)
         ? [`<a class="btn btn-sm" href="${base}/xml">XML</a>`]
         : []),
@@ -1407,7 +1407,7 @@ over the published Lists of Trusted Entities.</p>
         <td>${newest.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
         <td><strong>not evaluated</strong></td>
         <td class="catalogue-broken">${brokenColumnHtml(xmlDefectIds, "TS 119 612")}</td>
-        <td class="catalogue-open"><a class="btn btn-outline btn-sm" href="/lists/${encodeURIComponent(key)}/versions/${newest.sequenceNumber}/xml">XML</a></td>
+        <td class="catalogue-open"><a class="btn btn-outline btn-sm" target="_blank" rel="noopener noreferrer" href="/lists/${encodeURIComponent(key)}/versions/${newest.sequenceNumber}/xml">XML</a></td>
       </tr>`;
           continue;
         }
@@ -1479,7 +1479,7 @@ over the published Lists of Trusted Entities.</p>
         <td>${escapeHtml(v.issueDate)}</td>
         <td>${escapeHtml(v.nextUpdateDate)}</td>
         <td>${v.signatureValid ? "&#x2705; valid" : "&#x274C; invalid"}</td>
-        <td><a class="btn btn-sm" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${String(v.sequenceNumber)}/lote">JSON</a> <a class="btn btn-sm" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${String(v.sequenceNumber)}/signature">JAdES</a></td>
+        <td><a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${String(v.sequenceNumber)}/lote">JSON</a> <a class="btn btn-sm" target="_blank" rel="noopener noreferrer" href="/api/v1/lists/${encodeURIComponent(listKey)}/versions/${String(v.sequenceNumber)}/signature">JAdES</a></td>
       </tr>`;
       }
       const family = signingConfig

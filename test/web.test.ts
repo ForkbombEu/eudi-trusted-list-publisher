@@ -234,6 +234,12 @@ describe("Web UI", () => {
     expect(before.body).toContain("<th>Open</th>");
     expect(before.body).toContain(`href="${jsonHref}">JSON<`);
     expect(before.body).toContain(`href="${jadesHref}">JAdES<`);
+    expect(before.body).toContain(
+      `target="_blank" rel="noopener noreferrer" href="${jsonHref}"`,
+    );
+    expect(before.body).toContain(
+      `target="_blank" rel="noopener noreferrer" href="${jadesHref}"`,
+    );
     expect(before.body).not.toContain(`href="${xmlHref}"`);
 
     /* Every published version has a JAdES by construction, so the link is
