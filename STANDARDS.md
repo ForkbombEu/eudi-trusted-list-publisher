@@ -22,7 +22,7 @@ standard and which artifact format a list uses rather than inferring it.
 1. **TS 119 602 List of Trusted Entities (LoTE)** — implemented, JSON/JAdES.
 2. **TS 119 612 national Trusted List (TSL)** — implemented, XML/XAdES-B-B.
 3. **List of Trusted Lists (LoTL)** — not aggregated. Only the mandatory
-   *pointer* to the EU LOTL is published, as clause 5.3.13 requires.
+   _pointer_ to the EU LOTL is published, as clause 5.3.13 requires.
 4. **EC TS02 provider notification/publication API** — out of scope.
 
 ## Primary standards
@@ -60,16 +60,16 @@ standard and which artifact format a list uses rather than inferring it.
 Vendored under `schemas/etsi/119612/`, byte-for-byte, from the ETSI Forge
 `v2.4.1` tag and the schemas that tag imports. Retrieval date: 2026-08-03.
 
-| File | Source URL | SHA-256 | Licence |
-|------|-----------|---------|---------|
-| `19612_xsd.xsd` | https://forge.etsi.org/rep/esi/x19_612_trusted_lists/-/raw/v2.4.1/19612_xsd.xsd | `0cb6ac0e96f9600934d216513f21e4cc5b41f8c8c28a8e42102a8135b24df3e1` | BSD 3-Clause |
-| `19612_additionaltypes_xsd.xsd` | https://forge.etsi.org/rep/esi/x19_612_trusted_lists/-/raw/v2.4.1/19612_additionaltypes_xsd.xsd | `25f9292d8c246cbacab9f345451d64cdb63154a12042ffc675cdf2c88896948b` | BSD 3-Clause |
-| `19612_sie_xsd.xsd` | https://forge.etsi.org/rep/esi/x19_612_trusted_lists/-/raw/v2.4.1/19612_sie_xsd.xsd | `382fcf497770a5842ac9975db0f14020c33c936b1903e057548ad6724cf42d69` | BSD 3-Clause |
-| `1913201-XAdES01903v132.xsd` | https://forge.etsi.org/rep/esi/x19_13201_xades/-/raw/v1.3.1/1913201-XAdES01903v132.xsd | `457745286eaa292ae1aaa6e976e0f30eeceb0a37cc2301151576175e0ae1986c` | BSD 3-Clause |
-| `1913201-XAdES01903v141.xsd` | https://forge.etsi.org/rep/esi/x19_13201_xades/-/raw/v1.3.1/1913201-XAdES01903v141.xsd | `286bd63f122aafb907c03724c5959455d114020e523631cc22e90c5f5aa667e2` | BSD 3-Clause |
-| `xmldsig-core-schema.xsd` | http://www.w3.org/TR/2008/REC-xmldsig-core-20080610/xmldsig-core-schema.xsd | `35cf8197da812c85e40d57891b35c94187569ed474a2dac813ce5090dafcd35c` | W3C Document Licence |
-| `xml.xsd` | http://www.w3.org/2001/xml.xsd | `61960fb3131e38022caad5360e2f33a3382578ab3c80cd58bd74320ede61b20c` | W3C Document Licence |
-| `xml-2009.xsd` | http://www.w3.org/2009/01/xml.xsd | `cc701736c42cc64126fad063bb95f94484b5de3b5f808a86ea098b0957aff829` | W3C Document Licence |
+| File                            | Source URL                                                                                      | SHA-256                                                            | Licence              |
+| ------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------- |
+| `19612_xsd.xsd`                 | https://forge.etsi.org/rep/esi/x19_612_trusted_lists/-/raw/v2.4.1/19612_xsd.xsd                 | `0cb6ac0e96f9600934d216513f21e4cc5b41f8c8c28a8e42102a8135b24df3e1` | BSD 3-Clause         |
+| `19612_additionaltypes_xsd.xsd` | https://forge.etsi.org/rep/esi/x19_612_trusted_lists/-/raw/v2.4.1/19612_additionaltypes_xsd.xsd | `25f9292d8c246cbacab9f345451d64cdb63154a12042ffc675cdf2c88896948b` | BSD 3-Clause         |
+| `19612_sie_xsd.xsd`             | https://forge.etsi.org/rep/esi/x19_612_trusted_lists/-/raw/v2.4.1/19612_sie_xsd.xsd             | `382fcf497770a5842ac9975db0f14020c33c936b1903e057548ad6724cf42d69` | BSD 3-Clause         |
+| `1913201-XAdES01903v132.xsd`    | https://forge.etsi.org/rep/esi/x19_13201_xades/-/raw/v1.3.1/1913201-XAdES01903v132.xsd          | `457745286eaa292ae1aaa6e976e0f30eeceb0a37cc2301151576175e0ae1986c` | BSD 3-Clause         |
+| `1913201-XAdES01903v141.xsd`    | https://forge.etsi.org/rep/esi/x19_13201_xades/-/raw/v1.3.1/1913201-XAdES01903v141.xsd          | `286bd63f122aafb907c03724c5959455d114020e523631cc22e90c5f5aa667e2` | BSD 3-Clause         |
+| `xmldsig-core-schema.xsd`       | http://www.w3.org/TR/2008/REC-xmldsig-core-20080610/xmldsig-core-schema.xsd                     | `35cf8197da812c85e40d57891b35c94187569ed474a2dac813ce5090dafcd35c` | W3C Document Licence |
+| `xml.xsd`                       | http://www.w3.org/2001/xml.xsd                                                                  | `61960fb3131e38022caad5360e2f33a3382578ab3c80cd58bd74320ede61b20c` | W3C Document Licence |
+| `xml-2009.xsd`                  | http://www.w3.org/2009/01/xml.xsd                                                               | `cc701736c42cc64126fad063bb95f94484b5de3b5f808a86ea098b0957aff829` | W3C Document Licence |
 
 `LICENSE` beside them is the ETSI Forge licence file, copied from the same two
 tags — the two repositories publish identical text.
@@ -83,7 +83,7 @@ PDFs. The identical schema is published on ETSI Forge as
 `esi/x19_13201_xades`, whose newest tag is `v1.3.1`, and the vendored file is
 taken from there. Its `targetNamespace` is
 `http://uri.etsi.org/01903/v1.3.2#`, which is what the importing schemas ask
-for; the tag names the ETSI *deliverable* version, not the namespace version.
+for; the tag names the ETSI _deliverable_ version, not the namespace version.
 
 ### Offline resolution without rewriting
 
@@ -109,13 +109,13 @@ onboarding family the applicant uses decides the service type and the status
 vocabulary; `src/core/tsl612/registry.ts` holds both, and the submission parser
 refuses a family the target list does not accept.
 
-| | EAA Providers | QEAA Providers |
-|---|---|---|
-| Service type | `http://uri.etsi.org/TrstSvc/Svctype/EAA` | `http://uri.etsi.org/TrstSvc/Svctype/EAA/Q` |
-| Initial status | `.../Svcstatus/recognisedatnationallevel` | `.../Svcstatus/granted` |
-| End status | `.../Svcstatus/deprecatedatnationallevel` | `.../Svcstatus/withdrawn` |
-| Administration action | Deprecate national recognition | Withdraw qualified status |
-| Qualified | no | yes |
+|                       | EAA Providers                             | QEAA Providers                              |
+| --------------------- | ----------------------------------------- | ------------------------------------------- |
+| Service type          | `http://uri.etsi.org/TrstSvc/Svctype/EAA` | `http://uri.etsi.org/TrstSvc/Svctype/EAA/Q` |
+| Initial status        | `.../Svcstatus/recognisedatnationallevel` | `.../Svcstatus/granted`                     |
+| End status            | `.../Svcstatus/deprecatedatnationallevel` | `.../Svcstatus/withdrawn`                   |
+| Administration action | Deprecate national recognition            | Withdraw qualified status                   |
+| Qualified             | no                                        | yes                                         |
 
 The two vocabularies never mix: a test asserts that no status URI appears in
 both families.
@@ -213,7 +213,7 @@ Implemented in `src/xmlsec/`, which depends only on `node:crypto` and
 
 ### The enveloped transform is computed over the signed document
 
-The transform is defined over the document *containing* the signature: it
+The transform is defined over the document _containing_ the signature: it
 removes the `ds:Signature` element and nothing else. Digesting the document
 before the signature was inserted omits the whitespace the insertion adds, and
 the first implementation here did exactly that and failed its own verification.
@@ -280,12 +280,12 @@ not something a generator produces.
 
 Vendored from: https://forge.etsi.org/rep/esi/x19_60201_lists_of_ordered_entities
 
-| File | Source URL | SHA-256 | Licence |
-|------|-----------|---------|---------|
-| `schemas/etsi/1960201_json_schema.json` | https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities/-/raw/main/1960201_json_schema/1960201_json_schema.json | `37c0f82711f7cdeb2680fc64674735d8e5a632561bd40ddf962059ae9ffd1d5c` | BSD 3-Clause |
+| File                                        | Source URL                                                                                                                     | SHA-256                                                            | Licence      |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------ |
+| `schemas/etsi/1960201_json_schema.json`     | https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities/-/raw/main/1960201_json_schema/1960201_json_schema.json     | `37c0f82711f7cdeb2680fc64674735d8e5a632561bd40ddf962059ae9ffd1d5c` | BSD 3-Clause |
 | `schemas/etsi/1960201_json_schema_sie.json` | https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities/-/raw/main/1960201_json_schema/1960201_json_schema_sie.json | `49319d1aa5553c085b6aea11fad736b57f9a2b6d63a3cfebce16b3c27b05e019` | BSD 3-Clause |
 | `schemas/etsi/1960201_json_schema_tie.json` | https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities/-/raw/main/1960201_json_schema/1960201_json_schema_tie.json | `3848bee86fe67bf2bb1f753ee072c5e9cc79533b4e78fd410ff49a0053740919` | BSD 3-Clause |
-| `schemas/etsi/rfc7517.json` | https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities/-/raw/main/1960201_json_schema/rfcs/rfc7517.json | `2f959c526ac073952ffff7a3944164a20b12897b0aa1a7b61e79511fafa863c6` | BSD 3-Clause |
+| `schemas/etsi/rfc7517.json`                 | https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities/-/raw/main/1960201_json_schema/rfcs/rfc7517.json            | `2f959c526ac073952ffff7a3944164a20b12897b0aa1a7b61e79511fafa863c6` | BSD 3-Clause |
 
 Retrieval date: 2026-07-28. Tests must never fetch schemas from the network.
 
@@ -608,26 +608,26 @@ here because several are lexical or structural rules that the pinned JSON schema
 does not enforce. Except where a row says otherwise, each rule applies to all
 five implemented profiles.
 
-| Rule | Where it is applied |
-|------|--------------------|
-| clause 6.1.3 UTC form `YYYY-MM-DDThh:mm:ssZ`, no fractional seconds | `src/core/model/lexical.ts`, applied in `compileForProfile()` |
-| clause 6.3.6 `SchemeName` = `<territory>:<name>` | `compileForProfile()`, idempotent |
-| Table 1 presence matrix: `SchemeInformationURI` mandatory; Annex D/E minimum two | `SigningConfigEntry.schemeInformationUris` |
-| clauses 6.3.5.1/6.3.5.2 operator reachable by `mailto:` and HTTP(S) | `normalizeToAuthoringInput()` |
-| clause 6.3.11 `PolicyOrLegalNotice` mandatory for explicit scheme information | `SigningConfigEntry.policyUri` |
-| Annex D–G self pointer in `PointersToOtherLoTE`, carrying the signing certificate and `MimeType: application/jose`; Annex H omits it | `publishesSelfPointer` in `src/core/profiles/registry.ts`, applied in `compileForProfile()` |
-| Annex H `HistoricalInformationPeriod` = 65535 | `historicalInformationPeriod` in the registry, applied in `compileForProfile()` |
-| Annex H `ServiceStatus` and `StatusStartingTime` on every service; `ServiceHistory` by `X509SKI` only | `usesServiceStatus` in the registry, applied in `buildAuthoringEntity()`, `compileForProfile()` and `ApplicationService.withdrawApplication()` |
-| Annex H.3 mandatory `TETradeName` containing the official registration identifier where one exists and the formatted `OJ:` legal-basis URI | `buildAuthoringEntity()`, `compileForProfile()` and `schemas/profiles/pub-eaa-schema.json` |
-| Annex H certificates for one service share a public key and a subject | `checkCertificateSetConsistency()` in the submission parser |
-| clause 6.5.3 entity reachable by `mailto:`, HTTP(S) and `tel:` | `buildAuthoringEntity()` from the `entityEmail`/`entityTelephone` form fields |
-| Entity country-role URI `http://uri.etsi.org/19602/ListOfTrustedEntities/{PIDProvider,WalletProvider,WRPACProvider,WRPRCProvider,PubEAAProvider}/<CC>` | `buildAuthoringEntity()`; every profile except Annex E uses the responsible Member State |
-| Annex F/G/H omit the ServiceUniqueIdentifier extension entirely | `requiresServiceUniqueIdentifier` in `src/core/profiles/registry.ts`, applied in `buildAuthoringEntity()` and `compileForProfile()` |
-| clause 6.6.3 `X509Certificates[].val` strict Base64 DER | `buildAuthoringEntity()` |
-| clause 6.6.9 extension containers state criticality (`Critical`) | `compileForProfile()` |
-| Service certificate subject `O` = Trusted Entity Name, wherever a certificate is supplied | `checkCertificateSubjectOrganisation()` in the submission parser |
-| JAdES Baseline B `iat` integer NumericDate in the protected header | `src/core/signing/signing.ts` |
-| `NextUpdate` at most six months after the issue time | UTC month arithmetic in `createTrustedList()`; the application path uses 180 days |
+| Rule                                                                                                                                                   | Where it is applied                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| clause 6.1.3 UTC form `YYYY-MM-DDThh:mm:ssZ`, no fractional seconds                                                                                    | `src/core/model/lexical.ts`, applied in `compileForProfile()`                                                                                  |
+| clause 6.3.6 `SchemeName` = `<territory>:<name>`                                                                                                       | `compileForProfile()`, idempotent                                                                                                              |
+| Table 1 presence matrix: `SchemeInformationURI` mandatory; Annex D/E minimum two                                                                       | `SigningConfigEntry.schemeInformationUris`                                                                                                     |
+| clauses 6.3.5.1/6.3.5.2 operator reachable by `mailto:` and HTTP(S)                                                                                    | `normalizeToAuthoringInput()`                                                                                                                  |
+| clause 6.3.11 `PolicyOrLegalNotice` mandatory for explicit scheme information                                                                          | `SigningConfigEntry.policyUri`                                                                                                                 |
+| Annex D–G self pointer in `PointersToOtherLoTE`, carrying the signing certificate and `MimeType: application/jose`; Annex H omits it                   | `publishesSelfPointer` in `src/core/profiles/registry.ts`, applied in `compileForProfile()`                                                    |
+| Annex H `HistoricalInformationPeriod` = 65535                                                                                                          | `historicalInformationPeriod` in the registry, applied in `compileForProfile()`                                                                |
+| Annex H `ServiceStatus` and `StatusStartingTime` on every service; `ServiceHistory` by `X509SKI` only                                                  | `usesServiceStatus` in the registry, applied in `buildAuthoringEntity()`, `compileForProfile()` and `ApplicationService.withdrawApplication()` |
+| Annex H.3 mandatory `TETradeName` containing the official registration identifier where one exists and the formatted `OJ:` legal-basis URI             | `buildAuthoringEntity()`, `compileForProfile()` and `schemas/profiles/pub-eaa-schema.json`                                                     |
+| Annex H certificates for one service share a public key and a subject                                                                                  | `checkCertificateSetConsistency()` in the submission parser                                                                                    |
+| clause 6.5.3 entity reachable by `mailto:`, HTTP(S) and `tel:`                                                                                         | `buildAuthoringEntity()` from the `entityEmail`/`entityTelephone` form fields                                                                  |
+| Entity country-role URI `http://uri.etsi.org/19602/ListOfTrustedEntities/{PIDProvider,WalletProvider,WRPACProvider,WRPRCProvider,PubEAAProvider}/<CC>` | `buildAuthoringEntity()`; every profile except Annex E uses the responsible Member State                                                       |
+| Annex F/G/H omit the ServiceUniqueIdentifier extension entirely                                                                                        | `requiresServiceUniqueIdentifier` in `src/core/profiles/registry.ts`, applied in `buildAuthoringEntity()` and `compileForProfile()`            |
+| clause 6.6.3 `X509Certificates[].val` strict Base64 DER                                                                                                | `buildAuthoringEntity()`                                                                                                                       |
+| clause 6.6.9 extension containers state criticality (`Critical`)                                                                                       | `compileForProfile()`                                                                                                                          |
+| Service certificate subject `O` = Trusted Entity Name, wherever a certificate is supplied                                                              | `checkCertificateSubjectOrganisation()` in the submission parser                                                                               |
+| JAdES Baseline B `iat` integer NumericDate in the protected header                                                                                     | `src/core/signing/signing.ts`                                                                                                                  |
+| `NextUpdate` at most six months after the issue time                                                                                                   | UTC month arithmetic in `createTrustedList()`; the application path uses 180 days                                                              |
 
 Two rules constrain the **signing certificate** rather than the generated
 document, so they are properties of the operator's signing material:
@@ -661,10 +661,12 @@ and is never reported as conformance.
 
 **WE BUILD implementation profile** (task3-x509-pki-etsi/etsi_trusted_lists_implementation_profile.md)
 claims:
+
 - JSON: Compact JAdES Baseline B
 - XML: XAdES Baseline B
 
 **WE BUILD published JSON** (list_of_trusted_lists.json, retrieved 2026-07-28):
+
 - NOT Compact JAdES serialization.
 - Top-level structure is: `{LoTE: {...}, signature: {protected: "...", signature: "..."}}`
 - This is a detached JSON object containing base64url-encoded JWS parts,
@@ -675,6 +677,7 @@ claims:
 - No `crit` header.
 
 **WE BUILD published XML** (list_of_trusted_lists.xml, retrieved 2026-07-28):
+
 - Contains XMLDSig `<ds:Signature>` with `<ds:KeyInfo><ds:X509Data><ds:X509Certificate>`
 - No `xades:QualifyingProperties` element — required for XAdES Baseline B.
 - Effectively plain XMLDSig, not XAdES Baseline B.
@@ -690,7 +693,9 @@ asserts that the Annex H rules it records as failing there (absent
 `HistoricalInformationPeriod`, absent telephone, absent country role URI, absent
 law reference) are exactly the rules a list produced by this publisher satisfies.
 Its three `EUPubEAAProvidersList` entries are evidence of what Annex H requires,
-never an example to copy.
+never an example to copy. Because `HITL/` is deliberately local and ignored,
+these three evidence checks are skipped when that report is unavailable; the
+offline conformance tests remain self-contained.
 
 ### Other WE BUILD findings
 
@@ -712,21 +717,21 @@ Re-established against the live OpenAPI document on **2026-08-03**
 (`GET https://trust-inspector.credimi.io/openapi.json`, "WE BUILD Trusted List
 Audit API" 0.1.0), rather than carried over from older code.
 
-| Question | Answer |
-| --- | --- |
-| XML Trusted List analysis endpoint | `POST /api/audit/artifact` |
-| Request media type | `application/json` |
-| How the XML is supplied | **Inline**, as the `content` string. Not multipart, and not by URL. |
-| Body | `{ content, source, contentType, declared?, options? }`, `additionalProperties: false` |
-| `contentType` for XML | `application/vnd.etsi.tsl+xml` |
-| `contentType` for a Compact JAdES | `application/jose` |
-| `declared` | Optional; when present, `pointerCertificateFingerprintsSha256` is required |
-| Response | `{ result: TrustedListAuditResult }` |
-| Artifact classification | `result.detected.artifactKind` ∈ `ts119612_xml_tsl`, `ts119612_xml_lotl`, `xml_lotl_like`, `xml_lote`, `json_lote`, `json_lotl`, `html_error`, `unknown` |
-| Standard applicability | `result.standardApplicability.ts119612` ∈ `applicable`, `not_applicable`, `unknown` |
-| Per-standard assessment | `result.ts119612` / `result.ts119602`: `applicable`, `conformanceLevel`, `score`, `checks[]`, `mandatoryFailures[]`, `warnings[]` |
-| Rule identifiers | `checks[].id`, with positional integers embedded for per-item checks |
-| Malformed XML | HTTP 200 with a `parse_failed` conformance level. HTTP 400 means the *request body* was invalid, not the artifact. |
+| Question                           | Answer                                                                                                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| XML Trusted List analysis endpoint | `POST /api/audit/artifact`                                                                                                                               |
+| Request media type                 | `application/json`                                                                                                                                       |
+| How the XML is supplied            | **Inline**, as the `content` string. Not multipart, and not by URL.                                                                                      |
+| Body                               | `{ content, source, contentType, declared?, options? }`, `additionalProperties: false`                                                                   |
+| `contentType` for XML              | `application/vnd.etsi.tsl+xml`                                                                                                                           |
+| `contentType` for a Compact JAdES  | `application/jose`                                                                                                                                       |
+| `declared`                         | Optional; when present, `pointerCertificateFingerprintsSha256` is required                                                                               |
+| Response                           | `{ result: TrustedListAuditResult }`                                                                                                                     |
+| Artifact classification            | `result.detected.artifactKind` ∈ `ts119612_xml_tsl`, `ts119612_xml_lotl`, `xml_lotl_like`, `xml_lote`, `json_lote`, `json_lotl`, `html_error`, `unknown` |
+| Standard applicability             | `result.standardApplicability.ts119612` ∈ `applicable`, `not_applicable`, `unknown`                                                                      |
+| Per-standard assessment            | `result.ts119612` / `result.ts119602`: `applicable`, `conformanceLevel`, `score`, `checks[]`, `mandatoryFailures[]`, `warnings[]`                        |
+| Rule identifiers                   | `checks[].id`, with positional integers embedded for per-item checks                                                                                     |
+| Malformed XML                      | HTTP 200 with a `parse_failed` conformance level. HTTP 400 means the _request body_ was invalid, not the artifact.                                       |
 
 ### What this publisher submits, and when
 
@@ -773,15 +778,15 @@ catalogue. The concrete deterministic mutations belong to this publisher, and th
 mapping below is a claim about which objective each fixture exercises, not a
 claim that the objectives enumerate these defects.
 
-| Test | Objective | Fixtures that exercise it |
-| --- | --- | --- |
-| 139 | Trusted List schema is valid | `*-healthy` (passes); `*-broken-missing_scheme_information_uri`, `*-broken-pem_service_certificate`, `*-broken-extension_without_criticality`, `*-broken-invalid_tsl_namespace` (fail `schema.xsd` and `local.xml.schema`) |
-| 140 | Trusted List signature or seal validates | `*-healthy`; `*-broken-broken_xades_signature` (fails `signature.cryptographic_verification_result`), `*-broken-xades_without_signing_time` (valid signature, not Baseline B) |
-| 141 | Trusted List freshness is acceptable | `*-healthy`; `*-broken-expired_next_update` (fails `dates.next_after_issue` and `local.freshness`), `*-broken-non_strict_timestamps` (fails the lexical-form rules) |
-| 142 | Actor can be resolved | `*-healthy` (one seeded provider and service); `*-broken-incorrect_service_type` (the service is published under a type that is not the family's) |
-| 143 | Actor status is resolved correctly | `*-broken-incorrect_service_status` (the other family's vocabulary), `*-broken-invalid_service_history` (a superseded state that postdates the state replacing it) |
-| 144 | Trust anchor can be resolved | `*-broken-missing_self_pointer` (no pointer to the EU LOTL), `*-broken-pem_service_certificate` (a digital identity that does not decode) |
-| 145 | Certificate chain validates to the configured trust anchor | `*-broken-signer_organisation_mismatch` (signer subject is not the scheme operator), `*-broken-incorrect_signing_certificate` (a CA certificate signing a Trusted List) |
+| Test | Objective                                                  | Fixtures that exercise it                                                                                                                                                                                                  |
+| ---- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 139  | Trusted List schema is valid                               | `*-healthy` (passes); `*-broken-missing_scheme_information_uri`, `*-broken-pem_service_certificate`, `*-broken-extension_without_criticality`, `*-broken-invalid_tsl_namespace` (fail `schema.xsd` and `local.xml.schema`) |
+| 140  | Trusted List signature or seal validates                   | `*-healthy`; `*-broken-broken_xades_signature` (fails `signature.cryptographic_verification_result`), `*-broken-xades_without_signing_time` (valid signature, not Baseline B)                                              |
+| 141  | Trusted List freshness is acceptable                       | `*-healthy`; `*-broken-expired_next_update` (fails `dates.next_after_issue` and `local.freshness`), `*-broken-non_strict_timestamps` (fails the lexical-form rules)                                                        |
+| 142  | Actor can be resolved                                      | `*-healthy` (one seeded provider and service); `*-broken-incorrect_service_type` (the service is published under a type that is not the family's)                                                                          |
+| 143  | Actor status is resolved correctly                         | `*-broken-incorrect_service_status` (the other family's vocabulary), `*-broken-invalid_service_history` (a superseded state that postdates the state replacing it)                                                         |
+| 144  | Trust anchor can be resolved                               | `*-broken-missing_self_pointer` (no pointer to the EU LOTL), `*-broken-pem_service_certificate` (a digital identity that does not decode)                                                                                  |
+| 145  | Certificate chain validates to the configured trust anchor | `*-broken-signer_organisation_mismatch` (signer subject is not the scheme operator), `*-broken-incorrect_signing_certificate` (a CA certificate signing a Trusted List)                                                    |
 
 `*-broken-incorrect_sha2_digest` maps to none of the seven: the Inspector
 assesses the artifact it is given and never sees the sidecar digest. It declares

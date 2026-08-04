@@ -14,15 +14,15 @@ else.
 It supports the Trusted List families and artifact formats the repository
 actually implements, across two ETSI standards:
 
-| Family | Standard | Artifact | Signature |
-| --- | --- | --- | --- |
-| PID Providers | ETSI TS 119 602, Annex D | JSON LoTE | JAdES Baseline B, Compact |
-| Wallet Providers | ETSI TS 119 602, Annex E | JSON LoTE | JAdES Baseline B, Compact |
-| WRPAC Providers | ETSI TS 119 602, Annex F | JSON LoTE | JAdES Baseline B, Compact |
-| WRPRC Providers | ETSI TS 119 602, Annex G | JSON LoTE | JAdES Baseline B, Compact |
-| Pub-EAA Providers | ETSI TS 119 602, Annex H | JSON LoTE | JAdES Baseline B, Compact |
-| EAA Providers | ETSI TS 119 612 | XML Trusted List | XAdES-B-B, enveloped |
-| QEAA Providers | ETSI TS 119 612 | XML Trusted List | XAdES-B-B, enveloped |
+| Family            | Standard                 | Artifact         | Signature                 |
+| ----------------- | ------------------------ | ---------------- | ------------------------- |
+| PID Providers     | ETSI TS 119 602, Annex D | JSON LoTE        | JAdES Baseline B, Compact |
+| Wallet Providers  | ETSI TS 119 602, Annex E | JSON LoTE        | JAdES Baseline B, Compact |
+| WRPAC Providers   | ETSI TS 119 602, Annex F | JSON LoTE        | JAdES Baseline B, Compact |
+| WRPRC Providers   | ETSI TS 119 602, Annex G | JSON LoTE        | JAdES Baseline B, Compact |
+| Pub-EAA Providers | ETSI TS 119 602, Annex H | JSON LoTE        | JAdES Baseline B, Compact |
+| EAA Providers     | ETSI TS 119 612          | XML Trusted List | XAdES-B-B, enveloped      |
+| QEAA Providers    | ETSI TS 119 612          | XML Trusted List | XAdES-B-B, enveloped      |
 
 Every family in that table has a working onboarding form, publication path and
 artifact download. Nothing else is listed. "Registrars and Registers" appears in
@@ -31,9 +31,9 @@ the GUI as a known family but is not accepted for authoring or publication.
 **JAdES signs the JSON artifacts. XAdES signs the XML artifacts.** The two are
 not interchangeable, and the tool never mixes them.
 
-EAA and QEAA are TS 119 612 *service profiles*, not lists of their own: one XML
+EAA and QEAA are TS 119 612 _service profiles_, not lists of their own: one XML
 Trusted List may accept EAA services, QEAA services, or both. Pub-EAA (Annex H)
-is a different thing again — a TS 119 602 JSON list of *publicly issued*
+is a different thing again — a TS 119 602 JSON list of _publicly issued_
 attestation providers.
 
 ### What this is not
@@ -135,13 +135,13 @@ node scripts/generate-tsl612-demo-lists.mjs --dry-run   # list what it will do
 node scripts/generate-tsl612-demo-lists.mjs             # publish
 ```
 
-| List key | Family | State |
-| --- | --- | --- |
-| `it_eaa-demo-healthy` | EAA Providers | conformant |
-| `it_eaa-demo-broken-expired-next-update` | EAA Providers | stale on the day it was issued |
-| `it_eaa-demo-broken-broken-xades-signature` | EAA Providers | edited after signing; the signature does not verify |
-| `it_qeaa-demo-healthy` | QEAA Providers | conformant |
-| `it_qeaa-demo-broken-expired-next-update` | QEAA Providers | stale on the day it was issued |
+| List key                                     | Family         | State                                               |
+| -------------------------------------------- | -------------- | --------------------------------------------------- |
+| `it_eaa-demo-healthy`                        | EAA Providers  | conformant                                          |
+| `it_eaa-demo-broken-expired-next-update`     | EAA Providers  | stale on the day it was issued                      |
+| `it_eaa-demo-broken-broken-xades-signature`  | EAA Providers  | edited after signing; the signature does not verify |
+| `it_qeaa-demo-healthy`                       | QEAA Providers | conformant                                          |
+| `it_qeaa-demo-broken-expired-next-update`    | QEAA Providers | stale on the day it was issued                      |
 | `it_qeaa-demo-broken-broken-xades-signature` | QEAA Providers | edited after signing; the signature does not verify |
 
 The two defects fail in visibly different ways on purpose: one breaks the dates
@@ -188,30 +188,30 @@ cp .env.example .env
 
 **Required when the administration GUI is enabled**
 
-| Variable | Meaning |
-| --- | --- |
-| `DATA_COLLECTION_GUI` | `true` enables onboarding and the administration backoffice. Default `false`. |
-| `TLP_ADMIN_TOKEN` | Administrator token. Must not be empty when the GUI is on; the server refuses to start otherwise. **Secret.** |
-| `TLP_SIGNING_CONFIG` | Path to the signing configuration, JSON or YAML. Maps list keys to key/certificate paths and scheme operator details. |
+| Variable              | Meaning                                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `DATA_COLLECTION_GUI` | `true` enables onboarding and the administration backoffice. Default `false`.                                         |
+| `TLP_ADMIN_TOKEN`     | Administrator token. Must not be empty when the GUI is on; the server refuses to start otherwise. **Secret.**         |
+| `TLP_SIGNING_CONFIG`  | Path to the signing configuration, JSON or YAML. Maps list keys to key/certificate paths and scheme operator details. |
 
 **Optional**
 
-| Variable | Meaning |
-| --- | --- |
-| `ADMIN_USER`, `ADMIN_PASSWORD` | When **both** are set, `/admin` asks for a username and password instead of a token. **Secrets.** |
-| `TLP_CERTIFICATES_DIR` | Root for key/certificate pairs generated from the administration UI. Without it, server-side generation is disabled and the form says so. |
-| `TLP_INSPECTOR_URL` | Trust Inspector base URL. `serve` defaults to `https://trust-inspector.credimi.io`. Set it to an empty string to disable the integration, so no published artifact leaves the process. |
-| `TLP_PUBLICATION_DIR` | Publication root. Default `./publications`. |
-| `AUTHORING_DIR` | Mutable application records. Default `./authoring`. |
-| `TLP_HOST`, `TLP_PORT` | Bind address and port. Defaults `127.0.0.1` and `8080`. |
+| Variable                       | Meaning                                                                                                                                                                                |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | When **both** are set, `/admin` asks for a username and password instead of a token. **Secrets.**                                                                                      |
+| `TLP_CERTIFICATES_DIR`         | Root for key/certificate pairs generated from the administration UI. Without it, server-side generation is disabled and the form says so.                                              |
+| `TLP_INSPECTOR_URL`            | Trust Inspector base URL. `serve` defaults to `https://trust-inspector.credimi.io`. Set it to an empty string to disable the integration, so no published artifact leaves the process. |
+| `TLP_PUBLICATION_DIR`          | Publication root. Default `./publications`.                                                                                                                                            |
+| `AUTHORING_DIR`                | Mutable application records. Default `./authoring`.                                                                                                                                    |
+| `TLP_HOST`, `TLP_PORT`         | Bind address and port. Defaults `127.0.0.1` and `8080`.                                                                                                                                |
 
 **Development and fixture generation only**
 
-| Variable | Meaning |
-| --- | --- |
+| Variable                                    | Meaning                                                                  |
+| ------------------------------------------- | ------------------------------------------------------------------------ |
 | `TLP_FIXTURE_KEY_DIR`, `TLP_FIXTURE_REPORT` | Signing material and report for `scripts/generate-pub-eaa-fixtures.mjs`. |
-| `TLP_TSL_FIXTURE_DIR` | Where the TS 119 612 EAA and QEAA fixture suites are written. |
-| `TLP_DEMO_KEY_DIR` | Signing material for the demonstration EAA/QEAA lists. |
+| `TLP_TSL_FIXTURE_DIR`                       | Where the TS 119 612 EAA and QEAA fixture suites are written.            |
+| `TLP_DEMO_KEY_DIR`                          | Signing material for the demonstration EAA/QEAA lists.                   |
 
 **Secrets that must never be committed**: `.env`, `TLP_ADMIN_TOKEN`,
 `ADMIN_PASSWORD`, and every private key and certificate. The root `.gitignore`
@@ -220,12 +220,12 @@ excludes `.env`, `*.pem`, `*.key`, `*.crt`, `*.p12`, `*.pfx` and the whole
 
 ### Directories
 
-| Path | Access | Contents |
-| --- | --- | --- |
-| `.local-signing/` | read-write, **private** | Signing keys, certificates and the signing configuration that points at them. Never served. |
-| `publications/` | read-write, immutable per version | Published artifacts. A stored version is never rewritten. |
-| `authoring/` | read-write | Onboarding applications and administrator settings. Mutable by design. |
-| `schemas/` | **read-only** | Pinned ETSI schemas, vendored byte-exact. |
+| Path              | Access                            | Contents                                                                                    |
+| ----------------- | --------------------------------- | ------------------------------------------------------------------------------------------- |
+| `.local-signing/` | read-write, **private**           | Signing keys, certificates and the signing configuration that points at them. Never served. |
+| `publications/`   | read-write, immutable per version | Published artifacts. A stored version is never rewritten.                                   |
+| `authoring/`      | read-write                        | Onboarding applications and administrator settings. Mutable by design.                      |
+| `schemas/`        | **read-only**                     | Pinned ETSI schemas, vendored byte-exact.                                                   |
 
 The key and certificate files are **read-only inputs**: the publisher reads them
 and never writes to them.
@@ -288,34 +288,34 @@ In order of importance:
 
 ### Components
 
-| Component | Responsibility |
-| --- | --- |
-| `src/web/server.ts` | HTTP server, routing, catalogue, administration, API |
-| `src/web/views/` | Server-rendered HTML |
-| `src/core/authoring/list-family-catalogue.ts` | The one catalogue of user-facing families |
-| `src/core/profiles/` | TS 119 602 profile registry, one directory per annex |
-| `src/core/compile/`, `src/core/model/` | TS 119 602 authoring model and compiler |
-| `src/core/signing/`, `src/core/verification/` | JAdES signing and verification |
-| `src/core/validate/` | JSON Schema and ETSI structural validation |
-| `src/core/tsl612/registry.ts` | TS 119 612 service profiles: EAA and QEAA |
-| `src/core/tsl612/compile.ts`, `read.ts` | XML `TrustServiceStatusList` writer and reader |
-| `src/xmlsec/` | Self-contained enveloped XAdES-B-B signer and verifier |
-| `src/core/tsl612/schema.ts`, `schemas/etsi/` | Offline validation against the pinned ETSI schemas |
-| `src/core/tsl612/signing-certificate.ts` | The TLSO signing-certificate profile |
-| `src/core/authoring/signing-config.ts` | Signing configuration for both standards |
-| `src/core/authoring/application-service.ts` | TS 119 602 onboarding, review and publication |
-| `src/core/tsl612/authoring/application-service.ts` | TS 119 612 onboarding, review and publication |
-| `src/core/authoring/settings-store.ts` | Auto-approval settings |
-| `src/core/publication/store.ts`, `tsl-store.ts` | The immutable publication stores |
-| `src/core/publication/reader.ts` | One reader across both formats |
-| `src/core/publication/manifest.ts`, `tsl-manifest.ts` | Per-version manifests |
-| `src/core/inspector/inspector.ts` | Trust Inspector client and result normalization |
-| `src/core/defects/` | The canonical defect catalogue and the fixture evidence document |
-| `src/core/authoring/defects.ts` | JSON mutation engine |
-| `src/core/tsl612/defects.ts` | XML mutation engine |
-| `src/core/tsl612/fixture-suite.ts` | The deterministic EAA and QEAA fixture suites |
-| `src/web/assets/openapi.yaml` | The published API description |
-| `test/` | Acceptance and regression suites |
+| Component                                             | Responsibility                                                   |
+| ----------------------------------------------------- | ---------------------------------------------------------------- |
+| `src/web/server.ts`                                   | HTTP server, routing, catalogue, administration, API             |
+| `src/web/views/`                                      | Server-rendered HTML                                             |
+| `src/core/authoring/list-family-catalogue.ts`         | The one catalogue of user-facing families                        |
+| `src/core/profiles/`                                  | TS 119 602 profile registry, one directory per annex             |
+| `src/core/compile/`, `src/core/model/`                | TS 119 602 authoring model and compiler                          |
+| `src/core/signing/`, `src/core/verification/`         | JAdES signing and verification                                   |
+| `src/core/validate/`                                  | JSON Schema and ETSI structural validation                       |
+| `src/core/tsl612/registry.ts`                         | TS 119 612 service profiles: EAA and QEAA                        |
+| `src/core/tsl612/compile.ts`, `read.ts`               | XML `TrustServiceStatusList` writer and reader                   |
+| `src/xmlsec/`                                         | Self-contained enveloped XAdES-B-B signer and verifier           |
+| `src/core/tsl612/schema.ts`, `schemas/etsi/`          | Offline validation against the pinned ETSI schemas               |
+| `src/core/tsl612/signing-certificate.ts`              | The TLSO signing-certificate profile                             |
+| `src/core/authoring/signing-config.ts`                | Signing configuration for both standards                         |
+| `src/core/authoring/application-service.ts`           | TS 119 602 onboarding, review and publication                    |
+| `src/core/tsl612/authoring/application-service.ts`    | TS 119 612 onboarding, review and publication                    |
+| `src/core/authoring/settings-store.ts`                | Auto-approval settings                                           |
+| `src/core/publication/store.ts`, `tsl-store.ts`       | The immutable publication stores                                 |
+| `src/core/publication/reader.ts`                      | One reader across both formats                                   |
+| `src/core/publication/manifest.ts`, `tsl-manifest.ts` | Per-version manifests                                            |
+| `src/core/inspector/inspector.ts`                     | Trust Inspector client and result normalization                  |
+| `src/core/defects/`                                   | The canonical defect catalogue and the fixture evidence document |
+| `src/core/authoring/defects.ts`                       | JSON mutation engine                                             |
+| `src/core/tsl612/defects.ts`                          | XML mutation engine                                              |
+| `src/core/tsl612/fixture-suite.ts`                    | The deterministic EAA and QEAA fixture suites                    |
+| `src/web/assets/openapi.yaml`                         | The published API description                                    |
+| `test/`                                               | Acceptance and regression suites                                 |
 
 ### Custom components
 
@@ -344,8 +344,8 @@ timestamps. Tests: `test/xmlsec-xades.test.ts`.
 
 #### XML canonicalisation and reference handling
 
-The enveloped transform is computed over the document that *already contains the
-signature*: the transform removes `ds:Signature` and nothing else, so digesting
+The enveloped transform is computed over the document that _already contains the
+signature_: the transform removes `ds:Signature` and nothing else, so digesting
 the document beforehand omits the whitespace the insertion adds and yields a
 signature that verifies nowhere. The signature is therefore assembled three
 times — to digest the document, to digest the signed properties in place, and to
@@ -368,7 +368,7 @@ Annex B: subject `C` equal to the Scheme Territory, subject `O` equal to the
 Scheme Operator Name, `basicConstraints CA:FALSE`, a SubjectKeyIdentifier, a key
 usage limited to `digitalSignature` and/or `contentCommitment`, and an extended
 key usage that permits TSL signing when one is present. **Limitation, and the
-point of the module**: it asks whether a certificate is *shaped* like a Trusted
+point of the module**: it asks whether a certificate is _shaped_ like a Trusted
 List signing certificate, not whether anyone trusts it. No path is built and no
 revocation is checked. Tests: `test/tsl612-signing.test.ts`.
 
@@ -378,7 +378,7 @@ revocation is checked. Tests: `test/tsl612-signing.test.ts`.
 renamed into place, so a version that exists is one that was verified after it
 was written. Re-storing byte-identical content succeeds; storing different
 content for an existing sequence is refused. `manifest.json` describes the
-published bytes. `inspector.json` and `fixture.json` sit deliberately *outside*
+published bytes. `inspector.json` and `fixture.json` sit deliberately _outside_
 the integrity-checked set: they are evidence about a version and can be re-run,
 while the published files never change. Tests: `test/publication.test.ts`,
 `test/tsl612-publication.test.ts`.
@@ -390,13 +390,13 @@ defect states its intent once and binds it to a concrete mutation per standard,
 with the stage it applies at, the clause it violates, what a conformant list does
 instead, and what it is expected to fail — locally and at the Inspector. The UI,
 the API, the stored metadata and the tests all read that one catalogue.
-**Limitation**: the expected Inspector rule IDs are *expectations*, calibrated
+**Limitation**: the expected Inspector rule IDs are _expectations_, calibrated
 against a live run and always recorded against actuals, never asserted. Tests:
 `test/tsl612-defects.test.ts`, `test/broken-generation.test.ts`.
 
 #### Trust Inspector normalization and fail-closed behaviour
 
-`src/core/inspector/inspector.ts` submits the *signed* artifact — never a decoded
+`src/core/inspector/inspector.ts` submits the _signed_ artifact — never a decoded
 one, because half the requirements are signature requirements — and reduces the
 response to a summary while storing the complete report. It reports `pass` only
 when the Inspector actually applied the submitted standard **and** every check it
@@ -422,8 +422,8 @@ renders with no CDN.
 #### Why two publication engines
 
 TS 119 602 and TS 119 612 describe different documents. A LoTE is a JSON object
-with a *detached* Compact JAdES beside it; a Trust Service Status List is an XML
-document whose XAdES signature is *inside* it. Their element vocabularies,
+with a _detached_ Compact JAdES beside it; a Trust Service Status List is an XML
+document whose XAdES signature is _inside_ it. Their element vocabularies,
 presence rules, status vocabularies and integrity artifacts all differ. Merging
 the engines would produce a compiler that constantly asks which standard it is
 serving.
@@ -500,7 +500,9 @@ npm run fixtures:verify     # generate them and validate them live
 ```
 
 `task build`, `task test`, `task lint`, `task format` and `task run` wrap the
-same scripts.
+same scripts. The test suite executes the TypeScript CLI source directly, so a
+clean checkout does not need a prior build. The optional WE BUILD Inspector
+evaluation checks run when `HITL/WP4-LoTE_evaluation.json` is available locally.
 
 #### Adding a new TS 119 602 family
 

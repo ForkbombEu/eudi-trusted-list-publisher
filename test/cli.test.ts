@@ -41,8 +41,13 @@ function runCli(args: string[]): {
   status: number;
 } {
   const result = spawnSync(
-    "node",
-    [resolve(__dirname, "..", "dist", "src", "cli", "main.js"), ...args],
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      resolve(__dirname, "..", "src", "cli", "main.ts"),
+      ...args,
+    ],
     {
       encoding: "utf-8",
       timeout: 30000,

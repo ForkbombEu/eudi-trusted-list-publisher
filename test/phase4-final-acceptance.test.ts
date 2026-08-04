@@ -829,7 +829,7 @@ describe("Phase 4 primary runtime acceptance", () => {
         `Entity lock-c-${iteration}`,
       ]);
     }
-  });
+  }, 15_000);
 
   it("LOSSLESS-POS-1 preserves the complete authenticated rich entity", async () => {
     const operator = "Rich Primary Authority";

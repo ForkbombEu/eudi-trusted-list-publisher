@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes, X509Certificate } from "node:crypto";
@@ -1141,122 +1141,127 @@ describe("Annex H views", () => {
   });
 });
 
+const WE_BUILD_EVALUATION_PATH = resolve(
+  import.meta.dirname,
+  "..",
+  "HITL",
+  "WP4-LoTE_evaluation.json",
+);
+
 // ============================================================
 // 10. WE BUILD evaluation as a negative fixture
 // ============================================================
-describe("WE BUILD Pub-EAA evaluation", () => {
-  /**
-   * `HITL/WP4-LoTE_evaluation.json` is the Trust Inspector's own report on the
-   * WE BUILD WP4 LoTL. It is used only as a negative fixture: the Annex H rules
-   * it records as failing are exactly the rules this profile satisfies. It is
-   * never a signing oracle and never an example to copy.
-   */
-  const evaluationPath = resolve(
-    import.meta.dirname,
-    "..",
-    "HITL",
-    "WP4-LoTE_evaluation.json",
-  );
-
-  interface Check {
-    id: string;
-    status: string;
-    evidence?: Record<string, unknown>;
-  }
-
-  function pubEaaChecks(): Check[] {
-    const raw = JSON.parse(readFileSync(evaluationPath, "utf-8")) as {
-      results?: Array<{ ts119602?: { checks?: Check[] } }>;
-    };
-    return (raw.results ?? []).flatMap((result) =>
-      (result.ts119602?.checks ?? []).filter((check) =>
-        check.id.startsWith("ts119602.profile.pub_eaa_providers."),
-      ),
-    );
-  }
-
-  it("records the Annex H rules this profile now satisfies as failing there", () => {
-    const checks = pubEaaChecks();
-    expect(checks.length).toBeGreaterThan(0);
-    const schemeInformation = checks.find(
-      (check) => check.id.endsWith(".scheme_information") && check.evidence,
-    );
-    expect(schemeInformation?.status).toBe("fail");
-    const evidence = schemeInformation!.evidence as {
-      historyPeriod: { expected: number; valid: boolean };
-      pointers: { expected: string };
-    };
-    /* WE BUILD omits the history period; this publisher emits it. */
-    expect(evidence.historyPeriod).toMatchObject({
-      expected: PUB_EAA_HISTORICAL_INFORMATION_PERIOD,
-      valid: false,
-    });
-    expect(evidence.pointers.expected).toBe("absent");
-    expect(
-      document().LoTE.ListAndSchemeInformation.HistoricalInformationPeriod,
-    ).toBe(evidence.historyPeriod.expected);
-  });
-
-  it("records the entity rules this profile now satisfies as failing there", () => {
-    const entity = pubEaaChecks().find(
-      (check) => check.id.endsWith(".trusted_entity") && check.evidence,
-    );
-    expect(entity?.status).toBe("fail");
-    const results = (
-      entity!.evidence as {
-        results: Array<{
-          telephonePresent: boolean;
-          countryRoleUriPresent: boolean;
-          pubEaaLawReferencePresent: boolean;
-        }>;
-      }
-    ).results;
-    for (const result of results) {
-      expect(result.telephonePresent).toBe(false);
-      expect(result.countryRoleUriPresent).toBe(false);
-      expect(result.pubEaaLawReferencePresent).toBe(false);
+describe.skipIf(!existsSync(WE_BUILD_EVALUATION_PATH))(
+  "WE BUILD Pub-EAA evaluation",
+  () => {
+    /**
+     * `HITL/WP4-LoTE_evaluation.json` is the Trust Inspector's own report on the
+     * WE BUILD WP4 LoTL. It is used only as a negative fixture: the Annex H rules
+     * it records as failing are exactly the rules this profile satisfies. It is
+     * never a signing oracle and never an example to copy.
+     */
+    interface Check {
+      id: string;
+      status: string;
+      evidence?: Record<string, unknown>;
     }
-    /* All three are present in their Annex H components. */
-    const information =
-      document().LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation;
-    expect(
-      information.TEAddress.TEElectronicAddress.some((uri) =>
-        uri.uriValue.startsWith(PUB_EAA_PROVIDER_ROLE_URI_PREFIX),
-      ),
-    ).toBe(true);
-    expect(
-      information.TETradeName?.some((name) => name.value.startsWith("OJ:")),
-    ).toBe(true);
-    expect(
-      information.TEAddress.TEElectronicAddress.some((address) =>
-        address.uriValue.startsWith("tel:"),
-      ),
-    ).toBe(true);
-  });
 
-  it("confirms the service type and status URIs the Inspector expects", () => {
-    const service = pubEaaChecks().find(
-      (check) => check.id.endsWith(".service") && check.evidence,
-    );
-    const first = (
-      service!.evidence as {
-        results: Array<{
-          type: { allowed: string[] };
-          status: { observed: string; rule: string };
-          certificateRequirement: string;
-          history: { pubEaaSkiOnlyRule: boolean };
-        }>;
+    function pubEaaChecks(): Check[] {
+      const raw = JSON.parse(
+        readFileSync(WE_BUILD_EVALUATION_PATH, "utf-8"),
+      ) as {
+        results?: Array<{ ts119602?: { checks?: Check[] } }>;
+      };
+      return (raw.results ?? []).flatMap((result) =>
+        (result.ts119602?.checks ?? []).filter((check) =>
+          check.id.startsWith("ts119602.profile.pub_eaa_providers."),
+        ),
+      );
+    }
+
+    it("records the Annex H rules this profile now satisfies as failing there", () => {
+      const checks = pubEaaChecks();
+      expect(checks.length).toBeGreaterThan(0);
+      const schemeInformation = checks.find(
+        (check) => check.id.endsWith(".scheme_information") && check.evidence,
+      );
+      expect(schemeInformation?.status).toBe("fail");
+      const evidence = schemeInformation!.evidence as {
+        historyPeriod: { expected: number; valid: boolean };
+        pointers: { expected: string };
+      };
+      /* WE BUILD omits the history period; this publisher emits it. */
+      expect(evidence.historyPeriod).toMatchObject({
+        expected: PUB_EAA_HISTORICAL_INFORMATION_PERIOD,
+        valid: false,
+      });
+      expect(evidence.pointers.expected).toBe("absent");
+      expect(
+        document().LoTE.ListAndSchemeInformation.HistoricalInformationPeriod,
+      ).toBe(evidence.historyPeriod.expected);
+    });
+
+    it("records the entity rules this profile now satisfies as failing there", () => {
+      const entity = pubEaaChecks().find(
+        (check) => check.id.endsWith(".trusted_entity") && check.evidence,
+      );
+      expect(entity?.status).toBe("fail");
+      const results = (
+        entity!.evidence as {
+          results: Array<{
+            telephonePresent: boolean;
+            countryRoleUriPresent: boolean;
+            pubEaaLawReferencePresent: boolean;
+          }>;
+        }
+      ).results;
+      for (const result of results) {
+        expect(result.telephonePresent).toBe(false);
+        expect(result.countryRoleUriPresent).toBe(false);
+        expect(result.pubEaaLawReferencePresent).toBe(false);
       }
-    ).results[0]!;
-    expect(first.type.allowed).toEqual([
-      PUB_EAA_SERVICE_TYPE_ISSUANCE,
-      PUB_EAA_SERVICE_TYPE_REVOCATION,
-    ]);
-    expect(first.status.observed).toBe(PUB_EAA_SVC_STATUS_NOTIFIED);
-    expect(first.status.rule).toBe("pub_eaa");
-    /* The certificate is optional in Annex H, which this profile mirrors. */
-    expect(first.certificateRequirement).toBe("optional_pub_eaa");
-    expect(getProfile(FAMILY).requiresServiceCertificate).toBe(false);
-    expect(first.history.pubEaaSkiOnlyRule).toBe(true);
-  });
-});
+      /* All three are present in their Annex H components. */
+      const information =
+        document().LoTE.TrustedEntitiesList![0]!.TrustedEntityInformation;
+      expect(
+        information.TEAddress.TEElectronicAddress.some((uri) =>
+          uri.uriValue.startsWith(PUB_EAA_PROVIDER_ROLE_URI_PREFIX),
+        ),
+      ).toBe(true);
+      expect(
+        information.TETradeName?.some((name) => name.value.startsWith("OJ:")),
+      ).toBe(true);
+      expect(
+        information.TEAddress.TEElectronicAddress.some((address) =>
+          address.uriValue.startsWith("tel:"),
+        ),
+      ).toBe(true);
+    });
+
+    it("confirms the service type and status URIs the Inspector expects", () => {
+      const service = pubEaaChecks().find(
+        (check) => check.id.endsWith(".service") && check.evidence,
+      );
+      const first = (
+        service!.evidence as {
+          results: Array<{
+            type: { allowed: string[] };
+            status: { observed: string; rule: string };
+            certificateRequirement: string;
+            history: { pubEaaSkiOnlyRule: boolean };
+          }>;
+        }
+      ).results[0]!;
+      expect(first.type.allowed).toEqual([
+        PUB_EAA_SERVICE_TYPE_ISSUANCE,
+        PUB_EAA_SERVICE_TYPE_REVOCATION,
+      ]);
+      expect(first.status.observed).toBe(PUB_EAA_SVC_STATUS_NOTIFIED);
+      expect(first.status.rule).toBe("pub_eaa");
+      /* The certificate is optional in Annex H, which this profile mirrors. */
+      expect(first.certificateRequirement).toBe("optional_pub_eaa");
+      expect(getProfile(FAMILY).requiresServiceCertificate).toBe(false);
+      expect(first.history.pubEaaSkiOnlyRule).toBe(true);
+    });
+  },
+);

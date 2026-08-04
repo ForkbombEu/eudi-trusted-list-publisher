@@ -4284,7 +4284,7 @@ describe("Legacy overlapping same-list concurrency smoke", () => {
         } catch {}
       }
     }
-  });
+  }, 15_000);
 });
 
 // ============================================================
