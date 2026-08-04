@@ -515,7 +515,7 @@ describe("a combined-profile XML list after onboarding", () => {
     const versionHtml = await (
       await get(`/lists/${combinedList()}/versions/2`)
     ).text();
-    expect(versionHtml).toContain("TrustServiceProviderName (TSPName)");
+    expect(versionHtml).toContain("Trust Service Provider Name (TSPName)");
     expect(versionHtml).toContain("Example Provider SpA");
     expect(versionHtml).toContain("Combined List EAA Issuance");
     expect(versionHtml).toContain(SVCTYPE_EAA);

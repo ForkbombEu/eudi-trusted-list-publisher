@@ -271,7 +271,7 @@ export function trustedListVersionHtml(
   const providerTable =
     providers.length > 0
       ? `<table class="catalogue-table">
-  <thead><tr><th>TrustServiceProviderName (TSPName)</th><th>Services</th></tr></thead>
+  <thead><tr><th>Trust Service Provider Name (TSPName)</th><th>Services</th></tr></thead>
   <tbody>${providerRows}</tbody>
 </table>`
       : `<p class="field-help">No trusted service providers are recorded in this version.</p>`;

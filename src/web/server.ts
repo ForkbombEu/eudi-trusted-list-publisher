@@ -1564,7 +1564,7 @@ ${inspectorPanelHtml(
   listKey,
   sequence,
 )}
-${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="catalogue-table"><thead><tr><th>TrustedEntityName (TEName)</th><th>Services</th></tr></thead><tbody>${entityRows}</tbody></table></div>` : ""}
+${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="catalogue-table"><thead><tr><th>Trusted Entity Name (TEName)</th><th>Services</th></tr></thead><tbody>${entityRows}</tbody></table></div>` : ""}
 ${versionDownloadsHtml(listKey, sequence)}
 <div class="card"><h2>Artifact Hashes</h2>
 <table class="kv-table">
