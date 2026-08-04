@@ -1074,7 +1074,7 @@ export function createWebServer(config: ServerConfig) {
     res.end(body);
   }
 
-  /** Renders a published XML artifact for inspection in the browser. */
+  /** Serves a published XML artifact inline for browser inspection. */
   function serveTrustedListXmlView(
     res: ServerResponse,
     listKey: string,
@@ -1085,14 +1085,14 @@ export function createWebServer(config: ServerConfig) {
       send404(res);
       return;
     }
-    const body = `<h1>${escapeHtml(listKey)} - Version ${sequenceNumber} XML</h1>
-<p><a href="/lists/${encodeURIComponent(listKey)}/versions/${sequenceNumber}">Back to version details</a></p>
-<pre><code>${escapeHtml(artifacts.xml)}</code></pre>`;
-    sendHtml(
-      res,
-      200,
-      page(`${listKey} - Version ${sequenceNumber} XML`, body),
-    );
+    res.writeHead(200, {
+      ...securityHeaders(),
+      "Content-Type": "application/xml; charset=utf-8",
+      "Content-Disposition": "inline",
+      "Content-Length": Buffer.byteLength(artifacts.xml),
+      "Cache-Control": "no-store",
+    });
+    res.end(artifacts.xml);
   }
 
   async function serveTrustedListDetail(

@@ -151,7 +151,7 @@ the latest version actually has. A TS 119 602 row offers **JSON** always and
 **XML** only when an `lote.xml` rendition sits beside that version, which this
 publisher does not produce. A TS 119 612 row offers **XML**, which is its only
 artifact. JSON and JAdES buttons open their artifacts in place, while XML opens
-an escaped browser view of the document. A reader scanning the Catalogue wants
+the XML document inline in its own browser view. A reader scanning the Catalogue wants
 to look, and the version page is where downloading belongs.
 
 An absent button is the honest rendering: a disabled or dead link would promise
