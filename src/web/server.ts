@@ -1125,7 +1125,7 @@ export function createWebServer(config: ServerConfig) {
       send404(res);
       return;
     }
-    sendResponse(res, 200, content, "application/jose", "no-store", {
+    sendResponse(res, 200, content, "text/plain; charset=utf-8", "no-store", {
       "Content-Disposition": "inline",
     });
   }

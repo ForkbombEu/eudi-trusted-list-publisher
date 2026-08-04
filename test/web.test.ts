@@ -248,7 +248,8 @@ describe("Web UI", () => {
        never conditional the way the XML one is. */
     const jades = await httpGet(jadesHref);
     expect(jades.status).toBe(200);
-    expect(jades.contentType).toContain("application/jose");
+    expect(jades.contentType).toContain("text/plain");
+    expect(jades.headers["content-disposition"]).toBe("inline");
     expect(jades.body.split(".")).toHaveLength(3);
     expect((await httpGet(jadesApiHref)).status).toBe(200);
 
