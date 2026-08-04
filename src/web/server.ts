@@ -1507,13 +1507,16 @@ over the published Lists of Trusted Entities.</p>
                 (s: {
                   ServiceInformation: {
                     ServiceName: Array<{ value: string }>;
+                    ServiceTypeIdentifier: { value: string };
                   };
                 }) =>
-                  s?.ServiceInformation?.ServiceName?.map(
-                    (n: { value: string }) => escapeHtml(n.value),
-                  ).join(", ") ?? "",
-              ).join("; ") ?? "";
-            entityRows += `<tr><td>${names}</td><td>${svcs}</td></tr>`;
+                  `<li><strong>${
+                    s?.ServiceInformation?.ServiceName?.map(
+                      (n: { value: string }) => escapeHtml(n.value),
+                    ).join(", ") ?? ""
+                  }</strong><br>ServiceTypeIdentifier: <code>${escapeHtml(s?.ServiceInformation?.ServiceTypeIdentifier?.value ?? "")}</code></li>`,
+              ).join("") ?? "";
+            entityRows += `<tr><td>${names}</td><td><ul class="service-list">${svcs}</ul></td></tr>`;
           }
         } catch {
           entityRows = `<tr><td colspan="2">Could not parse LoTE</td></tr>`;
@@ -1561,7 +1564,7 @@ ${inspectorPanelHtml(
   listKey,
   sequence,
 )}
-${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="catalogue-table"><thead><tr><th>Entity</th><th>Services</th></tr></thead><tbody>${entityRows}</tbody></table></div>` : ""}
+${entityRows ? `<div class="card"><h2>Entities &amp; Services</h2><table class="catalogue-table"><thead><tr><th>TrustedEntityName (TEName)</th><th>Services</th></tr></thead><tbody>${entityRows}</tbody></table></div>` : ""}
 ${versionDownloadsHtml(listKey, sequence)}
 <div class="card"><h2>Artifact Hashes</h2>
 <table class="kv-table">
