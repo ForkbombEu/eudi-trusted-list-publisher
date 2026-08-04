@@ -2145,7 +2145,7 @@ ${versionDownloadsHtml(listKey, sequence)}
 
   async function handleCreateTrustedList(
     res: ServerResponse,
-    fields: Record<string, string>,
+    fields: Record<string, string | string[]>,
     requestId: string,
   ): Promise<void> {
     const result = await createTrustedListFrom(fields);
@@ -3352,7 +3352,9 @@ ${outcome}
       }
 
       if (path === "/admin/lists/create") {
-        await handleCreateTrustedList(res, parseFormBody(body), requestId);
+        const fields: Record<string, string | string[]> = parseFormBody(body);
+        fields.defects = parseFormBodyMulti(body).defects ?? [];
+        await handleCreateTrustedList(res, fields, requestId);
         return;
       }
 

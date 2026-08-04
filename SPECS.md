@@ -633,6 +633,14 @@ compiled healthy, cloned, mutated, signed and published, and the negative-fixtur
 evidence is stored beside the version as `fixture.json`. An unknown defect id is
 rejected by name.
 
+The administrator may submit any subset from one through all applicable
+defects, using repeated form fields or a JSON array. Selection is conjunctive:
+each chosen defect must be present in the final artifact, not treated as a
+predefined bundle. IDs are deduplicated and normalized to catalogue order. The
+JSON seed is derived from the selected PID, Wallet, WRPAC, WRPRC or Pub-EAA
+family. If any selected mutation has no successful evidence, publication fails
+before the immutable store is called.
+
 `POST /api/v1/admin/trusted-lists` is the TS 119 612 counterpart, taking the same
 `defects` array filtered to the catalogue's XML bindings. Both entry points reach
 the same core functions, so the GUI and the API produce equivalent artifacts and
@@ -974,7 +982,17 @@ namespace.
 
 Every mutation records whether it changed anything. A mutation that silently
 found nothing would publish a healthy list under a broken name, which is the one
-outcome a negative fixture must never have.
+outcome a negative fixture must never have. The publication gate therefore
+rejects the whole selection before storage when any chosen defect remains
+unapplied.
+
+XML selection is also arbitrary and conjunctive, from one through all catalogue
+defects. An EAA-only or QEAA-only fixture seeds its accepted profile; a list
+accepting both profiles seeds one distinct provider for each and applies every
+selected service mutation across both. The signer requirements are accumulated
+before minting: subject mismatch uses wrong C and O, incorrect certificate uses
+bad profile metadata, and selecting both yields one certificate with all those
+properties.
 
 ### Opt-ins, each fixture-only
 
@@ -988,7 +1006,7 @@ explicit, documented opt-in that the healthy path never sets:
 | `signEnveloped({ omitSigningTime })` | No `xades:SigningTime`; the one resulting Baseline-B finding is expected and does not make the signer refuse its own output |
 | `TrustedListManifest.trustedListSha2Published` | The `.sha2` content actually published, so a deliberately wrong digest still reads back |
 | `CreateTrustedListRequest.listKey` | An explicit publication key, for the deterministic fixture keys |
-| `CreateTrustedListRequest.seedFixtureProvider` | Seeds one provider so the service-level defects have something to mutate |
+| `CreateTrustedListRequest.seedFixtureProvider` | Seeds one provider per accepted profile so service-level defects have something to mutate |
 
 `TrustedListStore.loadVersion()` checks the XML against
 `trustedListXmlSha256` strictly, and checks `trusted-list.sha2` against
@@ -1058,6 +1076,10 @@ single-defect fixture is a delta of exactly one mutation from it. The seeded
 service is already in its end state with the initial state in `ServiceHistory`:
 that is the smallest arrangement carrying a real status transition, and it gives
 `invalid_service_history` an ordering to break.
+
+The suite's named two-defect `combined` fixture is a stable demonstration case;
+it is not a restriction on interactive creation. The administration form and
+API accept any one-through-all subset.
 
 ### Commands
 

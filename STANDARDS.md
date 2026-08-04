@@ -778,6 +778,14 @@ catalogue. The concrete deterministic mutations belong to this publisher, and th
 mapping below is a claim about which objective each fixture exercises, not a
 claim that the objectives enumerate these defects.
 
+Interactive negative-fixture selection is conjunctive and accepts any subset
+from one through all defects applicable to the chosen standard. JSON seeds are
+family-specific; XML seeds cover every accepted EAA/QEAA profile. Multiple
+signer defects are expressed by one certificate carrying their accumulated
+wrong subject and profile properties. A selected defect without successful
+mutation evidence aborts before publication, so stored fixture evidence never
+claims a selection the artifact did not receive.
+
 | Test | Objective                                                  | Fixtures that exercise it                                                                                                                                                                                                  |
 | ---- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 139  | Trusted List schema is valid                               | `*-healthy` (passes); `*-broken-missing_scheme_information_uri`, `*-broken-pem_service_certificate`, `*-broken-extension_without_criticality`, `*-broken-invalid_tsl_namespace` (fail `schema.xsd` and `local.xml.schema`) |

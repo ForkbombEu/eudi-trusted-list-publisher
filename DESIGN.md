@@ -361,8 +361,10 @@ because one mutation legitimately trips several rules and a catalogue that
 quietly agreed with reality would be one nobody could check.
 
 The Mutations table below it names every selected defect, its stage, whether it
-applied, and the detail. A defect that did not apply is shown in bold as **not
-applied**: a silently repaired defect is worse than a missing fixture.
+applied, and the detail. Newly created fixtures cannot contain an unapplied
+selection: the pipeline rejects them before immutable storage. If older evidence
+contains `applied: false`, it remains visibly marked as **not applied** rather
+than being hidden.
 
 ### Creation
 
@@ -372,6 +374,13 @@ card, below the scheme material and above the signing material, reusing the same
 defect, what the mutation does to the XML, when it is applied and the clause it
 violates. Leaving every box clear is the healthy path, and the copy says so
 first.
+
+Checkboxes are independent. Administrators may choose any one-through-all
+subset, and all selected defects must coexist in the published artifact. EAA,
+QEAA and dual-profile fixtures seed every accepted profile. Certificate-related
+choices accumulate into one signer: the subject mismatch changes C and O, the
+profile defect changes certificate metadata, and selecting both preserves both
+sets of wrong properties.
 
 A healthy creation redirects to the new list, as before. A broken creation stops
 at a confirmation page that states what was asked for and what actually failed —

@@ -1172,6 +1172,69 @@ describe("HTTP surface for creation and evaluation", () => {
     });
   }
 
+  function httpPostForm(
+    url: string,
+    body: string,
+  ): Promise<{ status: number; body: string }> {
+    return new Promise((done, reject) => {
+      const request = httpRequestRaw(
+        new URL(url),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Length": String(Buffer.byteLength(body)),
+          },
+        },
+        (response: IncomingMessage) => {
+          let text = "";
+          response.on("data", (chunk: Buffer) => (text += chunk.toString()));
+          response.on("end", () =>
+            done({ status: response.statusCode ?? 0, body: text }),
+          );
+        },
+      );
+      request.on("error", reject);
+      request.write(body);
+      request.end();
+    });
+  }
+
+  const multipleDefects = [
+    "scheme_name_without_territory",
+    "missing_operator_email",
+    "jades_without_signing_time",
+  ];
+
+  function jsonCreationFields(): Record<string, string | string[]> {
+    return {
+      family: "wallet-providers",
+      schemeName: "HTTP Wallet List",
+      schemeOperatorName: "Test",
+      schemeTerritory: "EU",
+      schemeOperatorStreet: "1 Scheme Street",
+      schemeOperatorCountry: "IT",
+      schemeOperatorEmail: "trustedlists@scheme.example",
+      baseUrl: "https://scheme.example/http-wallet",
+      keyFile: TEST_KEY_PATH,
+      certFile: TEST_CERT_PATH,
+      defects: multipleDefects,
+    };
+  }
+
+  function formBody(overrides: Record<string, string> = {}): string {
+    const parameters = new URLSearchParams();
+    for (const [name, value] of Object.entries({
+      ...jsonCreationFields(),
+      ...overrides,
+    })) {
+      if (Array.isArray(value))
+        for (const item of value) parameters.append(name, item);
+      else parameters.append(name, value);
+    }
+    return parameters.toString();
+  }
+
   function startServer(
     config: ServerConfig,
   ): Promise<{ url: string; stop: () => Promise<void> }> {
@@ -1222,6 +1285,97 @@ describe("HTTP surface for creation and evaluation", () => {
     } finally {
       await stop();
       for (const dir of [publicationDir, authoringDir, configDir])
+        rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps multiple selected defects from the JSON administration form", async () => {
+    const publicationDir = tmpDir();
+    const authoringDir = tmpDir();
+    const configDir = tmpDir();
+    const signingConfigPath = join(configDir, "signing-config.json");
+    writeFileSync(signingConfigPath, JSON.stringify({ lists: [] }), "utf-8");
+    const { url, stop } = await startServer({
+      publicationDir,
+      authoringDir,
+      dataCollectionGui: true,
+      adminToken: "creation-token",
+      signingConfigPath,
+    });
+    try {
+      const created = await httpPostForm(
+        `${url}/admin/lists/create?token=creation-token`,
+        formBody(),
+      );
+      expect(created.status).toBe(200);
+      const evidence = await httpGet(
+        `${url}/api/v1/lists/eu_test/versions/1/fixture`,
+      );
+      expect(evidence.status).toBe(200);
+      expect(
+        (JSON.parse(evidence.body) as { selectedDefects: string[] })
+          .selectedDefects,
+      ).toEqual(multipleDefects);
+    } finally {
+      await stop();
+      for (const dir of [publicationDir, authoringDir, configDir])
+        rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves multiple selected defects after a JSON form error", async () => {
+    const publicationDir = tmpDir();
+    const configDir = tmpDir();
+    const signingConfigPath = join(configDir, "signing-config.json");
+    writeFileSync(signingConfigPath, JSON.stringify({ lists: [] }), "utf-8");
+    const { url, stop } = await startServer({
+      publicationDir,
+      dataCollectionGui: true,
+      adminToken: "creation-token",
+      signingConfigPath,
+    });
+    try {
+      const rejected = await httpPostForm(
+        `${url}/admin/lists/create?token=creation-token`,
+        formBody({ schemeName: "" }),
+      );
+      expect(rejected.status).toBe(400);
+      for (const defect of multipleDefects)
+        expect(rejected.body).toMatch(new RegExp(`value="${defect}" checked`));
+    } finally {
+      await stop();
+      for (const dir of [publicationDir, configDir])
+        rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps multiple selected defects from the JSON administration API", async () => {
+    const publicationDir = tmpDir();
+    const configDir = tmpDir();
+    const signingConfigPath = join(configDir, "signing-config.json");
+    writeFileSync(signingConfigPath, JSON.stringify({ lists: [] }), "utf-8");
+    const { url, stop } = await startServer({
+      publicationDir,
+      dataCollectionGui: true,
+      adminToken: "creation-token",
+      signingConfigPath,
+    });
+    try {
+      const created = await httpPostJson(
+        `${url}/api/v1/admin/lists`,
+        JSON.stringify(jsonCreationFields()),
+        { Authorization: "Bearer creation-token" },
+      );
+      expect(created.status).toBe(201);
+      const result = JSON.parse(created.body) as {
+        defects: string[];
+        fixture: { selectedDefects: string[] };
+      };
+      expect(result.defects).toEqual(multipleDefects);
+      expect(result.fixture.selectedDefects).toEqual(multipleDefects);
+    } finally {
+      await stop();
+      for (const dir of [publicationDir, configDir])
         rmSync(dir, { recursive: true, force: true });
     }
   });

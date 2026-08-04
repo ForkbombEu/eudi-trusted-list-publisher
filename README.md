@@ -113,15 +113,27 @@ healthy typed model
   → Trust Inspector, recorded
 ```
 
-A selected defect is never silently repaired: a mutation that found nothing to
-change is stored as `applied: false` with the reason. **A failing Trust
-Inspector verdict on such a list is the expected outcome, not a publication
-error**, and every page that shows one says so.
+A selected defect is never silently repaired: if any selected mutation cannot
+be applied, creation fails before immutable storage. Administrators may select
+any subset from one defect through the complete catalogue; selections are
+conjunctive, so the artifact contains every selected defect and there are no
+implicit bundles. **A failing Trust Inspector verdict on a successfully created
+broken list is the expected outcome, not a publication error**, and every page
+that shows one says so.
+
+JSON fixtures seed the selected PID, Wallet, WRPAC, WRPRC or Pub-EAA family,
+never a hard-coded family. XML fixtures seed one provider per accepted profile,
+including both EAA and QEAA in a dual-profile list. Signer-subject mismatch and
+incorrect-certificate-profile selections are synthesized into one certificate,
+so selecting both produces wrong subject C/O together with the incorrect
+certificate metadata.
 
 The deterministic TS 119 612 suites are published at stable keys —
 `eaa-healthy`, `eaa-broken-<defect-id>`, `eaa-broken-combined`, and the QEAA
 equivalents — one healthy baseline, one list per defect, and one list carrying
 exactly two compatible defects.
+These deterministic suite names do not limit interactive creation: the GUI and
+administration APIs accept any one-through-all selection.
 
 ### Demonstration lists
 
@@ -390,6 +402,9 @@ defect states its intent once and binds it to a concrete mutation per standard,
 with the stage it applies at, the clause it violates, what a conformant list does
 instead, and what it is expected to fail — locally and at the Inspector. The UI,
 the API, the stored metadata and the tests all read that one catalogue.
+Selections are normalized to catalogue order and accumulated across mutation
+stages. Publication is gated on evidence that every selected defect was applied,
+before any immutable artifact is stored.
 **Limitation**: the expected Inspector rule IDs are _expectations_, calibrated
 against a live run and always recorded against actuals, never asserted. Tests:
 `test/tsl612-defects.test.ts`, `test/broken-generation.test.ts`.

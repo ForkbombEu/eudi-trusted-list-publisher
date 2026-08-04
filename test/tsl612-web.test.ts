@@ -707,6 +707,11 @@ describe("intentionally broken XML Trusted Lists", () => {
 
   let guiKey: string;
   let apiKey: string;
+  const multipleDefects = [
+    "scheme_name_without_territory",
+    "missing_operator_email",
+    "expired_next_update",
+  ];
 
   it("offers every catalogue defect on the creation form", async () => {
     const html = await (await get("/admin/trusted-lists/create")).text();
@@ -733,12 +738,14 @@ describe("intentionally broken XML Trusted Lists", () => {
     );
     const response = await post("/admin/trusted-lists/create", {
       ...declaration("Broken GUI Operator", material),
-      defects: ["expired_next_update"],
+      defects: [...multipleDefects].reverse(),
     });
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain("Intentionally broken Trusted List created");
     expect(html).toContain("expired_next_update");
+    expect(html).toContain("missing_operator_email");
+    expect(html).toContain("scheme_name_without_territory");
     expect(html).toContain("local.freshness");
     guiKey = "it_broken_gui_operator";
   }, 60000);
@@ -760,7 +767,7 @@ describe("intentionally broken XML Trusted Lists", () => {
         allowedServiceProfiles: ["eaa-providers"],
         lotlCertificatesBase64Der: [signerCertDer],
         lotlSchemeOperatorNames: ["Broken API Operator"],
-        defects: ["expired_next_update"],
+        defects: [...multipleDefects].reverse(),
       }),
     });
     expect(response.status).toBe(201);
@@ -774,7 +781,7 @@ describe("intentionally broken XML Trusted Lists", () => {
     expect(body.standard).toBe("TS 119 612");
     expect(body.artifactFormat).toBe("XML / XAdES-B-B");
     expect(body.intentionallyBroken).toBe(true);
-    expect(body.fixture.selectedDefects).toEqual(["expired_next_update"]);
+    expect(body.fixture.selectedDefects).toEqual(multipleDefects);
     apiKey = body.listKey;
   }, 60000);
 
