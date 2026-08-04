@@ -84,11 +84,11 @@ Catalogue and Onboarding, API Docs and Open API, Repository. The footer carries
 three columns: Explore, Resources and Settings, the last holding the Admin link.
 
 Trusted List Families and individual Trusted Lists are colour-coded. Each of the
-six families has one predefined colour and each list key is mapped
+eight families has one predefined colour and each list key is mapped
 deterministically to one of eight list swatches, so the same family or list is
-always the same colour wherever it appears: catalogue, list and version pages,
-onboarding, administration and settings. `src/web/views/colors.ts` decides the
-class, `app.css` defines the colour, and a test proves the two stay in step.
+always the same colour wherever it appears: list and version pages, onboarding,
+administration and settings. `src/web/views/colors.ts` decides the class,
+`app.css` defines the colour, and a test proves the two stay in step.
 
 The Catalogue is the one exception to the list chip. Its rows already carry a
 family chip, so a second filled chip for the list key would read as a badge
