@@ -159,8 +159,11 @@ ${
       formaction="/admin/lists/generate-signing-material" formmethod="post"
       formnovalidate>Generate key and certificate</button></p>
     <p class="field-help">Uses the Operator Name and Scheme Territory already
-      entered above. Existing signing material is never overwritten.</p>`
-        : ""
+      entered above, and fills the paths below with an EC P-256 key and a
+      one-year self-signed certificate. No private key is shown, and existing
+      signing material is never overwritten.</p>`
+        : `<p class="field-help">Server-side generation is unavailable:
+      <code>TLP_CERTIFICATES_DIR</code> is not configured.</p>`
     }
     <div class="form-group">
       <label for="keyFile">Private Key File <span class="required">*</span></label>

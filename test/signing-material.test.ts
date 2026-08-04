@@ -22,6 +22,7 @@ import {
 } from "../src/core/authoring/index.js";
 import { createWebServer, type ServerConfig } from "../src/web/server.js";
 import { createListFormHtml } from "../src/web/views/list-creation.js";
+import { createTrustedListFormHtml } from "../src/web/views/tsl612-list-creation.js";
 import { checkTrustedListSigningCertificate } from "../src/core/tsl612/signing-certificate.js";
 
 function temporaryDirectory(): string {
@@ -332,6 +333,113 @@ describe("Signing Material administration action", () => {
       /* No extended key usage: an EU LoTE signer asserts no signing purpose. */
       expect(certificate.toString()).not.toContain("0.4.0.2231.3.0");
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Signing Material on the Create XML Trusted List form", () => {
+  it("offers the same box the TS 119 602 form offers, in the same place", () => {
+    const jsonForm = createListFormHtml(undefined, undefined, {
+      canGenerateSigningMaterial: true,
+    });
+    const xmlForm = createTrustedListFormHtml(
+      {},
+      { canGenerateMaterial: true },
+    );
+    for (const form of [jsonForm, xmlForm]) {
+      expect(form).toContain("<h2>Signing Material</h2>");
+      expect(form).toContain("Generate key and certificate");
+      expect(form).toContain("formnovalidate");
+      expect(form).toContain(">Private Key File");
+      expect(form).toContain(">Certificate File");
+      /* The box sits immediately before the health / broken-fixture card. */
+      expect(form.indexOf("<h2>Signing Material</h2>")).toBeLessThan(
+        form.search(/<h2>(Health|Intentionally broken test fixture)<\/h2>/),
+      );
+    }
+    expect(xmlForm).toContain(
+      'formaction="/admin/trusted-lists/generate-signing-material"',
+    );
+    expect(
+      createTrustedListFormHtml({}, { canGenerateMaterial: false }),
+    ).toContain("TLP_CERTIFICATES_DIR");
+  });
+
+  it("generates a TS 119 612 signer and prefills both paths", async () => {
+    const root = temporaryDirectory();
+    const certificatesDir = join(root, "certificates");
+    const signingConfigPath = join(root, "signing-config.json");
+    writeFileSync(signingConfigPath, JSON.stringify({ lists: [] }), "utf-8");
+    const started = await startServer({
+      publicationDir: join(root, "publications"),
+      authoringDir: join(root, "authoring"),
+      certificatesDir,
+      signingConfigPath,
+      dataCollectionGui: true,
+      adminToken: "material-token",
+    });
+    try {
+      const response = await httpPost(
+        `${started.url}/admin/trusted-lists/generate-signing-material?token=material-token`,
+        new URLSearchParams({
+          schemeOperatorName: "XML Operator",
+          schemeTerritory: "it",
+          schemeName: "IT:XML Operator",
+          schemeOperatorStreet: "Saved Street 1",
+          allowedServiceProfiles: "eaa",
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(response.body).toContain("Signing material generated");
+      /* Every entered value survives the round trip. */
+      expect(response.body).toContain('value="Saved Street 1"');
+      expect(response.body).toContain(
+        `value="${join(certificatesDir, "it_xml_operator", "signing-key.pem")}"`,
+      );
+      expect(response.body).not.toContain(["BEGIN", "PRIVATE KEY"].join(" "));
+
+      const certificate = new X509Certificate(
+        readFileSync(
+          join(certificatesDir, "it_xml_operator", "signing-cert.pem"),
+          "utf-8",
+        ),
+      );
+      expect(
+        checkTrustedListSigningCertificate(certificate, {
+          schemeTerritory: "IT",
+          schemeOperatorName: "XML Operator",
+        }),
+      ).toEqual([]);
+    } finally {
+      await started.stop();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("requires administrator authentication", async () => {
+    const root = temporaryDirectory();
+    const signingConfigPath = join(root, "signing-config.json");
+    writeFileSync(signingConfigPath, JSON.stringify({ lists: [] }), "utf-8");
+    const started = await startServer({
+      publicationDir: join(root, "publications"),
+      authoringDir: join(root, "authoring"),
+      certificatesDir: join(root, "certificates"),
+      signingConfigPath,
+      dataCollectionGui: true,
+      adminToken: "material-token",
+    });
+    try {
+      const response = await httpPost(
+        `${started.url}/admin/trusted-lists/generate-signing-material`,
+        new URLSearchParams({
+          schemeOperatorName: "XML Operator",
+          schemeTerritory: "IT",
+        }),
+      );
+      expect(response.status).toBe(403);
+    } finally {
+      await started.stop();
       rmSync(root, { recursive: true, force: true });
     }
   });

@@ -213,6 +213,37 @@ ${options.notice ? `<div class="notice notice-info">${escape(options.notice)}</d
   </div>
 
   <div class="card">
+    <h2>Signing Material</h2>
+    <p class="field-help">Server-side paths to the list's signing key and
+    certificate. The private key is read by the publisher and never uploaded
+    through this form.</p>
+    ${
+      options.canGenerateMaterial
+        ? `<p><button type="submit" class="btn btn-outline btn-md"
+      formaction="/admin/trusted-lists/generate-signing-material" formmethod="post"
+      formnovalidate>Generate key and certificate</button></p>
+    <p class="field-help">Uses the Scheme operator name and Scheme territory
+      already entered above, and fills the paths below with an EC P-256 key and a
+      one-year self-signed certificate carrying the <code>tslSigning</code>
+      extended key usage. No private key is shown, and existing signing material
+      is never overwritten.</p>`
+        : `<p class="field-help">Server-side generation is unavailable:
+      <code>TLP_CERTIFICATES_DIR</code> is not configured.</p>`
+    }
+    ${field("keyFile", "Private Key File", v, { required: true })}
+    ${field("certFile", "Certificate File", v, {
+      required: true,
+      help: `The certificate must meet the TS 119 612 Scheme Operator profile,
+        or the Inspector reports a signer subject mismatch: subject organisation
+        (<code>O</code>) exactly the Scheme operator name above, subject country
+        (<code>C</code>) the Scheme territory,
+        <code>basicConstraints CA:FALSE</code>, a SubjectKeyIdentifier, and a key
+        usage limited to <code>digitalSignature</code> and/or
+        <code>contentCommitment</code>.`,
+    })}
+  </div>
+
+  <div class="card">
     <h2>Intentionally broken test fixture</h2>
     <p class="field-help">Leave every box clear for a healthy Trusted List.
     Select one defect to publish a list that is deliberately non-conformant in
@@ -221,27 +252,6 @@ ${options.notice ? `<div class="notice notice-info">${escape(options.notice)}</d
     known-good baseline. <strong>A failing Trust Inspector verdict on such a
     list is the expected outcome, not a publication error.</strong></p>
     <div class="tl-broken-options">${defectOptions(selectedDefects)}</div>
-  </div>
-
-  <div class="card">
-    <h2>Signing material</h2>
-    ${field("keyFile", "Private key file", v, { required: true })}
-    ${field("certFile", "Certificate file", v, { required: true })}
-    <p class="field-help">The certificate must meet the TS 119 612 Scheme
-    Operator profile: subject C equal to the Scheme Territory, subject O equal
-    to the Scheme Operator Name, <code>basicConstraints CA:FALSE</code>, a
-    SubjectKeyIdentifier, and a key usage limited to
-    <code>digitalSignature</code> and/or <code>contentCommitment</code>.</p>
-    ${
-      options.canGenerateMaterial
-        ? `<div class="form-actions">
-             <button type="submit" formaction="/admin/trusted-lists/generate-signing-material" class="btn btn-outline btn-md">Generate key and certificate</button>
-           </div>
-           <p class="field-help">Generates an EC P-256 key and a one-year
-           self-signed certificate carrying the <code>tslSigning</code> extended
-           key usage, and fills the paths above. No private key is shown.</p>`
-        : `<p class="field-help">Server-side generation is unavailable: <code>TLP_CERTIFICATES_DIR</code> is not configured.</p>`
-    }
   </div>
 
   <div class="form-actions">

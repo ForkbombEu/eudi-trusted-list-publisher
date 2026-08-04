@@ -2738,6 +2738,92 @@ ${fixturePanelHtml(JSON.stringify(result.fixture))}
   }
 
   /**
+   * The XML counterpart of `handleGenerateSigningMaterial`. It generates the
+   * TS 119 612 Scheme Operator profile, whose certificate carries the
+   * `tslSigning` extended key usage, and returns the same form with every
+   * entered value preserved and the two paths filled in.
+   */
+  async function handleGenerateXmlSigningMaterial(
+    res: ServerResponse,
+    fields: Record<string, string>,
+    multi: Record<string, string[]>,
+    requestId: string,
+  ): Promise<void> {
+    const render = (status: number, error?: string, notice?: string): void => {
+      sendHtml(
+        res,
+        status,
+        guiPage(
+          "Create XML Trusted List",
+          createTrustedListFormHtml(
+            {
+              ...fields,
+              allowedServiceProfiles: multi["allowedServiceProfiles"],
+              defects: multi["defects"],
+            },
+            {
+              ...(error ? { error } : {}),
+              ...(notice ? { notice } : {}),
+              canGenerateMaterial: Boolean(certificatesDir),
+            },
+          ),
+        ),
+      );
+      logRequest(
+        "POST",
+        "/admin/trusted-lists/generate-signing-material",
+        status,
+        requestId,
+      );
+    };
+    if (!certificatesDir) {
+      render(400, "TLP_CERTIFICATES_DIR is not configured.");
+      return;
+    }
+
+    const schemeOperatorName = fields["schemeOperatorName"]?.trim() ?? "";
+    const schemeTerritory = (fields["schemeTerritory"] ?? "")
+      .trim()
+      .toUpperCase();
+    fields["schemeTerritory"] = schemeTerritory;
+    const listKey = deriveListKeyFromParts(schemeTerritory, schemeOperatorName);
+    if (
+      signingConfig?.lists.some((entry) => entry.listKey === listKey) ||
+      signingConfig?.trustedLists?.some((entry) => entry.listKey === listKey)
+    ) {
+      render(400, `A Trusted List with key "${listKey}" already exists.`);
+      return;
+    }
+    if (trustedListStore.getHighestStoredSequence(listKey) !== null) {
+      render(400, `Publications already exist for list key "${listKey}".`);
+      return;
+    }
+
+    try {
+      const generated = generateSigningMaterial({
+        certificatesDir,
+        schemeOperatorName,
+        schemeTerritory,
+        profile: "trusted-list",
+      });
+      fields["keyFile"] = generated.keyFile;
+      fields["certFile"] = generated.certFile;
+      render(
+        200,
+        undefined,
+        `Signing material generated for ${generated.listKey}. The paths below are ready to use.`,
+      );
+    } catch (error) {
+      render(
+        400,
+        error instanceof Error
+          ? error.message
+          : "Signing material could not be generated.",
+      );
+    }
+  }
+
+  /**
    * `POST /api/v1/admin/trusted-lists` — declare a TS 119 612 XML Trusted List.
    *
    * The API counterpart of the Create XML Trusted List form, and deliberately a
@@ -3147,6 +3233,16 @@ ${outcome}
       const xmlSubmission = xmlOnboardingFor(path);
       if (xmlSubmission) {
         await handleXmlSubmission(res, body, requestId, xmlSubmission);
+        return;
+      }
+
+      if (path === "/admin/trusted-lists/generate-signing-material") {
+        await handleGenerateXmlSigningMaterial(
+          res,
+          parseFormBody(body),
+          parseFormBodyMulti(body),
+          requestId,
+        );
         return;
       }
 
