@@ -334,7 +334,9 @@ describe("XML Trusted List creation and publication visibility", () => {
     expect(html).not.toContain("Allowed service profiles:");
     expect(html).toContain("ETSI TS 119 612");
     expect(html).toContain("XML / XAdES-B-B");
-    expect(html).toContain("latest/trusted-list.xml");
+    expect(html).toContain('class="catalogue-table"');
+    expect(html).not.toContain("<h2>Trusted List</h2>");
+    expect(html).not.toContain("<h2>Versions</h2>");
   });
 
   it("aligns the XML version page with the shared heading and sections", async () => {

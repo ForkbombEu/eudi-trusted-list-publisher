@@ -814,7 +814,8 @@ the list key as the title, then a tag-only subtitle: family/profile chips where
 available plus their standard and format (`ETSI TS 119 602` / `JSON / JAdES-B-B`
 or `ETSI TS 119 612` / `XML / XAdES-B-B`). Version pages use
 `{listKey} - Version {sequence}` and repeat the same subtitle. XML histories
-list immutable versions in ascending sequence order from 1, matching JSON.
+list immutable versions in an unwrapped table in ascending sequence order from
+1, matching JSON.
 
 An XML version page has the same section sequence as a JSON version page:
 List Information, Signature & Validation, Signing Certificate, Trust Inspector,

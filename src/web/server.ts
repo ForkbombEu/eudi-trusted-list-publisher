@@ -1093,25 +1093,10 @@ export function createWebServer(config: ServerConfig) {
 <h1>${escapeHtml(listKey)}${listDefects.length > 0 ? ` ${brokenBadge()}` : ""}</h1>
 ${xmlListSubtitle(acceptedProfiles)}
 ${brokenListSectionHtml(listDefects, "TS 119 612")}
-<div class="card">
-  <h2>Trusted List</h2>
-  <table class="kv-table"><tbody>
-    <tr><th>Scheme operator</th><td>${escapeHtml(summary?.schemeOperatorName ?? "")}</td></tr>
-    <tr><th>Scheme territory</th><td><code>${escapeHtml(summary?.territory ?? "")}</code></td></tr>
-    <tr><th>Versions</th><td>${versions.length}</td></tr>
-  </tbody></table>
-  <p class="field-help">Stable latest URLs:
-    <a href="/lists/${encodeURIComponent(listKey)}/latest/trusted-list.xml"><code>/lists/${escapeHtml(listKey)}/latest/trusted-list.xml</code></a> and
-    <a href="/lists/${encodeURIComponent(listKey)}/latest/trusted-list.sha2"><code>/lists/${escapeHtml(listKey)}/latest/trusted-list.sha2</code></a>.
-  </p>
-</div>
-<div class="card">
-  <h2>Versions</h2>
-  <table class="catalogue-table">
-    <thead><tr><th>Sequence</th><th>Issued</th><th>Next update</th><th>Signature</th><th>Schema</th><th>Open</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-</div>`;
+<table class="catalogue-table">
+  <thead><tr><th>Sequence</th><th>Issued</th><th>Next update</th><th>Signature</th><th>Schema</th><th>Open</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>`;
     sendHtml(res, 200, page(listKey, body));
   }
 
