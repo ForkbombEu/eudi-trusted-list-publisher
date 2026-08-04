@@ -79,6 +79,8 @@ Open `/` for the public catalogue, `/onboarding` to submit a provider to a
 compatible list, and `/admin` for authenticated review, publication, settings
 and list creation. In the Catalogue's **Trusted List Family** column, an XML
 list accepting both EAA and QEAA displays both family chips with a small gap.
+The **Trusted List** column names the list as plain monospace text in its
+family's colour, so only the family column carries a filled chip.
 List pages use the list key as their title and show only tags beneath it: family
 or accepted-profile tags, the ETSI standard and the artifact format. Version
 pages use `<list-key> - Version <n>` and keep the same tags; XML histories run

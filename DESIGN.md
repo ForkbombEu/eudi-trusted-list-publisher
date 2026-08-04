@@ -90,6 +90,15 @@ always the same colour wherever it appears: catalogue, list and version pages,
 onboarding, administration and settings. `src/web/views/colors.ts` decides the
 class, `app.css` defines the colour, and a test proves the two stay in step.
 
+The Catalogue is the one exception to the list chip. Its rows already carry a
+family chip, so a second filled chip for the list key would read as a badge
+inside a badge. The **Trusted List** column names the list as plain monospace
+text — no background, border or padding — tinted with its family's chip text
+colour, and an XML list accepting more than one profile takes the colour of the
+first family it accepts while still showing every family chip. A list whose
+family is unknown is named in the muted foreground colour rather than guessing
+one.
+
 Testing-tool warning notices are not used. The catalogue states plainly that the
 lists are published for testing and debugging purposes only.
 
