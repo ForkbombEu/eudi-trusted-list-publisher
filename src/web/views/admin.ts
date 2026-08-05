@@ -31,9 +31,62 @@ export function adminIndexHtml(): string {
 </div>
 <div class="card">
   <h2>Configuration</h2>
+  <p><a href="/admin/lists" class="btn">Manage Lists</a></p>
   <p><a href="/admin/signing" class="btn">Signing Configuration</a></p>
   <p><a href="/admin/settings" class="btn">Settings</a></p>
 </div>
+`;
+}
+
+export interface ManagedListRow {
+  readonly listKey: string;
+  readonly standard: "TS 119 602" | "TS 119 612";
+  readonly families: readonly string[];
+  readonly schemeName: string;
+}
+
+export function adminManageListsHtml(rows: readonly ManagedListRow[]): string {
+  if (rows.length === 0) {
+    return `
+<h1>Manage Lists</h1>
+<div class="card"><p>No Trusted Lists are configured.</p></div>
+<p><a href="/admin" class="btn">Back to Administration</a></p>
+`;
+  }
+
+  const entries = rows
+    .map((row, index) => {
+      const dialogId = `delete-list-${index}`;
+      const key = escape(row.listKey);
+      return `
+  <tr>
+    <td>${listChip(row.listKey)}</td>
+    <td>${row.families.map((family) => familyChip(family)).join("")}</td>
+    <td>${escape(row.standard)}</td>
+    <td>${escape(row.schemeName)}</td>
+    <td><button type="button" class="btn btn-danger btn-sm" onclick="document.getElementById('${dialogId}').showModal()">Delete</button></td>
+  </tr>
+  <dialog id="${dialogId}" class="delete-list-dialog" aria-labelledby="${dialogId}-title">
+    <div class="delete-list-dialog__content">
+      <h2 id="${dialogId}-title">Delete Trusted List?</h2>
+      <p>This permanently removes <code>${key}</code>, its published versions, applications, configuration and generated signing material. This cannot be undone.</p>
+      <div class="delete-list-dialog__actions">
+        <form method="dialog"><button type="submit" class="btn btn-outline">Cancel</button></form>
+        <form method="post" action="/admin/lists/${key}/delete"><button type="submit" class="btn btn-danger">Delete list permanently</button></form>
+      </div>
+    </div>
+  </dialog>`;
+    })
+    .join("");
+
+  return `
+<h1>Manage Lists</h1>
+<p class="lead">Deleting a list permanently removes all data connected to it.</p>
+<table class="catalogue-table">
+<thead><tr><th>Trusted List</th><th>Family</th><th>Standard</th><th>Name</th><th></th></tr></thead>
+<tbody>${entries}</tbody>
+</table>
+<p><a href="/admin" class="btn">Back to Administration</a></p>
 `;
 }
 

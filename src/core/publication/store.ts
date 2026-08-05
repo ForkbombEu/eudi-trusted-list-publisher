@@ -999,6 +999,17 @@ export class PublicationStore {
     if (entries.length === 0) return null;
     return Math.max(...entries);
   }
+
+  /** Removes every stored artifact for one list key. */
+  deleteList(listKey: string): boolean {
+    assertSafeSegment(listKey, SAFE_KEY_RE, "list key");
+    this.canonicalRootGuard();
+    const listDir = resolve(this.canonicalRoot, listKey);
+    if (!this.fs.existsSync(listDir)) return false;
+    rejectSymlinksInPath(this.fs, this.canonicalRoot, listDir);
+    removeDir(this.fs, listDir);
+    return true;
+  }
 }
 
 export interface IndexVersionEntry {

@@ -457,6 +457,42 @@ a:has(.list-name) {
   color: white;
 }
 
+.delete-list-dialog {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  width: min(560px, calc(100% - 2 * var(--space-4)));
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--destructive);
+  border-radius: var(--radius-md);
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+  transform: translate(-50%, -50%);
+}
+
+.delete-list-dialog::backdrop {
+  background: rgb(0 0 0 / 4%);
+  backdrop-filter: blur(4px);
+}
+
+.delete-list-dialog__content {
+  padding: var(--space-5);
+  border-left: 6px solid var(--destructive);
+}
+
+.delete-list-dialog__content h2 {
+  color: var(--destructive);
+}
+
+.delete-list-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
 .btn-sm {
   height: 28px;
 }

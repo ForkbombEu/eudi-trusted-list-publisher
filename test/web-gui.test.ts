@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+  mkdirSync,
+} from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
@@ -16,6 +22,8 @@ import {
   adminApplicationDetailHtml,
   adminApplicationsHtml,
 } from "../src/web/views/admin.js";
+import { AuthoringStore } from "../src/core/authoring/authoring-store.js";
+import { TslApplicationStore } from "../src/core/tsl612/authoring/application-store.js";
 
 function extractCookie(setCookieHeaders: string[]): string {
   return setCookieHeaders.map((h) => h.split(";")[0]!).join("; ");
@@ -401,6 +409,116 @@ describe("GUI admin authentication", () => {
       try {
         rmSync(sigConfigPath, { force: true });
       } catch {}
+    }
+  });
+});
+
+describe("Manage Lists", () => {
+  it("confirms and deletes all local state connected to one list", async () => {
+    const publicationDir = tmpDir();
+    const authoringDir = tmpDir();
+    const certificatesDir = tmpDir();
+    const configDir = tmpDir();
+    const signingConfigPath = createSigningConfig(configDir);
+    const listKey = "eu_test_authority";
+    const applicationStore = new AuthoringStore({ authoringDir });
+    applicationStore.save({
+      ...walletAdminApplication,
+      id: "a0000000-0000-4000-8000-000000000001",
+      targetListKey: listKey,
+      state: "submitted",
+    });
+    const xmlApplications = new TslApplicationStore({
+      applicationsDir: join(authoringDir, "xml-applications"),
+    });
+    xmlApplications.create({
+      schemaVersion: 1,
+      standard: "TS 119 612",
+      family: "eaa-providers",
+      state: "submitted",
+      submittedAt: "2026-08-05T12:00:00Z",
+      listKey,
+      tspName: "XML Provider",
+      registrationIdentifier: "123",
+      registrationIdentifierKind: "national",
+      address: {
+        streetAddress: "Via Roma 1",
+        locality: "Roma",
+        countryName: "IT",
+      },
+      email: "provider@example.it",
+      website: "https://provider.example.it",
+      tspInformationUri: "https://provider.example.it/about",
+      serviceName: "EAA service",
+      certificatePem: TEST_CERT,
+      evidence: "recognised by the Member State",
+    });
+    mkdirSync(join(publicationDir, listKey, "versions", "1"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(publicationDir, listKey, "versions", "1", "lote.json"),
+      "{}\n",
+    );
+    mkdirSync(join(certificatesDir, listKey), { recursive: true });
+    writeFileSync(join(certificatesDir, listKey, "signing-key.pem"), "key");
+    writeFileSync(
+      join(certificatesDir, listKey, "signing-cert.pem"),
+      "certificate",
+    );
+    writeFileSync(
+      join(authoringDir, "settings.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        autoApproveFamilies: {},
+        autoApproveLists: { [listKey]: true },
+      }),
+    );
+
+    const { url, stop } = await startServer({
+      publicationDir,
+      dataCollectionGui: true,
+      authoringDir,
+      adminToken: "delete-token",
+      signingConfigPath,
+      certificatesDir,
+    });
+    try {
+      const signIn = await httpGet(`${url}/admin?token=delete-token`);
+      const cookie = extractCookie(signIn.cookies);
+      const page = await httpGet(`${url}/admin/lists`, cookie);
+      expect(page.status).toBe(200);
+      expect(page.body).toContain("Manage Lists");
+      expect(page.body).toContain("delete-list-dialog");
+      expect(page.body).toContain("Delete list permanently");
+
+      const deleted = await httpPost(
+        `${url}/admin/lists/${listKey}/delete`,
+        "",
+        cookie,
+      );
+      expect(deleted.status).toBe(303);
+      expect(deleted.headers.location).toBe("/admin/lists");
+      expect(existsSync(join(publicationDir, listKey))).toBe(false);
+      expect(existsSync(join(certificatesDir, listKey))).toBe(false);
+      expect(applicationStore.list()).toEqual([]);
+      expect(xmlApplications.listForListKey(listKey)).toEqual([]);
+      expect(JSON.parse(readFileSync(signingConfigPath, "utf-8"))).toEqual({
+        lists: [],
+      });
+      expect(
+        JSON.parse(readFileSync(join(authoringDir, "settings.json"), "utf-8")),
+      ).toMatchObject({ autoApproveLists: {} });
+    } finally {
+      await stop();
+      for (const path of [
+        publicationDir,
+        authoringDir,
+        certificatesDir,
+        configDir,
+      ]) {
+        rmSync(path, { recursive: true, force: true });
+      }
     }
   });
 });

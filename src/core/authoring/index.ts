@@ -31,6 +31,7 @@ export {
   getFamilyConfigs,
   signingConfigDisplay,
   loadSigningKey,
+  removeSigningConfigEntry,
 } from "./signing-config.js";
 export {
   parseAndValidateSubmission,
@@ -58,7 +59,10 @@ export type {
   CreateListSuccess,
   ListCreationDeps,
 } from "./list-creation.js";
-export { generateSigningMaterial } from "./signing-material.js";
+export {
+  generateSigningMaterial,
+  deleteGeneratedSigningMaterial,
+} from "./signing-material.js";
 export type {
   GeneratedSigningMaterial,
   GenerateSigningMaterialRequest,

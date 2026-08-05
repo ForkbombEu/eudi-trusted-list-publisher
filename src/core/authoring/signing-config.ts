@@ -1,6 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
-import { X509Certificate } from "node:crypto";
-import { parse as parseYaml } from "yaml";
+import {
+  existsSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { randomBytes, X509Certificate } from "node:crypto";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   getEnabledProfile,
   type EnabledProfileFamily,
@@ -196,6 +202,35 @@ export function loadSigningConfig(path: string): SigningConfig {
     keys.add(entry.listKey);
   }
   return { lists, trustedLists };
+}
+
+/** Removes one list declaration while preserving every other configured list. */
+export function removeSigningConfigEntry(
+  path: string,
+  listKey: string,
+): boolean {
+  const config = loadSigningConfig(path);
+  const entries = [...config.lists, ...(config.trustedLists ?? [])];
+  const remaining = entries.filter((entry) => entry.listKey !== listKey);
+  if (remaining.length === entries.length) return false;
+
+  const serialized =
+    path.endsWith(".yaml") || path.endsWith(".yml")
+      ? stringifyYaml({ lists: remaining })
+      : `${JSON.stringify({ lists: remaining }, null, 2)}\n`;
+  const temporary = `${path}.tmp_${randomBytes(6).toString("hex")}`;
+  writeFileSync(temporary, serialized, { encoding: "utf-8", flag: "wx" });
+  try {
+    renameSync(temporary, path);
+  } catch (error) {
+    try {
+      if (existsSync(temporary)) unlinkSync(temporary);
+    } catch {
+      /* Preserve the original rename failure. */
+    }
+    throw error;
+  }
+  return true;
 }
 
 /** The TS 119 612 Trusted List with this key, if the configuration has one. */

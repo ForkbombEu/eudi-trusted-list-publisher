@@ -18,6 +18,7 @@ import {
   signingConfigDisplay,
   ApplicationService,
   createTrustedList,
+  deleteGeneratedSigningMaterial,
   deriveListKeyFromParts,
   generateSigningMaterial,
   type CreateListResult,
@@ -63,6 +64,7 @@ import { type TslFamily } from "../core/tsl612/registry.js";
 import {
   getTrustedListConfigsForFamily,
   findTrustedListConfig,
+  removeSigningConfigEntry,
 } from "../core/authoring/signing-config.js";
 import {
   eaaProviderFormHtml,
@@ -676,6 +678,7 @@ export function createWebServer(config: ServerConfig) {
       ? new InspectorClient({ baseUrl: config.inspectorBaseUrl })
       : null;
   let tslApplicationService: TslApplicationService | null = null;
+  let tslApplicationStore: TslApplicationStore | null = null;
 
   let authoringStore: AuthoringStore | null = null;
   let settingsStore: SettingsStore | null = null;
@@ -694,10 +697,11 @@ export function createWebServer(config: ServerConfig) {
     authoringStore = new AuthoringStore({ authoringDir: config.authoringDir });
     /* TS 119 612 applications are stored apart from the TS 119 602 ones: the
        two record shapes share no fields beyond an id and a state. */
+    tslApplicationStore = new TslApplicationStore({
+      applicationsDir: resolve(config.authoringDir, "xml-applications"),
+    });
     tslApplicationService = new TslApplicationService({
-      applications: new TslApplicationStore({
-        applicationsDir: resolve(config.authoringDir, "xml-applications"),
-      }),
+      applications: tslApplicationStore,
       store: trustedListStore,
       trustedListConfig: (listKey) =>
         signingConfig
@@ -801,6 +805,73 @@ export function createWebServer(config: ServerConfig) {
       });
     }
     return grouped;
+  }
+
+  function managedLists(): Array<{
+    listKey: string;
+    standard: "TS 119 602" | "TS 119 612";
+    families: string[];
+    schemeName: string;
+  }> {
+    if (!signingConfig) return [];
+    return [
+      ...signingConfig.lists.map((entry) => ({
+        listKey: entry.listKey,
+        standard: "TS 119 602" as const,
+        families: [entry.family],
+        schemeName: entry.schemeName,
+      })),
+      ...(signingConfig.trustedLists ?? []).map((entry) => ({
+        listKey: entry.listKey,
+        standard: "TS 119 612" as const,
+        families: [...entry.allowedServiceProfiles],
+        schemeName: entry.schemeName,
+      })),
+    ].sort((left, right) => left.listKey.localeCompare(right.listKey));
+  }
+
+  function deleteManagedList(listKey: string):
+    | { success: true }
+    | {
+        success: false;
+        error: string;
+      } {
+    if (!signingConfigPath || !signingConfig)
+      return {
+        success: false,
+        error: "No signing configuration is available.",
+      };
+    if (!managedLists().some((entry) => entry.listKey === listKey))
+      return { success: false, error: "Trusted List not found." };
+
+    try {
+      /* Published applications are intentionally included: deleting a list
+         removes its whole local authoring history, not just pending requests. */
+      for (const application of authoringStore?.list() ?? []) {
+        if (application.targetListKey === listKey)
+          authoringStore!.delete(application.id);
+      }
+      for (const application of tslApplicationStore?.listForListKey(listKey) ??
+        [])
+        tslApplicationStore!.delete(application.id);
+
+      store.deleteList(listKey);
+      if (certificatesDir)
+        deleteGeneratedSigningMaterial(certificatesDir, listKey);
+      removeSigningConfigEntry(signingConfigPath, listKey);
+      if (settingsStore) {
+        const settings = settingsStore.load();
+        delete settings.autoApproveLists[listKey];
+        settingsStore.save(settings);
+      }
+      reloadSigningConfig();
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Trusted List deletion failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   }
 
   /**
@@ -2487,6 +2558,23 @@ ${versionDownloadsHtml(listKey, sequence)}
       return;
     }
 
+    if (path === "/admin/lists" && signingConfigPath) {
+      import("../web/views/admin.js")
+        .then(({ adminManageListsHtml }) => {
+          sendHtml(
+            res,
+            200,
+            guiPage("Manage Lists", adminManageListsHtml(managedLists())),
+          );
+          logRequest("GET", path, 200, requestId);
+        })
+        .catch(() => {
+          send500(res, requestId);
+          logRequest("GET", path, 500, requestId);
+        });
+      return;
+    }
+
     if (path === "/admin") {
       import("../web/views/admin.js")
         .then(({ adminIndexHtml }) => {
@@ -3355,6 +3443,40 @@ ${outcome}
         const fields: Record<string, string | string[]> = parseFormBody(body);
         fields.defects = parseFormBodyMulti(body).defects ?? [];
         await handleCreateTrustedList(res, fields, requestId);
+        return;
+      }
+
+      const deleteListMatch = path.match(/^\/admin\/lists\/([^/]+)\/delete$/);
+      if (deleteListMatch) {
+        const result = deleteManagedList(
+          decodeURIComponent(deleteListMatch[1]!),
+        );
+        if (result.success) {
+          res.writeHead(303, {
+            ...securityHeaders(),
+            "Cache-Control": "no-store",
+            Location: "/admin/lists",
+          });
+          res.end();
+          logRequest("POST", path, 303, requestId);
+        } else {
+          import("../web/views/admin.js")
+            .then(({ adminManageListsHtml }) => {
+              sendHtml(
+                res,
+                400,
+                guiPage(
+                  "Manage Lists",
+                  `<div class="error-msg">${escapeHtml(result.error)}</div>${adminManageListsHtml(managedLists())}`,
+                ),
+              );
+              logRequest("POST", path, 400, requestId);
+            })
+            .catch(() => {
+              send500(res, requestId);
+              logRequest("POST", path, 500, requestId);
+            });
+        }
         return;
       }
 
