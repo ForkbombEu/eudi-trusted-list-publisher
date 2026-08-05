@@ -77,8 +77,11 @@ export function defectsAtStage(
 }
 
 /** Every rule ID the selected defects are expected to trip, deduplicated. */
-export function expectedRuleIdsFor(ids: readonly string[]): string[] {
-  return expectedRuleIdsForStandard(ids, STANDARD);
+export function expectedRuleIdsFor(
+  ids: readonly string[],
+  family?: EnabledProfileFamily,
+): string[] {
+  return expectedRuleIdsForStandard(ids, STANDARD, family);
 }
 
 export interface PreSignContext {
@@ -664,10 +667,12 @@ export function buildFixtureMetadata(
   localValidationFailures: readonly string[],
   actualInspectorFailures: readonly string[],
   generatedAt: Date,
+  family: EnabledProfileFamily,
 ): FixtureMetadata {
   return buildSharedFixtureMetadata({
     standard: STANDARD,
     artifactFormat: "JSON / JAdES",
+    profile: family,
     selectedDefects,
     mutations,
     actualLocalFailures: localValidationFailures,

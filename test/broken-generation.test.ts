@@ -392,6 +392,18 @@ describe("broken list markers", () => {
     expect(html).toContain("clause 6.6.9");
   });
 
+  it("uses the selected list family for profile-specific Inspector rules", () => {
+    expect(
+      expectedRuleIdsFor(["missing_scheme_information_uri"], "pid-providers"),
+    ).toContain("ts119602.profile.pid_providers.scheme_information");
+    expect(
+      expectedRuleIdsFor(["missing_scheme_information_uri"], "pid-providers"),
+    ).not.toContain("ts119602.profile.pub_eaa_providers.scheme_information");
+    expect(
+      expectedRuleIdsFor(["jades_without_signing_time"], "pid-providers"),
+    ).toContain("ts119602.profile.pid_providers.signature");
+  });
+
   it("explains every selected defect with its normative reference", () => {
     const html = brokenListSectionHtml([
       "missing_policy_or_legal_notice",

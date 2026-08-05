@@ -563,6 +563,7 @@ export class ApplicationService {
               [...localValidationFailures, ...pubResult.structuralFindings],
               evaluation?.summary.locallyDecidableFailures ?? [],
               signingTime,
+              family,
             ),
             null,
             2,

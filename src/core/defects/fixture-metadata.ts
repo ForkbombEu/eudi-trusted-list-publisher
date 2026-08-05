@@ -91,6 +91,8 @@ export interface FixtureMetadata {
 export interface BuildFixtureMetadataInput {
   readonly standard: DefectStandard;
   readonly artifactFormat: DefectArtifactFormat;
+  /** TS 119 602 family, used to select family-specific Inspector rule IDs. */
+  readonly profile?: string;
   readonly selectedDefects: readonly string[];
   readonly mutations: readonly AppliedMutation[];
   /** Stable local check IDs that failed, e.g. `local.xml.schema`. */
@@ -114,6 +116,7 @@ export function buildFixtureMetadata(
   const expectedInspector = expectedRuleIdsForStandard(
     input.selectedDefects,
     input.standard,
+    input.profile,
   );
   const expectedLocal = expectedLocalFailuresForStandard(
     input.selectedDefects,

@@ -796,12 +796,30 @@ export function defectsAtStageFor(
 export function expectedRuleIdsForStandard(
   ids: readonly string[],
   standard: DefectStandard,
+  profile?: string,
 ): string[] {
   const rules = new Set<string>();
   for (const id of ids)
     for (const rule of defectForStandard(id, standard)?.expectedRuleIds ?? [])
-      rules.add(rule);
+      rules.add(profileRuleForFamily(rule, standard, profile));
   return [...rules].sort();
+}
+
+/**
+ * The Inspector namespaces TS 119 602 profile checks by the list family. The
+ * defect catalogue names the rule shape once; fixture metadata substitutes the
+ * family that actually produced the list, rather than claiming every list is
+ * a Pub-EAA list.
+ */
+function profileRuleForFamily(
+  rule: string,
+  standard: DefectStandard,
+  profile: string | undefined,
+): string {
+  if (standard !== "TS 119 602" || !profile) return rule;
+  const suffix = /^ts119602\.profile\.[^.]+\.(.+)$/.exec(rule)?.[1];
+  if (!suffix) return rule;
+  return `ts119602.profile.${profile.replace(/-/g, "_")}.${suffix}`;
 }
 
 /** Every local check ID the selected defects are expected to fail. */

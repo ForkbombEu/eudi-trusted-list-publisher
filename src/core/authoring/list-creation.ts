@@ -505,6 +505,7 @@ export async function createTrustedList(
         [...localValidationFailures, ...published.structuralFindings],
         inspector.summary.locallyDecidableFailures ?? [],
         now,
+        request.family,
       );
       try {
         deps.publicationStore.writeFixtureMetadata(
