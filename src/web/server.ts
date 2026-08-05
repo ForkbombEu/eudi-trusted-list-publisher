@@ -1520,9 +1520,7 @@ over the published Lists of Trusted Entities.</p>
           );
           rows += `
       <tr${xmlDefectIds.length > 0 ? ' class="catalogue-row-broken"' : ""}>
-        <td><a href="/lists/${escapeHtml(key)}">${listPlainName(key, catalogueFamilies)}</a>${
-          xmlDefectIds.length > 0 ? ` ${brokenBadge()}` : ""
-        }</td>
+        <td><a href="/lists/${escapeHtml(key)}">${listPlainName(key, catalogueFamilies)}</a></td>
         <td>${catalogueFamilies.length > 0 ? `<span class="chip-group">${catalogueFamilies.map((family) => familyChip(family)).join("")}</span>` : "&mdash;"}</td>
         <td>${escapeHtml(String(newest.sequenceNumber))}</td>
         <td>${escapeHtml(newest.issueDate)}</td>
@@ -1551,9 +1549,7 @@ over the published Lists of Trusted Entities.</p>
         );
         rows += `
       <tr${defectIds.length > 0 ? ' class="catalogue-row-broken"' : ""}>
-        <td><a href="/lists/${escapeHtml(key)}">${listPlainName(key, family)}</a>${
-          defectIds.length > 0 ? ` ${brokenBadge()}` : ""
-        }</td>
+        <td><a href="/lists/${escapeHtml(key)}">${listPlainName(key, family)}</a></td>
         <td>${family ? familyChip(family) : "&mdash;"}</td>
         <td>${escapeHtml(String(latest.sequenceNumber))}</td>
         <td>${escapeHtml(latest.issueDate)}</td>
@@ -1575,7 +1571,15 @@ over the published Lists of Trusted Entities.</p>
         <table class="catalogue-table">
         <thead><tr><th>Trusted List</th><th>Trusted List Family</th><th>Latest Seq</th><th>Issue Date</th><th>Next Update</th><th>Signature</th><th>Trust</th><th>Broken</th><th>Open</th></tr></thead>
         <tbody>${rows}</tbody>
-        </table>`,
+        </table>
+        <script>
+          document.addEventListener("click", function (event) {
+            if (!(event.target instanceof Element)) return;
+            document.querySelectorAll(".broken-fixture-popover[open]").forEach(function (popover) {
+              if (!popover.contains(event.target)) popover.removeAttribute("open");
+            });
+          });
+        </script>`,
         ),
       );
     } catch {

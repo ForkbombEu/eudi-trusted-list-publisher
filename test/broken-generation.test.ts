@@ -381,11 +381,13 @@ describe("broken list markers", () => {
     ).toEqual(["missing_operator_email"]);
   });
 
-  it("renders an em-dash for a healthy list and labels for a broken one", () => {
+  it("renders an em-dash for a healthy list and an anchored disclosure for a broken one", () => {
     expect(brokenColumnHtml([])).toBe("&mdash;");
     const html = brokenColumnHtml(["extension_without_criticality"]);
     expect(html).toContain("Extension without criticality");
-    expect(html).toContain("Broken");
+    expect(html).toContain("&#9888; Broken &middot; 1");
+    expect(html).toContain('<details class="broken-fixture-popover">');
+    expect(html).toContain("Broken fixture");
     /* The normative reference is the tooltip, so it must reach the markup. */
     expect(html).toContain("clause 6.6.9");
   });

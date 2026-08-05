@@ -1028,6 +1028,34 @@ textarea:focus {
   max-width: 22rem;
 }
 
+.broken-fixture-popover {
+  position: relative;
+  display: inline-block;
+}
+
+.broken-fixture-popover > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.broken-fixture-popover > summary::-webkit-details-marker {
+  display: none;
+}
+
+.broken-fixture-popover__panel {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  width: max-content;
+  max-width: min(24rem, calc(100vw - 2 * var(--space-4)));
+  padding: var(--space-3);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+}
+
 .broken-defect-list {
   margin: 0.35rem 0 0;
   padding-left: 1.1rem;

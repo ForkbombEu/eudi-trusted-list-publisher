@@ -44,7 +44,7 @@ export function defectIdsFromFixture(metadataJson: string | null): string[] {
   }
 }
 
-/** Compact one-line-per-defect summary for the catalogue's Broken column. */
+/** A compact, anchored disclosure of the defects behind a catalogue warning. */
 export function brokenColumnHtml(
   defectIds: readonly string[],
   standard: DefectStandard = "TS 119 602",
@@ -57,7 +57,13 @@ export function brokenColumnHtml(
       return `<li title="${escapeHtml(spec?.normativeReference ?? id)}">${escapeHtml(label)}</li>`;
     })
     .join("");
-  return `${brokenBadge()}<ul class="broken-defect-list">${items}</ul>`;
+  return `<details class="broken-fixture-popover">
+  <summary class="badge badge-warning" title="Show broken fixtures">&#9888; Broken &middot; ${defectIds.length}</summary>
+  <div class="broken-fixture-popover__panel">
+    <strong>Broken fixture${defectIds.length === 1 ? "" : "s"}</strong>
+    <ul class="broken-defect-list">${items}</ul>
+  </div>
+</details>`;
 }
 
 /**
