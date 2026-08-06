@@ -300,9 +300,17 @@ describe("XML Trusted List creation and publication visibility", () => {
     const xml = await get(`/lists/${eaaList()}/latest/trusted-list.xml`);
     expect(xml.status).toBe(200);
     expect(xml.headers.get("content-type")).toBe(TSL_MEDIA_TYPE);
+    expect(xml.headers.get("content-disposition")).toBe("inline");
     const sha2 = await get(`/lists/${eaaList()}/latest/trusted-list.sha2`);
     expect(sha2.status).toBe(200);
     expect((await sha2.text()).trim()).toMatch(/^[0-9a-f]{64}$/);
+
+    expect((await get(`/lists/${eaaList()}/latest/lote.json`)).status).toBe(
+      404,
+    );
+    expect((await get(`/lists/${eaaList()}/latest/lote.jades`)).status).toBe(
+      404,
+    );
   });
 
   it("shows the XML list in the Catalogue with an XML button", async () => {

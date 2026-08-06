@@ -197,7 +197,8 @@ paths:
       summary: The current signed XML Trusted List, at a stable URL
       description: >-
         Always the newest version of the list. The URL does not change when a
-        version is published, so a consumer can poll one address.
+        version is published, so a consumer can poll one address. It is served
+        inline, rather than as an attachment.
       operationId: getLatestTrustedListXml
       parameters:
         - name: listKey
@@ -207,11 +208,53 @@ paths:
             type: string
       responses:
         "200":
-          description: The signed XML Trusted List of the newest version
+          description: The signed XML Trusted List of the newest version, displayed inline
           content:
             application/vnd.etsi.tsl+xml: {}
         "404":
           description: No XML Trusted List is published under this key
+  /lists/{listKey}/latest/lote.json:
+    get:
+      summary: Open the current JSON LoTE in the browser
+      description: >-
+        Always the newest ETSI TS 119 602 JSON LoTE for this list. It is served
+        inline, rather than as an attachment. Returns 404 for a TS 119 612 XML
+        Trusted List because that standard publishes trusted-list.xml instead.
+      operationId: getLatestLoteJson
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The newest JSON LoTE, displayed inline
+          content:
+            application/json: {}
+        "404":
+          description: No JSON LoTE is published under this key
+  /lists/{listKey}/latest/lote.jades:
+    get:
+      summary: Open the current Compact JAdES in the browser
+      description: >-
+        Always the newest ETSI TS 119 602 Compact JAdES for this list. It is
+        served as inline plain text, rather than as an attachment. Returns 404
+        for a TS 119 612 XML Trusted List because its signature is enveloped.
+      operationId: getLatestLoteJades
+      parameters:
+        - name: listKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The newest Compact JAdES, displayed inline
+          content:
+            text/plain: {}
+        "404":
+          description: No Compact JAdES is published under this key
   /lists/{listKey}/latest/trusted-list.sha2:
     get:
       summary: The SHA-256 of the current XML Trusted List, at a stable URL

@@ -274,6 +274,41 @@ describe("Web UI", () => {
     }
   });
 
+  it("shows the latest JSON LoTE and Compact JAdES inline at stable URLs", async () => {
+    const sequence = new PublicationStore({
+      publicationDir: pubDir,
+    }).getHighestStoredSequence(storedKey);
+    expect(sequence).not.toBeNull();
+
+    const json = await httpGet(`/lists/${storedKey}/latest/lote.json`);
+    expect(json.status).toBe(200);
+    expect(json.contentType).toContain("application/json");
+    expect(json.headers["content-disposition"]).toBe("inline");
+    expect(json.body).toBe(
+      await new PublicationStore({ publicationDir: pubDir }).loadVersionBytes(
+        storedKey,
+        sequence!,
+        "lote",
+      ),
+    );
+
+    const jades = await httpGet(`/lists/${storedKey}/latest/lote.jades`);
+    expect(jades.status).toBe(200);
+    expect(jades.contentType).toContain("text/plain");
+    expect(jades.headers["content-disposition"]).toBe("inline");
+    expect(jades.body).toBe(
+      await new PublicationStore({ publicationDir: pubDir }).loadVersionBytes(
+        storedKey,
+        sequence!,
+        "signature",
+      ),
+    );
+
+    expect(
+      (await httpGet(`/lists/${storedKey}/latest/trusted-list.xml`)).status,
+    ).toBe(404);
+  });
+
   it("serves list detail page", async () => {
     const key = await storePublication();
     const res = await httpGet(`/lists/${key}`);
@@ -788,9 +823,9 @@ describe("HTTP correctness", () => {
 
   it("API route registry is used and complete", async () => {
     const routes = getApiRoutes();
-    /* 9 TS 119 602 routes, the 4 TS 119 612 artifact routes, the shared
+    /* 11 TS 119 602 routes, the 4 TS 119 612 artifact routes, the shared
        negative-fixture route and the XML list creation route. */
-    expect(routes.length).toBe(15);
+    expect(routes.length).toBe(17);
 
     const paths = routes.map((r) => r.path);
     expect(paths).toContain("/api/v1/lists");
@@ -802,6 +837,8 @@ describe("HTTP correctness", () => {
     );
     expect(paths).toContain("/lists/{listKey}/latest/trusted-list.xml");
     expect(paths).toContain("/lists/{listKey}/latest/trusted-list.sha2");
+    expect(paths).toContain("/lists/{listKey}/latest/lote.json");
+    expect(paths).toContain("/lists/{listKey}/latest/lote.jades");
     expect(paths).toContain("/api/v1/lists/{listKey}/versions/{sequence}/lote");
     expect(paths).toContain(
       "/api/v1/lists/{listKey}/versions/{sequence}/inspector",

@@ -524,6 +524,18 @@ const API_ROUTES: ApiRoute[] = [
   },
   {
     method: "GET",
+    path: "/lists/{listKey}/latest/lote.json",
+    matcher: /^\/lists\/([a-z0-9_.@()-]+)\/latest\/lote\.json$/,
+    handler: "getLatestLoteJson",
+  },
+  {
+    method: "GET",
+    path: "/lists/{listKey}/latest/lote.jades",
+    matcher: /^\/lists\/([a-z0-9_.@()-]+)\/latest\/lote\.jades$/,
+    handler: "getLatestLoteJades",
+  },
+  {
+    method: "GET",
     path: "/api/v1/lists/{listKey}/versions/{sequence}/lote",
     matcher: /^\/api\/v1\/lists\/([a-z0-9_.@()-]+)\/versions\/(\d+)\/lote$/,
     handler: "getLoteJson",
@@ -1051,19 +1063,25 @@ export function createWebServer(config: ServerConfig) {
     }
 
     /*
-      The stable latest URLs. They end exactly in `trusted-list.xml` and
-      `trusted-list.sha2`, so a consumer can hard-code one URL and always get
-      the current version's bytes.
+      The stable latest URLs end in their published artifact filenames, so a
+      reader can open the newest JSON, Compact JAdES, or XML bytes directly.
     */
     const latestMatch = path.match(
-      /^\/lists\/([a-z0-9_.@()-]+)\/latest\/(trusted-list\.xml|trusted-list\.sha2)$/,
+      /^\/lists\/([a-z0-9_.@()-]+)\/latest\/(lote\.json|lote\.jades|trusted-list\.xml|trusted-list\.sha2)$/,
     );
     if (latestMatch) {
+      const [, listKey, artifact] = latestMatch;
+      if (artifact === "lote.json" || artifact === "lote.jades") {
+        void serveLatestLoteArtifact(res, listKey!, artifact).then(() => {
+          logRequest("GET", path, res.statusCode, requestId);
+        });
+        return;
+      }
       serveTrustedListArtifact(
         res,
-        latestMatch[1]!,
-        publicationReader.latestXmlSequence(latestMatch[1]!),
-        latestMatch[2]!,
+        listKey!,
+        publicationReader.latestXmlSequence(listKey!),
+        artifact!,
       );
       logRequest("GET", path, res.statusCode, requestId);
       return;
@@ -1169,10 +1187,48 @@ export function createWebServer(config: ServerConfig) {
     res.writeHead(200, {
       ...securityHeaders(),
       "Content-Type": isXml ? TSL_MEDIA_TYPE : "text/plain; charset=utf-8",
+      ...(isXml ? { "Content-Disposition": "inline" } : {}),
       "Content-Length": Buffer.byteLength(body),
       "Cache-Control": "no-store",
     });
     res.end(body);
+  }
+
+  /** Serves the newest JSON LoTE or Compact JAdES inline for browser viewing. */
+  async function serveLatestLoteArtifact(
+    res: ServerResponse,
+    listKey: string,
+    artifact: "lote.json" | "lote.jades",
+  ): Promise<void> {
+    if (publicationReader.formatOf(listKey) !== "json") {
+      send404(res);
+      return;
+    }
+    const sequenceNumber = store.getHighestStoredSequence(listKey);
+    if (sequenceNumber === null) {
+      send404(res);
+      return;
+    }
+    const fileType = artifact === "lote.json" ? "lote" : "signature";
+    const content = await store.loadVersionBytes(
+      listKey,
+      sequenceNumber,
+      fileType,
+    );
+    if (content === null) {
+      send404(res);
+      return;
+    }
+    sendResponse(
+      res,
+      200,
+      content,
+      artifact === "lote.json"
+        ? "application/json; charset=utf-8"
+        : "text/plain; charset=utf-8",
+      "no-store",
+      { "Content-Disposition": "inline" },
+    );
   }
 
   /** Serves a published XML artifact inline for browser inspection. */

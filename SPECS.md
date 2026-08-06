@@ -251,6 +251,8 @@ CLI -> exported publisher core
 GET /                                 — Catalogue
 GET /lists/:listKey                   — List detail
 GET /lists/:listKey/versions/:seq     — Version detail
+GET /lists/:listKey/latest/lote.json  — Latest LoTE JSON, shown inline
+GET /lists/:listKey/latest/lote.jades — Latest Compact JAdES, shown inline
 GET /healthz                          — Health check
 GET /docs                             — Stoplight Elements
 GET /openapi.yaml                     — OpenAPI 3.1 source
@@ -853,6 +855,8 @@ Public:
 ```
 GET /lists/{listKey}                                 XML list page
 GET /lists/{listKey}/versions/{sequence}             XML version page
+GET /lists/{listKey}/latest/lote.json                stable latest JSON LoTE URL
+GET /lists/{listKey}/latest/lote.jades               stable latest Compact JAdES URL
 GET /lists/{listKey}/latest/trusted-list.xml         stable latest URL
 GET /lists/{listKey}/latest/trusted-list.sha2        stable latest URL
 GET /api/v1/lists/{listKey}/versions/{seq}/trusted-list.xml
@@ -864,6 +868,11 @@ GET /api/v1/lists/{listKey}/versions/{seq}/inspector
 XML is served as `application/vnd.etsi.tsl+xml`. Asking an XML list for `lote`
 or `signature` is a 404 with a message saying why: its signature is inside the
 XML.
+
+The two JSON stable URLs and the XML stable URL are browser views, not download
+endpoints: each responds with `Content-Disposition: inline`. A JSON list has
+`lote.json` and `lote.jades`; an XML list has `trusted-list.xml`. Asking for an
+artifact outside the list's format returns 404.
 
 Onboarding (GUI enabled):
 

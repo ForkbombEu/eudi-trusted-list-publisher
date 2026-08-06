@@ -1706,6 +1706,8 @@ describe("OpenAPI route parity", () => {
         },
         "/lists/{listKey}/latest/trusted-list.xml": { get: {} },
         "/lists/{listKey}/latest/trusted-list.sha2": { get: {} },
+        "/lists/{listKey}/latest/lote.json": { get: {} },
+        "/lists/{listKey}/latest/lote.jades": { get: {} },
         /* Negative-fixture evidence, shared by both standards. */
         "/api/v1/lists/{listKey}/versions/{sequence}/fixture": { get: {} },
         /* One list-creation endpoint per standard. */
