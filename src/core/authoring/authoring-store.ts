@@ -43,6 +43,7 @@ const STATES: readonly ApplicationState[] = [
   "rejected",
   "published",
   "withdrawn",
+  "removed",
 ];
 type RecordValue = Record<string, unknown>;
 const isRecord = (value: unknown): value is RecordValue =>
@@ -122,13 +123,17 @@ function validApplicantData(
     if (
       !isRecord(service) ||
       (service.serviceType !== "issuance" &&
-        service.serviceType !== "revocation") ||
+        service.serviceType !== "revocation" &&
+        service.serviceType !== "register") ||
       !isString(service.serviceName)
     )
       return false;
     if (profile.requiresServiceUniqueIdentifier) {
       if (!isUrlString(service.serviceUniqueIdentifier)) return false;
     } else if (service.serviceUniqueIdentifier !== undefined) return false;
+    if (profile.requiresServiceSupplyPoint) {
+      if (!isUrlString(service.serviceSupplyPoint)) return false;
+    } else if (service.serviceSupplyPoint !== undefined) return false;
     /*
       Annex H makes the service digital identity optional, and lets one service
       carry several renditions of the same identity. Every block still has to
@@ -228,6 +233,7 @@ function parseApplication(
   if (value.approvedAt !== undefined && !isIso(value.approvedAt)) return null;
   if (value.rejectedAt !== undefined && !isIso(value.rejectedAt)) return null;
   if (value.withdrawnAt !== undefined && !isIso(value.withdrawnAt)) return null;
+  if (value.removedAt !== undefined && !isIso(value.removedAt)) return null;
   if (value.adminNote !== undefined && !isString(value.adminNote)) return null;
   const publication =
     value.publication === undefined
@@ -239,6 +245,11 @@ function parseApplication(
       ? undefined
       : parsePublication(value.withdrawal, value.targetListKey);
   if (value.withdrawal !== undefined && withdrawal === null) return null;
+  const removal =
+    value.removal === undefined
+      ? undefined
+      : parsePublication(value.removal, value.targetListKey);
+  if (value.removal !== undefined && removal === null) return null;
   /*
     Only Annex H publishes a service status, so only a Pub-EAA application can
     carry a withdrawal at all.
@@ -248,6 +259,13 @@ function parseApplication(
     (value.state === "withdrawn" ||
       withdrawal !== undefined ||
       value.withdrawnAt !== undefined)
+  )
+    return null;
+  if (
+    family !== "registrars" &&
+    (value.state === "removed" ||
+      removal !== undefined ||
+      value.removedAt !== undefined)
   )
     return null;
   if (
@@ -272,16 +290,32 @@ function parseApplication(
         value.adminNote !== undefined ||
         publication === undefined ||
         withdrawal !== undefined ||
-        value.withdrawnAt !== undefined)) ||
+        value.withdrawnAt !== undefined ||
+        removal !== undefined ||
+        value.removedAt !== undefined)) ||
     (value.state === "withdrawn" &&
       (value.approvedAt === undefined ||
         value.rejectedAt !== undefined ||
         value.adminNote !== undefined ||
         publication === undefined ||
         withdrawal === undefined ||
-        value.withdrawnAt === undefined)) ||
+        value.withdrawnAt === undefined ||
+        removal !== undefined ||
+        value.removedAt !== undefined)) ||
+    (value.state === "removed" &&
+      (family !== "registrars" ||
+        value.approvedAt === undefined ||
+        value.rejectedAt !== undefined ||
+        value.adminNote !== undefined ||
+        publication === undefined ||
+        removal === undefined ||
+        value.removedAt === undefined ||
+        withdrawal !== undefined ||
+        value.withdrawnAt !== undefined)) ||
     (value.state !== "withdrawn" &&
-      (withdrawal !== undefined || value.withdrawnAt !== undefined))
+      (withdrawal !== undefined || value.withdrawnAt !== undefined)) ||
+    (value.state !== "removed" &&
+      (removal !== undefined || value.removedAt !== undefined))
   )
     return null;
   const common = {
@@ -304,6 +338,10 @@ function parseApplication(
       ? { withdrawnAt: value.withdrawnAt }
       : {}),
     ...(withdrawal ? { withdrawal } : {}),
+    ...(typeof value.removedAt === "string"
+      ? { removedAt: value.removedAt }
+      : {}),
+    ...(removal ? { removal } : {}),
   };
   if (!validApplicantData(value.applicantData, family)) return null;
   /*

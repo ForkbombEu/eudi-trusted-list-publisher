@@ -373,8 +373,7 @@ describe("Administration settings page", () => {
       expect(html).toContain(`name="family[${family.key}]"`);
     }
     expect(html).toContain('name="list[eu_test_authority]"');
-    // Families with no implemented profile cannot receive applications.
-    expect(html).toContain('name="family[registrars]" value="on" disabled');
+    expect(html).not.toContain('name="family[registrars]" value="on" disabled');
   });
 
   it("reflects saved settings as checked boxes", () => {

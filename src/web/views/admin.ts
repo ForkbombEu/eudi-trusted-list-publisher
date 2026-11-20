@@ -100,6 +100,7 @@ export function adminApplicationsHtml(
     "rejected",
     "published",
     "withdrawn",
+    "removed",
   ] as const;
 
   let filterHtml = "";
@@ -183,6 +184,7 @@ export function adminApplicationDetailHtml(
     app.family === "wrpac-providers" || app.family === "wrprc-providers"
       ? app.applicantData
       : null;
+  const registrarData = app.family === "registrars" ? app.applicantData : null;
   const relyingParty = relyingPartyData !== null;
   /*
     Annex H carries a legal basis and an optional registration identifier, and
@@ -190,10 +192,12 @@ export function adminApplicationDetailHtml(
   */
   const pubEaaData =
     app.family === "pub-eaa-providers" ? app.applicantData : null;
-  const policyUrl = relyingParty || pubEaaData !== null;
+  const policyUrl =
+    relyingParty || pubEaaData !== null || registrarData !== null;
   const registrationIdentifier =
     relyingPartyData?.registrationIdentifier ??
     pubEaaData?.registrationIdentifier ??
+    registrarData?.registrationIdentifier ??
     null;
   const responsibleMemberState =
     "responsibleMemberState" in data ? data.responsibleMemberState : null;
@@ -217,6 +221,11 @@ export function adminApplicationDetailHtml(
       ${
         svc.serviceUniqueIdentifier
           ? `<tr><th>Unique Identifier</th><td><code>${escape(svc.serviceUniqueIdentifier)}</code></td></tr>`
+          : ""
+      }
+      ${
+        svc.serviceSupplyPoint
+          ? `<tr><th>Register URL</th><td><code>${escape(svc.serviceSupplyPoint)}</code></td></tr>`
           : ""
       }
       <tr><th>Certificate</th><td>${
@@ -267,6 +276,7 @@ ${messages}
     ${app.approvedAt ? `<tr><th>Approved</th><td>${escape(app.approvedAt)}</td></tr>` : ""}
     ${app.rejectedAt ? `<tr><th>Rejected</th><td>${escape(app.rejectedAt)}</td></tr>` : ""}
     ${app.withdrawnAt ? `<tr><th>Withdrawn</th><td>${escape(app.withdrawnAt)}</td></tr>` : ""}
+    ${app.removedAt ? `<tr><th>Removed</th><td>${escape(app.removedAt)}</td></tr>` : ""}
     ${app.adminNote ? `<tr><th>Admin Note</th><td>${escape(app.adminNote)}</td></tr>` : ""}
   </table>
 </div>
@@ -362,6 +372,16 @@ ${
          removed from the next version rather than marked withdrawn.</p>`
       : ""
   }
+  ${
+    registrarData
+      ? `<p class="field-help">Approving this application lists the Registrar and
+         its Registers as <strong>currently mandated</strong> by the Responsible
+         Member State (${escape(responsibleMemberState ?? "—")}). Annex I
+         publishes no ServiceStatus or StatusStartingTime. When the mandate
+         ends, removal publishes a new immutable version without this Registrar
+         or its Registers.</p>`
+      : ""
+  }
   ${actions}
 </div>
 
@@ -410,15 +430,24 @@ function actionsHtml(app: TrustedEntityApplication): string {
   onsubmit="return confirm('Withdraw this Pub-EAA notification? A new immutable list version will be published with every service withdrawn.');">
   <button type="submit" class="btn btn-danger">Withdraw notification</button>
 </form>`
-        : `<p>&#x2705; This application has been published and cannot be modified or deleted.</p>`;
+        : app.family === "registrars"
+          ? `<p>&#x2705; This Registrar has been published and cannot be modified or deleted.</p>
+<form method="post" action="/admin/applications/${id}/remove" style="display:inline;"
+  onsubmit="return confirm('Remove this Registrar and all of its Registers from the current list? A new immutable version will be published.');">
+  <button type="submit" class="btn btn-danger">Remove Registrar</button>
+</form>`
+          : `<p>&#x2705; This application has been published and cannot be modified or deleted.</p>`;
     case "withdrawn":
       return `<p>This Pub-EAA notification has been withdrawn. Both the notified
         and the withdrawn versions remain published and downloadable.</p>`;
+    case "removed":
+      return `<p>This Registrar has been removed from the current list. Both the
+        published and removal versions remain downloadable.</p>`;
   }
 }
 
 function publicationInfoHtml(app: TrustedEntityApplication): string {
-  return `${publicationRecordCard(app.publication, "Publication Record")}${publicationRecordCard(app.withdrawal, "Withdrawal Record")}`;
+  return `${publicationRecordCard(app.publication, "Publication Record")}${publicationRecordCard(app.withdrawal, "Withdrawal Record")}${publicationRecordCard(app.removal, "Removal Record")}`;
 }
 
 function publicationRecordCard(

@@ -5,9 +5,9 @@
 This project publishes Trusted Lists under **two standards**:
 
 1. **ETSI TS 119 602** — JSON Lists of Trusted Entities, signed as Compact
-   JAdES, for five profiles: PID Providers (Annex D), Wallet Providers
-   (Annex E), WRPAC Providers (Annex F), WRPRC Providers (Annex G) and Pub-EAA
-   Providers (Annex H).
+   JAdES, for six profiles: PID Providers (Annex D), Wallet Providers
+   (Annex E), WRPAC Providers (Annex F), WRPRC Providers (Annex G), Pub-EAA
+   Providers (Annex H), and Registrars and Registers (Annex I).
 2. **ETSI TS 119 612** — XML national Trusted Lists, signed as enveloped
    XAdES-B-B, carrying two onboarding service profiles: **EAA Providers**
    (non-qualified) and **QEAA Providers** (qualified).
@@ -35,14 +35,14 @@ standard and which artifact format a list uses rather than inferring it.
 - Defines the abstract data model for LoTE with JSON and XML bindings
 - Profile-based approach for six entity families: PID Providers (Annex D),
   Wallet Providers (Annex E), WRPAC Providers (Annex F), WRPRC Providers
-  (Annex G), Pub-EAA Providers (Annex H) and Registrars and Registers. The last
-  is catalogued and disabled.
+  (Annex G), Pub-EAA Providers (Annex H) and Registrars and Registers
+  (Annex I).
 - References ETSI TS 119 182-1 (JAdES) for JSON signatures
 
 ### ETSI TS 119 182-1 (JAdES)
 
 - Defines Compact JAdES Baseline B profile for JSON Advanced Electronic Signatures
-- All five implemented profiles require Compact JAdES Baseline B
+- All six implemented profiles require Compact JAdES Baseline B
 - JAdES Compact Serialization: BASE64URL(UTF8(JWS Protected Header)).BASE64URL(JWS Payload).BASE64URL(JWS Signature)
 - Required header parameters: `alg`, `x5c` (certificate chain), `typ` (optional, value "JAdES")
 
@@ -299,6 +299,35 @@ Retrieval date: 2026-07-28. Tests must never fetch schemas from the network.
   is optional. `schemas/profiles/pub-eaa-schema.json` is the local Annex H.3
   overlay: validation applies it only to the Pub-EAA LoTE type and requires each
   entity's `TETradeName` to contain the formatted legal-basis URI.
+- `schemas/profiles/registrars-schema.json` is the local Annex I overlay. It
+  fixes the Annex I URIs and `EU` territory, requires the Registrar role URI,
+  Register service type, service supply point and X.509 identity, and rejects
+  historical information and service-status components.
+
+## Registrars and Registers Profile (Annex I)
+
+Annex I uses LoTE type
+`http://uri.etsi.org/19602/LoTEType/EURegistrarsAndRegistersList`, status
+determination
+`http://uri.etsi.org/19602/RegistrarsAndRegistersList/StatusDetn/EU`, scheme
+rules
+`http://uri.etsi.org/19602/RegistrarsAndRegistersList/schemerules/EU`, fixed
+scheme territory `EU`, and Register service type
+`http://uri.etsi.org/19602/SvcType/Register`.
+
+The initial list sequence is 1, later publications are cumulative and
+immutable, `HistoricalInformationPeriod`, `ServiceStatus`, and
+`StatusStartingTime` are absent, a self-pointer is present, and `NextUpdate`
+is at most six months after issue. Scheme information includes the list
+information and previous-versions URIs.
+
+Each Registrar has a role URI ending in its responsible Member State ISO
+3166-1 alpha-2 code, a policy URL, contacts and postal address. Each Register
+has a machine-processable supply-point URI and one or more X.509 certificates
+for verifying Register data. The identity must include the Registrar name and,
+when supplied, its registration identifier. These are data-signing identities;
+the WRPAC/WRPRC CA certificate profile does not apply. Ended mandates remove
+the Registrar from the current list rather than publishing a withdrawn status.
 
 ## Wallet Provider Profile (Annex E)
 
@@ -606,16 +635,16 @@ Established empirically against the Trust Inspector
 (`https://trust-inspector.credimi.io`, `POST /api/audit/artifact`) and recorded
 here because several are lexical or structural rules that the pinned JSON schema
 does not enforce. Except where a row says otherwise, each rule applies to all
-five implemented profiles.
+six implemented profiles.
 
 | Rule                                                                                                                                                   | Where it is applied                                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | clause 6.1.3 UTC form `YYYY-MM-DDThh:mm:ssZ`, no fractional seconds                                                                                    | `src/core/model/lexical.ts`, applied in `compileForProfile()`                                                                                  |
 | clause 6.3.6 `SchemeName` = `<territory>:<name>`                                                                                                       | `compileForProfile()`, idempotent                                                                                                              |
-| Table 1 presence matrix: `SchemeInformationURI` mandatory; Annex D/E minimum two                                                                       | `SigningConfigEntry.schemeInformationUris`                                                                                                     |
+| Table 1 presence matrix: `SchemeInformationURI` mandatory; Annex D/E and Annex I minimum two                                                        | `SigningConfigEntry.schemeInformationUris`                                                                                                     |
 | clauses 6.3.5.1/6.3.5.2 operator reachable by `mailto:` and HTTP(S)                                                                                    | `normalizeToAuthoringInput()`                                                                                                                  |
 | clause 6.3.11 `PolicyOrLegalNotice` mandatory for explicit scheme information                                                                          | `SigningConfigEntry.policyUri`                                                                                                                 |
-| Annex D–G self pointer in `PointersToOtherLoTE`, carrying the signing certificate and `MimeType: application/jose`; Annex H omits it                   | `publishesSelfPointer` in `src/core/profiles/registry.ts`, applied in `compileForProfile()`                                                    |
+| Annex D–G and Annex I self pointer in `PointersToOtherLoTE`, carrying the signing certificate and `MimeType: application/jose`; Annex H omits it | `publishesSelfPointer` in `src/core/profiles/registry.ts`, applied in `compileForProfile()`                                                    |
 | Annex H `HistoricalInformationPeriod` = 65535                                                                                                          | `historicalInformationPeriod` in the registry, applied in `compileForProfile()`                                                                |
 | Annex H `ServiceStatus` and `StatusStartingTime` on every service; `ServiceHistory` by `X509SKI` only                                                  | `usesServiceStatus` in the registry, applied in `buildAuthoringEntity()`, `compileForProfile()` and `ApplicationService.withdrawApplication()` |
 | Annex H.3 mandatory `TETradeName` containing the official registration identifier where one exists and the formatted `OJ:` legal-basis URI             | `buildAuthoringEntity()`, `compileForProfile()` and `schemas/profiles/pub-eaa-schema.json`                                                     |

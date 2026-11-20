@@ -3,8 +3,9 @@ info:
   title: Credimi EUDI Trusted Lists API
   description: >-
     API for published TS 119 602 JSON Lists of Trusted Entities: PID Providers
-    (Annex D), Wallet Providers (Annex E), WRPAC Providers (Annex F) and WRPRC
-    Providers (Annex G). Reading is public; Trusted List creation requires the
+    (Annex D), Wallet Providers (Annex E), WRPAC Providers (Annex F), WRPRC
+    Providers (Annex G), Pub-EAA Providers (Annex H), and Registrars and
+    Registers (Annex I). Reading is public; Trusted List creation requires the
     administrator token.
   version: "0.1.0"
   contact:
@@ -559,6 +560,7 @@ components:
               wrpac-providers,
               wrprc-providers,
               pub-eaa-providers,
+              registrars,
             ]
         schemeName:
           type: string

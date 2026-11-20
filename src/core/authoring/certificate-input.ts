@@ -271,6 +271,35 @@ export function checkCertificateSubjectOrganisation(
 }
 
 /**
+ * Annex I identifies a Register's operating Registrar through certificate
+ * identity data. Node exposes the certificate subject without making assumptions
+ * about which distinguished-name attribute carries that identity, so this
+ * checks the complete subject for the published Registrar name and, where
+ * supplied, its official registration identifier.
+ */
+export function checkRegistrarCertificateIdentity(
+  certificate: X509Certificate,
+  registrarName: string,
+  registrationIdentifier?: string,
+): string | null {
+  const subject = certificate.subject;
+  if (!subject.includes(registrarName.trim()))
+    return (
+      `The certificate subject (${subject.split("\n").join(", ")}) does not ` +
+      `include the Registrar name "${registrarName.trim()}".`
+    );
+  if (
+    registrationIdentifier &&
+    !subject.includes(registrationIdentifier.trim())
+  )
+    return (
+      `The certificate subject (${subject.split("\n").join(", ")}) does not ` +
+      `include the Registrar registration identifier "${registrationIdentifier.trim()}".`
+    );
+  return null;
+}
+
+/**
  * An Annex F/G service identity is the CA certificate whose public key verifies
  * the certificates issued by the relying-party provider.
  */

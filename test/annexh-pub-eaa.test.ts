@@ -223,7 +223,7 @@ const services = (doc: LoTEDocument, entity = 0) =>
 // 1. Profile registry and Annex H constants
 // ============================================================
 describe("Annex H profile", () => {
-  it("is the fifth enabled family, in annex order", () => {
+  it("is followed by the enabled Annex I family, in annex order", () => {
     expect(
       getEnabledFamilies()
         .filter((family) => family.standard === "TS 119 602")
@@ -234,8 +234,9 @@ describe("Annex H profile", () => {
       "wrpac-providers",
       "wrprc-providers",
       "pub-eaa-providers",
+      "registrars",
     ]);
-    expect(PROFILE_REGISTRY.registrars.enabled).toBe(false);
+    expect(PROFILE_REGISTRY.registrars.enabled).toBe(true);
   });
 
   it("carries the Annex H URIs, statuses and history period", () => {

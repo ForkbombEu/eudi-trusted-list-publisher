@@ -153,6 +153,12 @@ const ONBOARDING_FORMS: ReadonlyArray<{
     title: "Pub-EAA Provider Application",
     render: (views) => views.pubEaaProviderFormHtml,
   },
+  {
+    path: "/onboarding/registrar",
+    family: "registrars",
+    title: "Registrar Application",
+    render: (views) => views.registrarFormHtml,
+  },
 ]);
 
 function onboardingFormFor(
@@ -703,6 +709,7 @@ export function createWebServer(config: ServerConfig) {
     "wrpac-providers": [],
     "wrprc-providers": [],
     "pub-eaa-providers": [],
+    registrars: [],
   };
 
   if (guiEnabled && config.authoringDir) {
@@ -749,6 +756,7 @@ export function createWebServer(config: ServerConfig) {
       "wrpac-providers": [],
       "wrprc-providers": [],
       "pub-eaa-providers": [],
+      registrars: [],
     };
     for (const family of Object.keys(
       familyListKeys,
@@ -3652,6 +3660,20 @@ ${outcome}
           }
           case "withdraw": {
             const r = await appService.withdrawApplication(appId);
+            if (r.success) {
+              const params: Record<string, string> = {};
+              if (r.message) params.success = r.message;
+              if (r.warning) params.warning = r.warning;
+              redirectWithParams(res, appId, params);
+              logRequest("POST", path, 303, requestId);
+            } else {
+              redirectWithParams(res, appId, { error: r.error });
+              logRequest("POST", path, 400, requestId);
+            }
+            break;
+          }
+          case "remove": {
+            const r = await appService.removeRegistrarApplication(appId);
             if (r.success) {
               const params: Record<string, string> = {};
               if (r.message) params.success = r.message;

@@ -21,7 +21,7 @@ const SCHEMAS_DIR = resolve(__dirname, "..", "..", "..", "schemas");
 let _authoringValidate: ValidateFunction | undefined;
 let _etsiValidate: ValidateFunction | undefined;
 let _pubEaaValidate: ValidateFunction | undefined;
-
+let _registrarsValidate: ValidateFunction | undefined;
 function loadJson(path: string): unknown {
   return JSON.parse(readFileSync(path, "utf-8"));
 }
@@ -71,6 +71,17 @@ async function getPubEaaValidator(): Promise<ValidateFunction> {
   return _pubEaaValidate;
 }
 
+async function getRegistrarsValidator(): Promise<ValidateFunction> {
+  if (!_registrarsValidate) {
+    const ajv = new Ajv({ allErrors: true, strict: false });
+    const schema = loadJson(
+      resolve(SCHEMAS_DIR, "profiles", "registrars-schema.json"),
+    ) as object;
+    _registrarsValidate = ajv.compile(schema);
+  }
+  return _registrarsValidate;
+}
+
 function isPubEaaDocument(document: unknown): boolean {
   if (!document || typeof document !== "object") return false;
   const lote = (document as Record<string, unknown>)["LoTE"];
@@ -83,6 +94,21 @@ function isPubEaaDocument(document: unknown): boolean {
     typeof information === "object" &&
     (information as Record<string, unknown>)["LoTEType"] ===
       "http://uri.etsi.org/19602/LoTEType/EUPubEAAProvidersList"
+  );
+}
+
+function isRegistrarsDocument(document: unknown): boolean {
+  if (!document || typeof document !== "object") return false;
+  const lote = (document as Record<string, unknown>)["LoTE"];
+  if (!lote || typeof lote !== "object") return false;
+  const information = (lote as Record<string, unknown>)[
+    "ListAndSchemeInformation"
+  ];
+  return (
+    !!information &&
+    typeof information === "object" &&
+    (information as Record<string, unknown>)["LoTEType"] ===
+      "http://uri.etsi.org/19602/LoTEType/EURegistrarsAndRegistersList"
   );
 }
 
@@ -135,6 +161,11 @@ export async function validateEtsiStruct(
     profileValid = validateProfile(document);
     findings.push(...toFindings(validateProfile, "etsi-profile"));
   }
+  if (isRegistrarsDocument(document)) {
+    const validateProfile = await getRegistrarsValidator();
+    profileValid = validateProfile(document) && profileValid;
+    findings.push(...toFindings(validateProfile, "etsi-profile"));
+  }
   return {
     valid: baseValid && profileValid,
     findings,
@@ -145,4 +176,5 @@ export function resetValidators(): void {
   _authoringValidate = undefined;
   _etsiValidate = undefined;
   _pubEaaValidate = undefined;
+  _registrarsValidate = undefined;
 }

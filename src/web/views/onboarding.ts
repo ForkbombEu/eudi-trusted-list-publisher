@@ -71,8 +71,9 @@ interface FormProfile {
   listHelp: string;
   noListsMessage: string;
   serviceTypeHelp: string;
-  issuanceLabel: string;
-  revocationLabel: string;
+  serviceOptions: readonly { value: string; label: string }[];
+  /** Annex I Register services require their machine-processable URI. */
+  requiresServiceSupplyPoint: boolean;
   extraEntityFields: string;
   /**
    * The entity's public HTTP(S) URI. Annex D/E collect an information page;
@@ -129,8 +130,11 @@ const WALLET_PROFILE: FormProfile = {
   noListsMessage:
     "No Wallet Provider lists are configured. Add entries to your signing-config.",
   serviceTypeHelp: "Select the Wallet Provider service type.",
-  issuanceLabel: "Wallet Solution Issuance",
-  revocationLabel: "Wallet Solution Revocation",
+  serviceOptions: [
+    { value: "issuance", label: "Wallet Solution Issuance" },
+    { value: "revocation", label: "Wallet Solution Revocation" },
+  ],
+  requiresServiceSupplyPoint: false,
   extraEntityFields: "",
   informationField: {
     name: "entityInformationURI",
@@ -160,8 +164,11 @@ const PID_PROFILE = (
   noListsMessage:
     "No PID Provider lists are configured. Add entries to your signing-config.",
   serviceTypeHelp: "Select the PID service type.",
-  issuanceLabel: "PID Issuance",
-  revocationLabel: "PID Revocation",
+  serviceOptions: [
+    { value: "issuance", label: "PID Issuance" },
+    { value: "revocation", label: "PID Revocation" },
+  ],
+  requiresServiceSupplyPoint: false,
   informationField: {
     name: "entityInformationURI",
     label: "Information URI",
@@ -215,8 +222,11 @@ function relyingPartyProfile(
     listHelp: `Choose the ${options.listLabel} list of the Member State that mandates this provider.`,
     noListsMessage: `No ${options.listLabel} lists are configured. Add entries to your signing-config.`,
     serviceTypeHelp: `Select the ${options.serviceKindLabel} service type. Register issuance, revocation, or both.`,
-    issuanceLabel: `${options.serviceKindLabel} Issuance`,
-    revocationLabel: `${options.serviceKindLabel} Revocation`,
+    serviceOptions: [
+      { value: "issuance", label: `${options.serviceKindLabel} Issuance` },
+      { value: "revocation", label: `${options.serviceKindLabel} Revocation` },
+    ],
+    requiresServiceSupplyPoint: false,
     requiresServiceUniqueIdentifier: false,
     requiresServiceCertificate: true,
     certificatePurpose:
@@ -291,8 +301,11 @@ function pubEaaProfile(
       "No Pub-EAA Provider lists are configured. Add entries to your signing-config.",
     serviceTypeHelp:
       "Select the Pub-EAA service type. Register issuance, revocation, or both.",
-    issuanceLabel: "Pub-EAA Issuance",
-    revocationLabel: "Pub-EAA Revocation",
+    serviceOptions: [
+      { value: "issuance", label: "Pub-EAA Issuance" },
+      { value: "revocation", label: "Pub-EAA Revocation" },
+    ],
+    requiresServiceSupplyPoint: false,
     requiresServiceUniqueIdentifier: false,
     requiresServiceCertificate: false,
     certificatePurpose:
@@ -355,6 +368,81 @@ export function pubEaaProviderFormHtml(
 ): string {
   return providerFormHtml(
     pubEaaProfile(values ?? {}, errors),
+    values,
+    errors,
+    listOptions,
+  );
+}
+
+/**
+ * Annex I uses one service kind: each service is a Register operated by the
+ * Registrar. Unlike WRPAC and WRPRC identities, Register verification
+ * certificates need not be CA certificates.
+ */
+function registrarProfile(
+  v: Record<string, string>,
+  errors?: Record<string, string>,
+): FormProfile {
+  const fieldError = (name: string): string =>
+    errors?.[name]
+      ? `<span class="field-error">${escape(errors[name] ?? "")}</span>`
+      : "";
+  return {
+    title: "Registrar Application",
+    action: "/onboarding/registrar",
+    entityHelp:
+      "The Registrar mandated by a Member State to operate one or more wallet-relying-party Registers.",
+    listHelp: "Choose the Registrars and Registers list for this application.",
+    noListsMessage:
+      "No Registrars and Registers lists are configured. Add entries to your signing-config.",
+    serviceTypeHelp: "Each service is one Register operated by this Registrar.",
+    serviceOptions: [{ value: "register", label: "Register" }],
+    requiresServiceSupplyPoint: true,
+    requiresServiceUniqueIdentifier: false,
+    requiresServiceCertificate: true,
+    certificatePurpose:
+      "The certificate used to verify signatures or seals on data made available by this Register.",
+    certificateExplanation:
+      "The certificate is published as ServiceDigitalIdentity. Its subject must include the Registrar name and, where supplied, its official registration identifier. It may be a data-signing certificate or another certificate that verifies Register data; Annex I does not require a CA certificate profile.",
+    informationField: {
+      name: "entityPolicyURI",
+      label: "Registration Policy URL",
+      help: "Public URL where the registration policy and related Register information are available.",
+    },
+    extraUriFields: `
+    <div class="form-group">
+      <label for="additionalInformationURI">Additional Information URL</label>
+      <input type="url" id="additionalInformationURI" name="additionalInformationURI"
+        value="${escape(v.additionalInformationURI ?? "")}" maxlength="500">
+      <span class="field-help">Optional. Published beside the registration policy URL.</span>
+      ${fieldError("additionalInformationURI")}
+    </div>`,
+    mandateTitle: "Mandate",
+    mandateNote:
+      "Being listed states that this Registrar and its Registers are currently mandated by the Responsible Member State. Annex I publishes no service status or status starting time. If the mandate ends, an administrator removes the Registrar from a new immutable list version; earlier versions remain available.",
+    extraEntityFields: `${memberStateField(
+      v,
+      errors,
+      "ISO 3166-1 alpha-2 code of the Member State responsible for this Registrar. It is published in the Registrar role URI.",
+      "IT",
+    )}
+    <div class="form-group">
+      <label for="registrationIdentifier">Official Registration Identifier</label>
+      <input type="text" id="registrationIdentifier" name="registrationIdentifier"
+        value="${escape(v.registrationIdentifier ?? "")}" maxlength="120">
+      <span class="field-help">Optional. Published in <code>TETradeName</code> and included in the Register certificate subject where supplied.</span>
+      ${fieldError("registrationIdentifier")}
+    </div>`,
+  };
+}
+
+export function registrarFormHtml(
+  values?: Record<string, string>,
+  errors?: Record<string, string>,
+  listOptions?: ListOption[],
+): string {
+  return providerFormHtml(
+    registrarProfile(values ?? {}, errors),
     values,
     errors,
     listOptions,
@@ -713,12 +801,14 @@ function serviceBlockHtml(
     <label>Service Type <span class="required">*</span></label>
     <select name="${escape(f("serviceType"))}" required>
       <option value="">-- Select --</option>
-      <option value="issuance" ${
-        v[f("serviceType")] === "issuance" ? "selected" : ""
-      }>${escape(profile.issuanceLabel)}</option>
-      <option value="revocation" ${
-        v[f("serviceType")] === "revocation" ? "selected" : ""
-      }>${escape(profile.revocationLabel)}</option>
+      ${profile.serviceOptions
+        .map(
+          (option) =>
+            `<option value="${escape(option.value)}" ${
+              v[f("serviceType")] === option.value ? "selected" : ""
+            }>${escape(option.label)}</option>`,
+        )
+        .join("")}
     </select>
     <span class="field-help">${escape(profile.serviceTypeHelp)}</span>
     ${e("serviceType")}
@@ -756,6 +846,17 @@ function serviceBlockHtml(
       value="${escape(v[f("serviceUniqueIdentifier")] ?? "")}" maxlength="500">
     <span class="field-help">Unique URI identifying this service instance.</span>
     ${e("serviceUniqueIdentifier")}
+  </div>`
+      : ""
+  }
+  ${
+    profile.requiresServiceSupplyPoint
+      ? `<div class="form-group">
+    <label>Register URL (Service Supply Point) <span class="required">*</span></label>
+    <input type="url" name="${escape(f("serviceSupplyPoint"))}" required
+      value="${escape(v[f("serviceSupplyPoint")] ?? "")}" maxlength="500">
+    <span class="field-help">Machine-processable URI where the Register is available.</span>
+    ${e("serviceSupplyPoint")}
   </div>`
       : ""
   }

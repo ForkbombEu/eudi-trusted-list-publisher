@@ -226,7 +226,11 @@ export class ApplicationService {
   deleteApplication(id: string): ServiceResult<undefined> {
     const app = this.getApplication(id);
     if (!app) return { success: false, error: "Application not found." };
-    if (app.state === "published" || app.state === "withdrawn") {
+    if (
+      app.state === "published" ||
+      app.state === "withdrawn" ||
+      app.state === "removed"
+    ) {
       return {
         success: false,
         error: "Cannot delete a published application.",
@@ -777,6 +781,143 @@ export class ApplicationService {
       return {
         success: false,
         error: e instanceof Error ? e.message : "Withdrawal publication failed",
+      };
+    }
+  }
+
+  /**
+   * Removes a published Registrar and its Registers from the current Annex I
+   * list. Annex I deliberately has no withdrawn service status: the new
+   * immutable version simply omits the Registrar while the earlier version
+   * remains available for historical verification.
+   */
+  async removeRegistrarApplication(
+    id: string,
+    clock: Date | undefined = undefined,
+  ): Promise<ProfilePublishApplicationResult> {
+    const app = this.getApplication(id);
+    if (!app) return { success: false, error: "Application not found." };
+    if (app.family !== "registrars")
+      return {
+        success: false,
+        error:
+          "Only Registrars can be removed from a current list; this profile has its own lifecycle semantics.",
+      };
+    if (!canTransition(app.state, "removed"))
+      return {
+        success: false,
+        error: `Cannot remove application in state: ${app.state}`,
+      };
+    return this.withListLock(app.targetListKey, () =>
+      this.doRemoveRegistrar(app, clock),
+    );
+  }
+
+  private async doRemoveRegistrar(
+    app: TrustedEntityApplication,
+    clock: Date | undefined,
+  ): Promise<ProfilePublishApplicationResult> {
+    const listEntry = this.resolveListConfig(app);
+    if (!listEntry)
+      return {
+        success: false,
+        error: `No signing configuration found for list key '${app.targetListKey}'. Check signing-config.`,
+      };
+    let latest;
+    try {
+      latest = await loadLatestPublication(
+        this.publicationStore,
+        app.targetListKey,
+        app.family,
+      );
+    } catch (e) {
+      return {
+        success: false,
+        error: `Cannot load latest publication: ${e instanceof Error ? e.message : "unknown"}`,
+      };
+    }
+    if (!latest.exists)
+      return { success: false, error: "No publications exist for this list." };
+
+    const name = app.applicantData.entityName;
+    const registrationIdentifier =
+      "registrationIdentifier" in app.applicantData
+        ? app.applicantData.registrationIdentifier
+        : undefined;
+    const matches = latest.entities.filter(
+      (entity) =>
+        entity.teName[0]?.value === name &&
+        (!registrationIdentifier ||
+          entity.teTradeName?.some(
+            (tradeName) => tradeName.value === registrationIdentifier,
+          )),
+    );
+    if (matches.length === 0)
+      return {
+        success: false,
+        error: `No published Registrar named "${name}" was found in the latest version of this list.`,
+      };
+    if (matches.length > 1)
+      return {
+        success: false,
+        error: `The latest version has ${matches.length} Registrars named "${name}", so the Registrar to remove cannot be identified.`,
+      };
+    const target = matches[0]!;
+    const now = clock ?? new Date();
+    const listIssueDateTime = now.toISOString();
+    const nextUpdate = new Date(
+      now.getTime() + 180 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const input = normalizeToAuthoringInput(
+      app,
+      schemeDescriptorFor(listEntry),
+      listIssueDateTime,
+      nextUpdate,
+      latest.sequenceNumber + 1,
+      latest.entities.filter((entity) => entity !== target),
+    );
+
+    try {
+      const committed = await this.compileSignAndStore(
+        app.family,
+        input,
+        listEntry,
+        app.targetListKey,
+      );
+      if (!committed.success) return committed;
+      const { pubResult, manifestHash, storeResult } = committed;
+      const record: PublicationRecord = {
+        listKey: pubResult.listKey,
+        sequenceNumber: pubResult.sequenceNumber,
+        manifestSha256: manifestHash,
+        compactJadesSha256: pubResult.manifest.compactJadesSha256,
+        publicationTimestamp: pubResult.manifest.publicationTimestamp,
+      };
+      app.state = "removed";
+      app.removedAt = new Date().toISOString();
+      app.removal = record;
+      try {
+        this.authoringStore.save(app);
+      } catch {
+        return {
+          success: false,
+          code: "PUBLICATION_COMMITTED_APPLICATION_STALE",
+          error: `The Registrar removal was published for list key "${pubResult.listKey}" sequence ${pubResult.sequenceNumber} but the application record could not be updated.`,
+          publication: record,
+        };
+      }
+      return {
+        success: true,
+        data: app,
+        message: `Registrar removed. Version ${pubResult.sequenceNumber} no longer lists "${name}" or its Registers.`,
+        ...(storeResult.indexWarning
+          ? { warning: storeResult.indexWarning }
+          : {}),
+      };
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : "Registrar removal failed",
       };
     }
   }

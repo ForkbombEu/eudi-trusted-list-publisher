@@ -222,6 +222,22 @@ export function compileForProfile(
   ) {
     throw new Error(`Profile ${family} has incomplete compilation metadata.`);
   }
+  const listIssue = new Date(input.listIssueDateTime);
+  const nextUpdate = new Date(input.nextUpdate);
+  if (
+    profile.maxNextUpdateMonths !== undefined &&
+    Number.isFinite(listIssue.getTime()) &&
+    Number.isFinite(nextUpdate.getTime())
+  ) {
+    const latestNextUpdate = new Date(listIssue);
+    latestNextUpdate.setUTCMonth(
+      latestNextUpdate.getUTCMonth() + profile.maxNextUpdateMonths,
+    );
+    if (nextUpdate > latestNextUpdate)
+      throw new Error(
+        `${profile.label} NextUpdate must be within ${profile.maxNextUpdateMonths} months of ListIssueDateTime.`,
+      );
+  }
   for (const entity of input.entities) {
     for (const service of entity.services) {
       if (
@@ -231,8 +247,32 @@ export function compileForProfile(
           `Service type '${service.serviceTypeIdentifier}' is not allowed for ${profile.label}.`,
         );
       }
+      if (
+        profile.requiresServiceSupplyPoint &&
+        (!service.serviceSupplyPoints ||
+          service.serviceSupplyPoints.length === 0)
+      ) {
+        throw new Error(
+          `${profile.label} services require a machine-processable ServiceSupplyPoint.`,
+        );
+      }
     }
   }
+  if (
+    profile.fixedSchemeTerritory &&
+    input.scheme.schemeTerritory !== profile.fixedSchemeTerritory
+  )
+    throw new Error(
+      `${profile.label} fixes SchemeTerritory at ${profile.fixedSchemeTerritory}.`,
+    );
+  if (
+    profile.minimumSchemeInformationUris !== undefined &&
+    (input.scheme.schemeInformationURI?.length ?? 0) <
+      profile.minimumSchemeInformationUris
+  )
+    throw new Error(
+      `${profile.label} require at least ${profile.minimumSchemeInformationUris} SchemeInformationURI values.`,
+    );
   const schemeInfo: ListAndSchemeInformation = {
     LoTEVersionIdentifier: LOTE_VERSION_IDENTIFIER,
     LoTESequenceNumber: input.loTESequenceNumber,

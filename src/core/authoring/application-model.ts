@@ -1,3 +1,4 @@
+import { X509Certificate } from "node:crypto";
 import type { AuthoringEntity, AuthoringInput } from "../model/authoring.js";
 import {
   getProfile,
@@ -25,6 +26,7 @@ import {
   PUB_EAA_SERVICE_TYPE_ISSUANCE,
   PUB_EAA_SERVICE_TYPE_REVOCATION,
 } from "../profiles/pub-eaa-provider/constants.js";
+import { REGISTER_SERVICE_TYPE } from "../profiles/registrars/constants.js";
 import {
   certificateDerBase64,
   legalBasisUri,
@@ -32,7 +34,10 @@ import {
   roleUri,
   telUri,
 } from "../model/lexical.js";
-import { splitPemCertificates } from "./certificate-input.js";
+import {
+  checkRegistrarCertificateIdentity,
+  splitPemCertificates,
+} from "./certificate-input.js";
 
 export const APPLICATION_SCHEMA_VERSION = 1;
 export type ApplicationState =
@@ -40,9 +45,10 @@ export type ApplicationState =
   | "approved"
   | "rejected"
   | "published"
-  /** Annex H only: the notification was withdrawn in a later list version. */
-  | "withdrawn";
-export type ServiceKind = "issuance" | "revocation";
+  | "withdrawn"
+  /** Annex I only: the Registrar is removed from the current list. */
+  | "removed";
+export type ServiceKind = "issuance" | "revocation" | "register";
 export interface ProviderServiceInput {
   serviceType: ServiceKind;
   serviceName: string;
@@ -54,6 +60,8 @@ export interface ProviderServiceInput {
   certificatePem?: string;
   /** Annex D/E only; Annex F/G/H services carry no unique identifier. */
   serviceUniqueIdentifier?: string;
+  /** Annex I: the machine-processable URI at which the Register is available. */
+  serviceSupplyPoint?: string;
 }
 export interface CommonApplicantData {
   entityName: string;
@@ -112,6 +120,14 @@ export interface PubEAAProviderApplicantData extends SupervisedApplicantData {
   /** Annex H.3 legal reference, published as an `OJ:` URI in TETradeName. */
   legalBasisReference: string;
 }
+/**
+ * Annex I Registrars. The optional registration identifier is published in
+ * TETradeName, and each service is one Register.
+ */
+export interface RegistrarApplicantData extends SupervisedApplicantData {
+  registrationIdentifier?: string;
+  additionalInformationURI?: string;
+}
 export interface PublicationRecord {
   listKey: string;
   sequenceNumber: number;
@@ -142,6 +158,10 @@ interface ApplicationBase<
    * downloadable — withdrawal adds a version, it never rewrites one.
    */
   withdrawal?: PublicationRecord;
+  /** Annex I only: when the Registrar was removed from the current list. */
+  removedAt?: string;
+  /** Annex I only: immutable publication that removed the Registrar. */
+  removal?: PublicationRecord;
 }
 export type WalletProviderApplication = ApplicationBase<
   "wallet-providers",
@@ -163,12 +183,17 @@ export type PubEAAProviderApplication = ApplicationBase<
   "pub-eaa-providers",
   PubEAAProviderApplicantData
 >;
+export type RegistrarApplication = ApplicationBase<
+  "registrars",
+  RegistrarApplicantData
+>;
 export type TrustedEntityApplication =
   | WalletProviderApplication
   | PIDProviderApplication
   | WRPACProviderApplication
   | WRPRCProviderApplication
-  | PubEAAProviderApplication;
+  | PubEAAProviderApplication
+  | RegistrarApplication;
 export type WalletProviderServiceInput = ProviderServiceInput;
 
 /** Applicant data shapes any enabled family can produce. */
@@ -176,7 +201,8 @@ export type AnyApplicantData =
   | WalletProviderApplicantData
   | PIDProviderApplicantData
   | WalletRelyingPartyApplicantData
-  | PubEAAProviderApplicantData;
+  | PubEAAProviderApplicantData
+  | RegistrarApplicantData;
 
 /**
  * The applicant data and application type each family works with. Keying them
@@ -189,6 +215,7 @@ export interface ApplicantDataByFamily {
   "wrpac-providers": WalletRelyingPartyApplicantData;
   "wrprc-providers": WalletRelyingPartyApplicantData;
   "pub-eaa-providers": PubEAAProviderApplicantData;
+  registrars: RegistrarApplicantData;
 }
 export interface ApplicationByFamily {
   "wallet-providers": WalletProviderApplication;
@@ -196,11 +223,12 @@ export interface ApplicationByFamily {
   "wrpac-providers": WRPACProviderApplication;
   "wrprc-providers": WRPRCProviderApplication;
   "pub-eaa-providers": PubEAAProviderApplication;
+  registrars: RegistrarApplication;
 }
 
-/** The two service type URIs each family permits, by service kind. */
+/** The service type URI each family permits for one onboarding service kind. */
 const SERVICE_TYPE_URIS: Readonly<
-  Record<EnabledProfileFamily, Readonly<Record<ServiceKind, string>>>
+  Record<EnabledProfileFamily, Readonly<Partial<Record<ServiceKind, string>>>>
 > = Object.freeze({
   "wallet-providers": Object.freeze({
     issuance: SERVICE_TYPE_ISSUANCE,
@@ -222,13 +250,17 @@ const SERVICE_TYPE_URIS: Readonly<
     issuance: PUB_EAA_SERVICE_TYPE_ISSUANCE,
     revocation: PUB_EAA_SERVICE_TYPE_REVOCATION,
   }),
+  registrars: Object.freeze({ register: REGISTER_SERVICE_TYPE }),
 });
 
 export function serviceTypeUri(
   family: EnabledProfileFamily,
   kind: ServiceKind,
 ): string {
-  return SERVICE_TYPE_URIS[family][kind];
+  const serviceType = SERVICE_TYPE_URIS[family][kind];
+  if (!serviceType)
+    throw new Error(`Service kind '${kind}' is not supported by ${family}.`);
+  return serviceType;
 }
 
 const TRANSITIONS: Readonly<
@@ -237,9 +269,10 @@ const TRANSITIONS: Readonly<
   submitted: ["approved", "rejected"],
   approved: ["published", "rejected"],
   rejected: [],
-  /* Only Annex H can leave `published`, and only by withdrawal. */
-  published: ["withdrawn"],
+  /* Annex H withdraws; Annex I removes the Registrar from the current list. */
+  published: ["withdrawn", "removed"],
   withdrawn: [],
+  removed: [],
 });
 export function canTransition(
   from: ApplicationState,
@@ -309,13 +342,15 @@ export function buildAuthoringEntity(
   /*
     Annex H.3 assigns machine-readable identity data to TETradeName: the
     official registration identifier when one exists, followed by the legal
-    basis URI. A separately supplied trading name may follow those required
-    values. The legal basis makes the component non-empty in every case.
-  */
+    basis URI. Annex I publishes its registration identifier there too; other
+    profiles retain an applicant-supplied trading name only.
+    */
   const tradeNameValues = [
     ...(profile.requiresLegalBasisReference
       ? [registrationIdentifier, legalBasis]
-      : []),
+      : profile.collectsRegistrationIdentifier
+        ? [registrationIdentifier]
+        : []),
     data.entityTradeName,
   ].filter((value): value is string => value !== undefined && value.length > 0);
   const uniqueTradeNameValues = [...new Set(tradeNameValues)];
@@ -382,6 +417,23 @@ export function buildAuthoringEntity(
         throw new Error(
           `${profile.label} require a service digital identity certificate.`,
         );
+      if (profile.requiresRegistrarCertificateIdentity)
+        for (const block of supplied) {
+          let certificate: X509Certificate;
+          try {
+            certificate = new X509Certificate(block);
+          } catch {
+            throw new Error(
+              `${profile.label} require a valid X.509 service certificate.`,
+            );
+          }
+          const mismatch = checkRegistrarCertificateIdentity(
+            certificate,
+            data.entityName,
+            registrationIdentifier,
+          );
+          if (mismatch) throw new Error(mismatch);
+        }
       return {
         serviceTypeIdentifier,
         serviceName: [{ lang: "en", value: service.serviceName }],
@@ -390,15 +442,16 @@ export function buildAuthoringEntity(
             certificateDerBase64(block),
           ),
         },
-        /*
-          Annex D–G emit no ServiceStatus and no StatusStartingTime: presence in
-          the current list version is itself the statement that the provider is
-          supervised or mandated, and losing that removes the entity from the
-          next version. Annex H states it explicitly instead.
-        */
         ...(status ?? {}),
         ...(profile.requiresServiceUniqueIdentifier
           ? { serviceUniqueIdentifier: service.serviceUniqueIdentifier }
+          : {}),
+        ...(profile.requiresServiceSupplyPoint
+          ? {
+              serviceSupplyPoints: service.serviceSupplyPoint
+                ? [{ uriValue: service.serviceSupplyPoint }]
+                : [],
+            }
           : {}),
       };
     }),

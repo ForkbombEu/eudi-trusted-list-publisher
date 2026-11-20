@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ETSI TS 119 602 Annex I Registrars and Registers profile constraints",
+  "type": "object",
+  "required": ["LoTE"],
+  "properties": {
+    "LoTE": {
+      "type": "object",
+      "required": ["ListAndSchemeInformation"],
+      "properties": {
+        "ListAndSchemeInformation": {
+          "type": "object",
+          "required": [
+            "LoTEVersionIdentifier",
+            "LoTESequenceNumber",
+            "LoTEType",
+            "SchemeInformationURI",
+            "StatusDeterminationApproach",
+            "SchemeTypeCommunityRules",
+            "SchemeTerritory",
+            "PointersToOtherLoTE"
+          ],
+          "properties": {
+            "LoTEVersionIdentifier": { "const": 1 },
+            "LoTESequenceNumber": { "minimum": 1 },
+            "LoTEType": {
+              "const": "http://uri.etsi.org/19602/LoTEType/EURegistrarsAndRegistersList"
+            },
+            "SchemeInformationURI": { "type": "array", "minItems": 2 },
+            "StatusDeterminationApproach": {
+              "const": "http://uri.etsi.org/19602/RegistrarsAndRegistersList/StatusDetn/EU"
+            },
+            "SchemeTypeCommunityRules": {
+              "type": "array",
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "uriValue": {
+                    "const": "http://uri.etsi.org/19602/RegistrarsAndRegistersList/schemerules/EU"
+                  }
+                }
+              }
+            },
+            "SchemeTerritory": { "const": "EU" },
+            "PointersToOtherLoTE": { "type": "array", "minItems": 1 }
+          },
+          "not": { "required": ["HistoricalInformationPeriod"] }
+        },
+        "TrustedEntitiesList": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["TrustedEntityInformation", "TrustedEntityServices"],
+            "properties": {
+              "TrustedEntityInformation": {
+                "type": "object",
+                "required": ["TEName", "TEAddress", "TEInformationURI"],
+                "properties": {
+                  "TEInformationURI": {
+                    "type": "array",
+                    "contains": {
+                      "type": "object",
+                      "properties": {
+                        "uriValue": {
+                          "type": "string",
+                          "pattern": "^http://uri\\.etsi\\.org/19602/ListOfTrustedEntities/Registrar/[A-Z]{2}$"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "TrustedEntityServices": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["ServiceInformation"],
+                  "properties": {
+                    "ServiceInformation": {
+                      "type": "object",
+                      "required": [
+                        "ServiceTypeIdentifier",
+                        "ServiceName",
+                        "ServiceDigitalIdentity",
+                        "ServiceSupplyPoints"
+                      ],
+                      "properties": {
+                        "ServiceTypeIdentifier": {
+                          "const": "http://uri.etsi.org/19602/SvcType/Register"
+                        },
+                        "ServiceDigitalIdentity": {
+                          "type": "object",
+                          "required": ["X509Certificates"],
+                          "properties": {
+                            "X509Certificates": { "type": "array", "minItems": 1 }
+                          }
+                        },
+                        "ServiceSupplyPoints": { "type": "array", "minItems": 1 }
+                      },
+                      "not": {
+                        "anyOf": [
+                          { "required": ["ServiceStatus"] },
+                          { "required": ["StatusStartingTime"] }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

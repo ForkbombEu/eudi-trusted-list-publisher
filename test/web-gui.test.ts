@@ -524,7 +524,7 @@ describe("Manage Lists", () => {
 });
 
 describe("Onboarding catalogue from LIST_FAMILIES", () => {
-  it("renders onboarding catalogue with all seven entries", async () => {
+  it("renders onboarding catalogue with all enabled entries", async () => {
     const pubDir = tmpDir();
     const authDir = tmpDir();
     const sigConfigPath = createSigningConfig(tmpDir());
@@ -542,8 +542,9 @@ describe("Onboarding catalogue from LIST_FAMILIES", () => {
         expect(r.body).toContain(f.label);
       }
       expect(r.body).toContain("Wallet Providers");
+      expect(r.body).toContain("Registrars and Registers");
       expect(r.body).toContain("Available");
-      expect(r.body).toContain("Not implemented yet");
+      expect(r.body).not.toContain("Not implemented yet");
     } finally {
       await stop();
       try {
@@ -553,7 +554,7 @@ describe("Onboarding catalogue from LIST_FAMILIES", () => {
         rmSync(authDir, { recursive: true, force: true });
       } catch {}
       try {
-        rmSync(sigConfigPath, { force: true });
+        rmSync(sigConfigPath, { recursive: true, force: true });
       } catch {}
     }
   });
@@ -618,11 +619,13 @@ describe("Phase 5.1 GUI shell", () => {
       expect(r.body).toContain("Trusted List onboarding");
       expect(r.body).toContain('href="/onboarding/wallet-provider"');
       expect(r.body).toContain('href="/onboarding/pid-provider"');
-      expect(r.body).toContain("card-disabled");
+      expect(r.body).toContain('href="/onboarding/registrar"');
+      expect(r.body).not.toContain("card-disabled");
 
       for (const path of [
         "/onboarding/wallet-provider",
         "/onboarding/pid-provider",
+        "/onboarding/registrar",
       ]) {
         expect((await httpGet(`${url}${path}`)).status).toBe(200);
       }

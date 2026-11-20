@@ -122,11 +122,11 @@ describe("format-aware family catalogue", () => {
     expect(findFamily("wallet-providers")?.lifecycleActions).toEqual([]);
   });
 
-  it("enables both XML families and keeps Registrars disabled", () => {
+  it("enables both XML families and Registrars", () => {
     const enabled = getEnabledFamilies().map((f) => f.key);
     expect(enabled).toContain("eaa-providers");
     expect(enabled).toContain("qeaa-providers");
-    expect(enabled).not.toContain("registrars");
+    expect(enabled).toContain("registrars");
   });
 
   it("answers isXmlFamily without a view having to know family names", () => {

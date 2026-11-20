@@ -14,9 +14,10 @@ Direct import into Credimi's Go backend is not currently required.
 ## Approved first vertical slice
 
 Historical first vertical slice: implement a TS 119 602 JSON LoTE publisher for
-the Wallet Provider profile. The current implementation supports five profiles:
+the Wallet Provider profile. The current implementation supports six profiles:
 PID Providers (Annex D), Wallet Providers (Annex E), WRPAC Providers (Annex F),
-WRPRC Providers (Annex G) and Pub-EAA Providers (Annex H).
+WRPRC Providers (Annex G), Pub-EAA Providers (Annex H), and Registrars and
+Registers (Annex I).
 
 The core must compile, schema-validate, sign and verify deterministic LoTE
 artifacts. Signing keys are supplied through local files or CI secrets and
@@ -102,6 +103,7 @@ src/
       wrpac-provider/  — WRPAC Provider Annex F profile constants
       wrprc-provider/  — WRPRC Provider Annex G profile constants
       pub-eaa-provider/ — Pub-EAA Provider Annex H profile constants
+      registrars/      — Registrars and Registers Annex I profile constants
     compile/          — Compile authoring input -> LoTE
     validate/         — Schema validation (authoring + ETSI)
     signing/          — JAdES Compact signing
@@ -310,11 +312,10 @@ families, in annex order:
 - WRPAC Providers — enabled (Annex F)
 - WRPRC Providers — enabled (Annex G)
 - Pub-EAA Providers — enabled (Annex H)
-- Registrars and Registers — disabled
+- Registrars and Registers — enabled (Annex I)
 
-The one disabled family is displayed with "Not implemented yet". The
-Non-qualified EAA and QEAA entries were removed: TS 119 602 does not profile
-them as separate lists of trusted entities.
+The Non-qualified EAA and QEAA entries were removed: TS 119 602 does not
+profile them as separate lists of trusted entities.
 
 ### Application model
 
@@ -322,23 +323,29 @@ Defined in `src/core/authoring/application-model.ts`:
 
 ```
 ApplicationState = "submitted" | "approved" | "rejected" | "published"
-                 | "withdrawn"   // Annex H only
+                 | "withdrawn" // Annex H only
+                 | "removed"   // Annex I only
 TrustedEntityApplication { id, schemaVersion, family, state, submittedAt,
   applicantData { entityName, entityTradeName?, entityStreetAddress,
     entityLocality?, entityPostalCode?, entityCountry, entityInformationURI,
     entityEmail, entityTelephone,
-    services[{ serviceType, serviceName, certificatePem, serviceUniqueIdentifier }] },
-  adminNote?, approvedAt?, rejectedAt?, publication? }
+    services[{ serviceType, serviceName, certificatePem,
+      serviceUniqueIdentifier?, serviceSupplyPoint? }] },
+  adminNote?, approvedAt?, rejectedAt?, publication?, withdrawal?, removal? }
 
 PIDProviderApplication additionally requires `responsibleMemberState`.
+RegistrarApplication additionally records the responsible Member State,
+optional registration identifier, optional additional information URI and one
+or more `register` services. Published Registrars transition to `removed`,
+which creates a new list version without the entity rather than adding a
+service status.
 ```
-
 Lifecycle transitions:
 - submitted → approved, rejected
 - approved → published, rejected
 - rejected → (terminal)
-- published → withdrawn (Annex H only)
-- withdrawn → (terminal)
+- published → withdrawn (Annex H only), removed (Annex I only)
+- withdrawn, removed → (terminal)
 
 Normalization: `normalizeToAuthoringInput()` maps an application to the existing
 `AuthoringInput` type. Scheme operator and scheme metadata come from trusted
@@ -490,9 +497,8 @@ sequence numbers.
 ## Phase 5: profile registry and PID Providers
 
 `src/core/profiles/registry.ts` is the authoritative immutable mapping of list
-families, profile URIs, service types, and update intervals. Wallet and PID
-Providers are enabled; five families remain disabled. Every signing-config list
-requires `family`, which is never inferred or silently changed. PID uses
+families, profile URIs, service types, and update intervals. Every signing-config
+list requires `family`, which is never inferred or silently changed. PID uses
 `/onboarding/pid-provider` and the shared administration, cumulative
 publication, and partial-commit reconciliation paths. Schema and signature
 checks remain internal safety boundaries rather than external trust assessment.

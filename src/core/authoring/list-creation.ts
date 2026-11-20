@@ -119,8 +119,11 @@ function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-/** Derives the six scheme URIs from the operator's single base URL. */
-export function schemeUrisFor(baseUrl: string): {
+/** Derives the scheme URIs from the operator's single base URL. */
+export function schemeUrisFor(
+  baseUrl: string,
+  family?: EnabledProfileFamily,
+): {
   website: string;
   schemeInformationUris: string[];
   policyUri: string;
@@ -129,7 +132,10 @@ export function schemeUrisFor(baseUrl: string): {
   const base = trimTrailingSlash(baseUrl);
   return {
     website: base,
-    schemeInformationUris: [`${base}/scheme`, `${base}/practice-statement`],
+    schemeInformationUris:
+      family === "registrars"
+        ? [`${base}/information`, `${base}/previous-versions`]
+        : [`${base}/scheme`, `${base}/practice-statement`],
     policyUri: `${base}/policy`,
     distributionPointUri: `${base}/latest`,
   };
@@ -148,6 +154,7 @@ function validateRequest(request: CreateListRequest): string | null {
   } catch {
     return `Trusted List creation is not available for family '${request.family}'.`;
   }
+  const profile = getEnabledProfile(request.family);
   for (const [field, value] of [
     ["schemeName", request.schemeName],
     ["schemeOperatorName", request.schemeOperatorName],
@@ -165,6 +172,11 @@ function validateRequest(request: CreateListRequest): string | null {
     return "schemeOperatorCountry must be a 2-letter ISO code.";
   if (!/^[A-Z]{2}$/.test(request.schemeTerritory))
     return "schemeTerritory must be a 2-letter code, e.g. EU.";
+  if (
+    profile.fixedSchemeTerritory !== undefined &&
+    request.schemeTerritory !== profile.fixedSchemeTerritory
+  )
+    return `${profile.label} require schemeTerritory to be ${profile.fixedSchemeTerritory}.`;
   try {
     const parsed = new URL(request.baseUrl);
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
@@ -250,7 +262,7 @@ export async function createTrustedList(
     };
 
   const broken = defects.length > 0;
-  const uris = schemeUrisFor(request.baseUrl);
+  const uris = schemeUrisFor(request.baseUrl, request.family);
   const entry: SigningConfigEntry = {
     listKey,
     family: request.family,

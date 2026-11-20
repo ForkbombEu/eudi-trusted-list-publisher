@@ -130,7 +130,7 @@ describe("List Family Catalogue", () => {
     ]);
   });
 
-  it("enables every family except Registrars", () => {
+  it("enables every family", () => {
     const enabled = getEnabledFamilies();
     expect(enabled.map((family) => [family.key, family.label])).toEqual([
       ["pid-providers", "PID Providers"],
@@ -140,14 +140,8 @@ describe("List Family Catalogue", () => {
       ["pub-eaa-providers", "Pub-EAA Providers"],
       ["eaa-providers", "EAA Providers"],
       ["qeaa-providers", "QEAA Providers"],
+      ["registrars", "Registrars and Registers"],
     ]);
-  });
-
-  it("keeps Registrars disabled with 'Not implemented yet'", () => {
-    const disabled = LIST_FAMILIES.filter((family) => !family.enabled);
-    expect(disabled.map((family) => family.key)).toEqual(["registrars"]);
-    for (const family of disabled)
-      expect(family.notImplementedNote).toBe("Not implemented yet");
   });
 
   it("findFamily resolves both enabled families", () => {

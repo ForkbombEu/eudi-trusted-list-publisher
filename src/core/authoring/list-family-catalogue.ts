@@ -65,6 +65,7 @@ const ONBOARDING_ROUTES: Readonly<Partial<Record<FamilyKey, string>>> =
     "wrpac-providers": "/onboarding/wrpac-provider",
     "wrprc-providers": "/onboarding/wrprc-provider",
     "pub-eaa-providers": "/onboarding/pub-eaa-provider",
+    registrars: "/onboarding/registrar",
     "eaa-providers": "/onboarding/eaa-provider",
     "qeaa-providers": "/onboarding/qeaa-provider",
   });
@@ -74,6 +75,14 @@ const WITHDRAW_NOTIFICATION: LifecycleAction = Object.freeze({
   label: "Withdraw notification",
   description:
     "Publishes a new version in which every service of the provider reads withdrawn, keeping the previous state in ServiceHistory.",
+  destructive: true,
+});
+
+const REMOVE_REGISTRAR: LifecycleAction = Object.freeze({
+  id: "remove",
+  label: "Remove Registrar",
+  description:
+    "Publishes a new version in which the Registrar and all of its Registers are absent; earlier immutable versions remain available.",
   destructive: true,
 });
 
@@ -94,7 +103,11 @@ function ts119602Family(family: ProfileFamily): ListFamily {
     allowedStatuses: Object.freeze(statuses),
     ...(profile.enabled && route ? { onboardingRoute: route } : {}),
     lifecycleActions: Object.freeze(
-      profile.usesServiceStatus ? [WITHDRAW_NOTIFICATION] : [],
+      profile.usesServiceStatus
+        ? [WITHDRAW_NOTIFICATION]
+        : profile.family === "registrars"
+          ? [REMOVE_REGISTRAR]
+          : [],
     ),
   });
 }
@@ -123,9 +136,9 @@ function ts119612Family(family: TslFamily): ListFamily {
 }
 
 /**
- * Catalogue order: the five implemented TS 119 602 families in annex order,
- * then the two TS 119 612 families, then what is not implemented. Grouping by
- * standard keeps the two artifact formats from interleaving on the page.
+ * Catalogue order: the six implemented TS 119 602 families in annex order,
+ * then the two TS 119 612 families. Grouping by standard keeps the two
+ * artifact formats from interleaving on the page.
  */
 export const LIST_FAMILIES: readonly ListFamily[] = Object.freeze([
   ts119602Family("pid-providers"),

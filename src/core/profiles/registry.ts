@@ -42,6 +42,13 @@ import {
   PUB_EAA_SVC_STATUS_NOTIFIED,
   PUB_EAA_SVC_STATUS_WITHDRAWN,
 } from "./pub-eaa-provider/constants.js";
+import {
+  REGISTRAR_ROLE_URI_PREFIX,
+  REGISTRARS_LOTE_TYPE,
+  REGISTRARS_SCHEME_RULES,
+  REGISTRARS_STATUS_DETN,
+  REGISTER_SERVICE_TYPE,
+} from "./registrars/constants.js";
 
 /**
  * The six families of List of Trusted Entities that TS 119 602 profiles. The
@@ -59,7 +66,8 @@ export type EnabledProfileFamily =
   | "wallet-providers"
   | "wrpac-providers"
   | "wrprc-providers"
-  | "pub-eaa-providers";
+  | "pub-eaa-providers"
+  | "registrars";
 
 export interface TrustedEntityProfile {
   readonly family: ProfileFamily;
@@ -72,6 +80,9 @@ export interface TrustedEntityProfile {
   /** `<prefix>/<country code>` identifies the entity role; Annex D–H. */
   readonly roleUriPrefix?: string;
   readonly maxNextUpdateMonths?: number;
+  /** Annex I fixes the territory to EU and requires two information URIs. */
+  readonly fixedSchemeTerritory?: string;
+  readonly minimumSchemeInformationUris?: number;
   /**
    * Annex D and Annex E require the ServiceUniqueIdentifier extension; Annex F,
    * G and H do not use it, so the onboarding forms of those families do not ask
@@ -109,6 +120,13 @@ export interface TrustedEntityProfile {
    * certificate is known.
    */
   readonly requiresServiceCertificate: boolean;
+  /** Annex I requires a machine-processable Register supply point. */
+  readonly requiresServiceSupplyPoint: boolean;
+  /**
+   * Annex I service certificates identify the Registrar and its registration
+   * number, where published. This is checked at onboarding and compilation.
+   */
+  readonly requiresRegistrarCertificateIdentity: boolean;
   /**
    * Annex H requires the Union or national act under which the attestations are
    * issued, as an `OJ:` URI.
@@ -134,27 +152,6 @@ export interface TrustedEntityProfile {
   readonly signatureProfile: "JAdES-Compact-B";
   readonly notImplementedNote?: string;
 }
-
-const disabled = (family: ProfileFamily, label: string): TrustedEntityProfile =>
-  Object.freeze({
-    family,
-    label,
-    enabled: false,
-    allowedServiceTypes: Object.freeze([]),
-    requiresServiceUniqueIdentifier: false,
-    roleCountrySource: "entity" as const,
-    usesServiceStatus: false,
-    publishesSelfPointer: false,
-    requiresServiceCertificate: false,
-    requiresLegalBasisReference: false,
-    collectsRegistrationIdentifier: false,
-    collectsAdditionalInformationUri: false,
-    roleUriInElectronicAddress: false,
-    roleUriInInformationUri: false,
-    informationUriIsPolicyUrl: false,
-    signatureProfile: "JAdES-Compact-B",
-    notImplementedNote: "Not implemented yet",
-  });
 
 export const PROFILE_REGISTRY: Readonly<
   Record<ProfileFamily, TrustedEntityProfile>
@@ -184,6 +181,8 @@ export const PROFILE_REGISTRY: Readonly<
     roleUriInInformationUri: true,
     informationUriIsPolicyUrl: false,
     signatureProfile: "JAdES-Compact-B",
+    requiresServiceSupplyPoint: false,
+    requiresRegistrarCertificateIdentity: false,
   }),
   "wallet-providers": Object.freeze({
     family: "wallet-providers",
@@ -210,6 +209,8 @@ export const PROFILE_REGISTRY: Readonly<
     roleUriInInformationUri: true,
     informationUriIsPolicyUrl: false,
     signatureProfile: "JAdES-Compact-B",
+    requiresServiceSupplyPoint: false,
+    requiresRegistrarCertificateIdentity: false,
   }),
   "wrpac-providers": Object.freeze({
     family: "wrpac-providers",
@@ -236,6 +237,8 @@ export const PROFILE_REGISTRY: Readonly<
     roleUriInInformationUri: true,
     informationUriIsPolicyUrl: true,
     signatureProfile: "JAdES-Compact-B",
+    requiresServiceSupplyPoint: false,
+    requiresRegistrarCertificateIdentity: false,
   }),
   "wrprc-providers": Object.freeze({
     family: "wrprc-providers",
@@ -262,6 +265,8 @@ export const PROFILE_REGISTRY: Readonly<
     roleUriInInformationUri: true,
     informationUriIsPolicyUrl: true,
     signatureProfile: "JAdES-Compact-B",
+    requiresServiceSupplyPoint: false,
+    requiresRegistrarCertificateIdentity: false,
   }),
   "pub-eaa-providers": Object.freeze({
     family: "pub-eaa-providers",
@@ -293,8 +298,36 @@ export const PROFILE_REGISTRY: Readonly<
     roleUriInInformationUri: false,
     informationUriIsPolicyUrl: true,
     signatureProfile: "JAdES-Compact-B",
+    requiresServiceSupplyPoint: false,
+    requiresRegistrarCertificateIdentity: false,
   }),
-  registrars: disabled("registrars", "Registrars and Registers"),
+  registrars: Object.freeze({
+    family: "registrars",
+    label: "Registrars and Registers",
+    enabled: true,
+    loTEType: REGISTRARS_LOTE_TYPE,
+    statusDeterminationApproach: REGISTRARS_STATUS_DETN,
+    schemeRules: REGISTRARS_SCHEME_RULES,
+    allowedServiceTypes: Object.freeze([REGISTER_SERVICE_TYPE]),
+    roleUriPrefix: REGISTRAR_ROLE_URI_PREFIX,
+    maxNextUpdateMonths: MAX_NEXT_UPDATE_MONTHS,
+    fixedSchemeTerritory: "EU",
+    minimumSchemeInformationUris: 2,
+    requiresServiceUniqueIdentifier: false,
+    roleCountrySource: "responsible-member-state",
+    usesServiceStatus: false,
+    publishesSelfPointer: true,
+    requiresServiceCertificate: true,
+    requiresServiceSupplyPoint: true,
+    requiresRegistrarCertificateIdentity: true,
+    requiresLegalBasisReference: false,
+    collectsRegistrationIdentifier: true,
+    collectsAdditionalInformationUri: true,
+    roleUriInElectronicAddress: false,
+    roleUriInInformationUri: true,
+    informationUriIsPolicyUrl: true,
+    signatureProfile: "JAdES-Compact-B",
+  }),
 });
 
 const ENABLED_FAMILIES: readonly EnabledProfileFamily[] = Object.freeze([
@@ -303,6 +336,7 @@ const ENABLED_FAMILIES: readonly EnabledProfileFamily[] = Object.freeze([
   "wrpac-providers",
   "wrprc-providers",
   "pub-eaa-providers",
+  "registrars",
 ]);
 
 export function isEnabledProfileFamily(

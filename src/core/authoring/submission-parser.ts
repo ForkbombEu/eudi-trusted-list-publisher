@@ -4,6 +4,7 @@ import {
   type ApplicationByFamily,
   type ProviderServiceInput,
   type PubEAAProviderApplicantData,
+  type RegistrarApplicantData,
   type SupervisedApplicantData,
   type WalletProviderApplicantData,
   type WalletRelyingPartyApplicantData,
@@ -15,6 +16,7 @@ import {
 import {
   checkCertificateSetConsistency,
   checkCertificateSubjectOrganisation,
+  checkRegistrarCertificateIdentity,
   checkRelyingPartyCaCertificate,
   classifyCertificateInput,
   splitPemCertificates,
@@ -55,6 +57,7 @@ const SUPERVISED_FAMILIES: readonly EnabledProfileFamily[] = [
   "wrpac-providers",
   "wrprc-providers",
   "pub-eaa-providers",
+  "registrars",
 ];
 
 /**
@@ -94,6 +97,7 @@ export function parseAndValidateSubmission<
   const supervised = SUPERVISED_FAMILIES.includes(resolved);
   const relyingParty = WALLET_RELYING_PARTY_FAMILIES.includes(resolved);
   const pubEaa = resolved === "pub-eaa-providers";
+  const registrars = resolved === "registrars";
 
   const errors: SubmissionFieldError[] = [];
   const preservedFields: SubmissionFields = {};
@@ -123,6 +127,7 @@ export function parseAndValidateSubmission<
     "serviceType",
     "serviceName",
     "certificatePem",
+    ...(profile.requiresServiceSupplyPoint ? ["serviceSupplyPoint"] : []),
     ...(profile.requiresServiceUniqueIdentifier
       ? ["serviceUniqueIdentifier"]
       : []),
@@ -239,7 +244,12 @@ export function parseAndValidateSubmission<
     const serviceType = field(`${prefix}serviceType`);
     if (!serviceType)
       addError(`${prefix}serviceType`, "Service type is required.");
-    else if (serviceType !== "issuance" && serviceType !== "revocation")
+    else if (
+      (registrars && serviceType !== "register") ||
+      (!registrars &&
+        serviceType !== "issuance" &&
+        serviceType !== "revocation")
+    )
       addError(`${prefix}serviceType`, "Invalid service type.");
     const serviceName = field(`${prefix}serviceName`);
     if (!serviceName)
@@ -273,10 +283,13 @@ export function parseAndValidateSubmission<
         if (certificate.certificate) parsed.push(certificate.certificate);
       }
       for (const certificate of parsed) {
-        const mismatch = checkCertificateSubjectOrganisation(
-          certificate,
-          entityName,
-        );
+        const mismatch = profile.requiresRegistrarCertificateIdentity
+          ? checkRegistrarCertificateIdentity(
+              certificate,
+              entityName,
+              registrationIdentifier || undefined,
+            )
+          : checkCertificateSubjectOrganisation(certificate, entityName);
         if (mismatch) {
           addError(`${prefix}certificatePem`, mismatch);
           break;
@@ -292,8 +305,10 @@ export function parseAndValidateSubmission<
           }
         }
       }
-      const inconsistent = checkCertificateSetConsistency(parsed);
-      if (inconsistent) addError(`${prefix}certificatePem`, inconsistent);
+      if (resolved === "pub-eaa-providers") {
+        const inconsistent = checkCertificateSetConsistency(parsed);
+        if (inconsistent) addError(`${prefix}certificatePem`, inconsistent);
+      }
     }
     let serviceUniqueIdentifier: string | undefined;
     if (profile.requiresServiceUniqueIdentifier) {
@@ -309,19 +324,35 @@ export function parseAndValidateSubmission<
           "Service unique identifier must be a valid URL/URI.",
         );
     }
+    const serviceSupplyPoint = profile.requiresServiceSupplyPoint
+      ? field(`${prefix}serviceSupplyPoint`)
+      : "";
+    if (profile.requiresServiceSupplyPoint) {
+      if (!serviceSupplyPoint)
+        addError(`${prefix}serviceSupplyPoint`, "Register URL is required.");
+      else if (!isUrl(serviceSupplyPoint))
+        addError(
+          `${prefix}serviceSupplyPoint`,
+          "Register URL must be a valid URI.",
+        );
+    }
     if (
-      (serviceType === "issuance" || serviceType === "revocation") &&
+      (serviceType === "issuance" ||
+        serviceType === "revocation" ||
+        (registrars && serviceType === "register")) &&
       serviceName &&
       (certificatePem || !profile.requiresServiceCertificate) &&
-      (!profile.requiresServiceUniqueIdentifier || serviceUniqueIdentifier)
+      (!profile.requiresServiceUniqueIdentifier || serviceUniqueIdentifier) &&
+      (!profile.requiresServiceSupplyPoint || serviceSupplyPoint)
     )
       services.push({
-        serviceType,
+        serviceType: serviceType as ProviderServiceInput["serviceType"],
         serviceName,
         ...(certificatePem ? { certificatePem } : {}),
         ...(profile.requiresServiceUniqueIdentifier
           ? { serviceUniqueIdentifier }
           : {}),
+        ...(profile.requiresServiceSupplyPoint ? { serviceSupplyPoint } : {}),
       });
   }
 
@@ -360,6 +391,20 @@ export function parseAndValidateSubmission<
       valid: true,
       errors: [],
       applicantData: pubEaaData as ApplicantDataByFamily[F],
+      preservedFields,
+    };
+  }
+  if (registrars) {
+    const registrarData: RegistrarApplicantData = {
+      ...common,
+      responsibleMemberState: responsibleMemberState ?? "",
+      registrationIdentifier: registrationIdentifier || undefined,
+      additionalInformationURI: additionalInformationURI || undefined,
+    };
+    return {
+      valid: true,
+      errors: [],
+      applicantData: registrarData as ApplicantDataByFamily[F],
       preservedFields,
     };
   }

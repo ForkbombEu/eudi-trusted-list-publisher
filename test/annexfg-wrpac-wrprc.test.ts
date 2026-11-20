@@ -395,7 +395,7 @@ describe("TS 119 602 family catalogue", () => {
     expect(Object.keys(PROFILE_REGISTRY)).not.toContain("qeaa-providers");
   });
 
-  it("enables five families and disables Registrars", () => {
+  it("enables all six TS 119 602 families", () => {
     expect(
       getEnabledFamilies()
         .filter((family) => family.standard === "TS 119 602")
@@ -406,11 +406,10 @@ describe("TS 119 602 family catalogue", () => {
       "wrpac-providers",
       "wrprc-providers",
       "pub-eaa-providers",
+      "registrars",
     ]);
-    for (const family of ["registrars"]) {
-      expect(PROFILE_REGISTRY[family as "registrars"].enabled).toBe(false);
-      expect(() => getProfile(family)).toThrow(/not implemented/);
-    }
+    expect(PROFILE_REGISTRY.registrars.enabled).toBe(true);
+    expect(getProfile("registrars").loTEType).toBeDefined();
   });
 });
 
@@ -1067,9 +1066,9 @@ describe("Annex F/G views", () => {
       "wrpac-providers",
       "wrprc-providers",
       "pub-eaa-providers",
+      "registrars",
     ])
       expect(html).toContain(`value="${family}"`);
-    expect(html).not.toContain('value="registrars"');
   });
 
   it("shows the Annex F/G fields and the mandate meaning on admin review", () => {

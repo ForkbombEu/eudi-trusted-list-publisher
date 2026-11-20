@@ -341,6 +341,14 @@ export function checkLosslessPreservation(
         schemeName: [{ lang: "en", value: "Test" }],
         schemeTerritory: "EU",
         distributionPoints: ["https://t.org"],
+        ...(family === "registrars"
+          ? {
+              schemeInformationURI: [
+                { lang: "en", uriValue: "https://t.org/information" },
+                { lang: "en", uriValue: "https://t.org/previous-versions" },
+              ],
+            }
+          : {}),
       },
       listIssueDateTime: "2026-01-01T00:00:00Z",
       nextUpdate: "2026-07-01T00:00:00Z",

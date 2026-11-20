@@ -14,19 +14,19 @@ else.
 It supports the Trusted List families and artifact formats the repository
 actually implements, across two ETSI standards:
 
-| Family            | Standard                 | Artifact         | Signature                 |
-| ----------------- | ------------------------ | ---------------- | ------------------------- |
-| PID Providers     | ETSI TS 119 602, Annex D | JSON LoTE        | JAdES Baseline B, Compact |
-| Wallet Providers  | ETSI TS 119 602, Annex E | JSON LoTE        | JAdES Baseline B, Compact |
-| WRPAC Providers   | ETSI TS 119 602, Annex F | JSON LoTE        | JAdES Baseline B, Compact |
-| WRPRC Providers   | ETSI TS 119 602, Annex G | JSON LoTE        | JAdES Baseline B, Compact |
-| Pub-EAA Providers | ETSI TS 119 602, Annex H | JSON LoTE        | JAdES Baseline B, Compact |
-| EAA Providers     | ETSI TS 119 612          | XML Trusted List | XAdES-B-B, enveloped      |
-| QEAA Providers    | ETSI TS 119 612          | XML Trusted List | XAdES-B-B, enveloped      |
+| Family                   | Standard                 | Artifact         | Signature                 |
+| ------------------------ | ------------------------ | ---------------- | ------------------------- |
+| PID Providers            | ETSI TS 119 602, Annex D | JSON LoTE        | JAdES Baseline B, Compact |
+| Wallet Providers         | ETSI TS 119 602, Annex E | JSON LoTE        | JAdES Baseline B, Compact |
+| WRPAC Providers          | ETSI TS 119 602, Annex F | JSON LoTE        | JAdES Baseline B, Compact |
+| WRPRC Providers          | ETSI TS 119 602, Annex G | JSON LoTE        | JAdES Baseline B, Compact |
+| Pub-EAA Providers        | ETSI TS 119 602, Annex H | JSON LoTE        | JAdES Baseline B, Compact |
+| Registrars and Registers | ETSI TS 119 602, Annex I | JSON LoTE        | JAdES Baseline B, Compact |
+| EAA Providers            | ETSI TS 119 612          | XML Trusted List | XAdES-B-B, enveloped      |
+| QEAA Providers           | ETSI TS 119 612          | XML Trusted List | XAdES-B-B, enveloped      |
 
 Every family in that table has a working onboarding form, publication path and
-artifact download. Nothing else is listed. "Registrars and Registers" appears in
-the GUI as a known family but is not accepted for authoring or publication.
+artifact download. Nothing else is listed.
 
 **JAdES signs the JSON artifacts. XAdES signs the XML artifacts.** The two are
 not interchangeable, and the tool never mixes them.
@@ -35,6 +35,28 @@ EAA and QEAA are TS 119 612 _service profiles_, not lists of their own: one XML
 Trusted List may accept EAA services, QEAA services, or both. Pub-EAA (Annex H)
 is a different thing again — a TS 119 602 JSON list of _publicly issued_
 attestation providers.
+
+### Registrars and Registers (Annex I)
+
+A **Registrar** is the trusted entity mandated by a responsible Member State;
+it is published with its official name, address, contacts, policy URL and
+mandatory Registrar role URI. A **Register** is a service operated by that
+Registrar, published with its external `ServiceSupplyPoint` and data-signing
+certificate. They are not WRPAC or WRPRC providers: WRPAC and WRPRC publish
+relying-party attestations and certificates, while an Annex I Register exposes
+an external registration-data service.
+
+Create **Registrars and Registers** in the catalogue with scheme territory
+`EU`; the publisher derives the list information and previous-versions URIs.
+Submit a Registrar at `/onboarding/registrar`, add one or more Registers, then
+approve and publish it in Administration. When its mandate ends, choose
+**Remove Registrar** to publish a cumulative successor without it; prior
+versions remain immutable. Retrieve the JSON LoTE, Compact JAdES signature and
+publication metadata through the existing list/version API.
+
+The publisher does not implement Registrar or Register services, Wallet Relying
+Party registrations, WRPAC/WRPRC issuance, registration databases, Register
+APIs, or IAM Proxy Italia integration.
 
 ### What this is not
 
@@ -443,8 +465,7 @@ presence rules, status vocabularies and integrity artifacts all differ. Merging
 the engines would produce a compiler that constantly asks which standard it is
 serving.
 
-They are therefore parallel and share only what genuinely is shared. The
-implementation began as TS 119 602 JSON/JAdES support for the five LoTE annexes;
+implementation began as TS 119 602 JSON/JAdES support for the six LoTE annexes;
 TS 119 612 XML/XAdES national Trusted Lists were added afterwards for EAA and
 QEAA. That is why the shared abstractions are where they are:
 
